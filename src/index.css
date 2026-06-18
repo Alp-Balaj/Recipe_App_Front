@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+
+.scroll::-webkit-scrollbar { width: 0; height: 0; }
+
+/* ── Dark theme (default) ── */
+[data-mode="dark"] {
+  --bg: #151a15;
+  --surface: #1c241c;
+  --surface2: #212a21;
+  --border: #2a342a;
+  --text: #eef3ec;
+  --muted: #93a092;
+  --accent: #3d9460;
+  --accent-ink: #ffffff;
+  --cardsh: none;
+  --inputbg: #1c241c;
+  --navbg: #131713;
+  --tagbg: transparent;
+  --tagborder: #33402f;
+  --tagcol: #aebfa8;
+  --hair: transparent;
+  --chipbg: #1f3324;
+  --chipcol: #6fd49a;
+}
+
+/* ── Light theme ── */
+[data-mode="light"] {
+  --bg: #eff2e8;
+  --surface: #ffffff;
+  --surface2: #e6ecdb;
+  --border: #dde4d0;
+  --text: #202a20;
+  --muted: #869180;
+  --accent: #3a8f5b;
+  --accent-ink: #ffffff;
+  --cardsh: 0 3px 14px -6px rgba(40,70,30,.22);
+  --inputbg: #ffffff;
+  --navbg: #f6f8f1;
+  --tagbg: #e7efdd;
+  --tagborder: transparent;
+  --tagcol: #5a7a4f;
+  --hair: #e4e9da;
+  --chipbg: #e7efdd;
+  --chipcol: #3f6b46;
+}
