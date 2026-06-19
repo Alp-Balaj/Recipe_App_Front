@@ -18,7 +18,7 @@ export default function LibraryTab({ onOpenRecipe, saved, savedCount }: Props) {
       style={{
         position: 'absolute',
         inset: 0,
-        bottom: 74,
+        bottom: 'var(--nav-h, 74px)',
         overflowY: 'auto',
         padding: '54px 18px 16px',
       }}

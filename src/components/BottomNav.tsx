@@ -14,6 +14,7 @@ const NAV_ITEMS: { id: Tab; icon: string; label: string }[] = [
 export default function BottomNav({ tab, onGoTo }: Props) {
   return (
     <div
+      className="bottom-nav"
       style={{
         position: 'absolute',
         left: 0,
@@ -22,7 +23,6 @@ export default function BottomNav({ tab, onGoTo }: Props) {
         height: 74,
         background: 'var(--navbg)',
         borderTop: '1px solid var(--border)',
-        display: 'flex',
         paddingBottom: 6,
       }}
     >

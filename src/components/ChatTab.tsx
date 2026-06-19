@@ -16,18 +16,20 @@ export default function ChatTab({ onOpenRecipe, mode, onToggleMode }: Props) {
         style={{
           position: 'absolute',
           inset: 0,
-          bottom: 74,
+          bottom: 'var(--nav-h, 74px)',
           overflowY: 'auto',
           padding: '54px 18px 80px',
         }}
       >
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div className="chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em' }}>What are we cooking?</div>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 3 }}>AI recipe assistant</div>
           </div>
+          {/* Theme toggle — lives in the header, which is hidden on desktop (>=1024px) via CSS */}
           <button
+            className="chat-theme-toggle"
             onClick={onToggleMode}
             style={{
               cursor: 'pointer',
@@ -42,6 +44,7 @@ export default function ChatTab({ onOpenRecipe, mode, onToggleMode }: Props) {
               fontSize: 16,
               color: 'var(--text)',
               fontFamily: 'inherit',
+              flexShrink: 0,
             }}
           >
             {mode === 'dark' ? '☀' : '☾'}
@@ -160,7 +163,7 @@ export default function ChatTab({ onOpenRecipe, mode, onToggleMode }: Props) {
         position: 'absolute',
         left: 0,
         right: 0,
-        bottom: 74,
+        bottom: 'var(--nav-h, 74px)',
         padding: '10px 18px 12px',
         background: 'linear-gradient(to top, var(--bg) 70%, transparent)',
         display: 'flex',
