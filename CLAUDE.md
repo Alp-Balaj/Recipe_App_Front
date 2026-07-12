@@ -51,6 +51,35 @@ Shell internals (also frozen): `ThemeRoot.tsx` (theme + outlet context),
 desktop canvas pane with `BrowsePage` as the backdrop), `navItems.ts` (tab
 list + URL→active-tab mapping; `/recipes/*` highlights the Library tab).
 
+## API layer + auth (frozen at checkpoint 02 — import, never reshape)
+
+Three shared modules under `src/api/` are FROZEN (additive-only, coordinated
+edits). Lanes import them:
+
+- `@/api/types` — wire shapes 1:1 with the backend DTOs (camelCase; enums are
+  PascalCase string unions `Difficulty`/`Visibility`; nullable → `?: T | null`):
+  `AuthResponse`, `RegisterRequest`, `LoginRequest`, `MeResponse`,
+  `RecipeResponse`, `CreateRecipeRequest`, `RecipeListQuery`,
+  `RecipeListResponse`, `RecipeIngredient`, `RecipeStep`, `Difficulty`,
+  `Visibility`, `ValidationProblemResponse`, `ConflictResponse`.
+- `@/api/client` — `apiFetch<T>(path, { method?, body?, query?, signal? })`.
+  Prefixes `/api`, attaches the bearer, any-2xx = success, 204/empty →
+  `undefined`. Array `query` values → repeated params (`?tags=a&tags=b`). Typed
+  errors: `ApiError`, `ApiValidationError` (`.errors` PascalCase dict),
+  `ApiUnauthorizedError`, `ApiConflictError`. A 401 (except `/auth/login`) clears
+  the session; the guard redirects.
+- `@/api/queryKeys` — `queryKeys.recipes.{all, lists(), list(f?), mine(f?),
+  detail(id)}`, `queryKeys.chat.messages()`, `queryKeys.auth.me()`.
+
+Auth: `@/auth/AuthContext` → `useAuth()` = `{ user: AuthResponse | null, status,
+login, register, logout }` (persisted to `localStorage`, boot-validated via
+`/auth/me`). Route protection is global in `AppShell.tsx`, so **a protected page
+renders only when authenticated** — in tests use `@/test/utils`
+`renderRoute(path)` (authenticated by default) or `renderApp(path)` (real
+provider + MSW), and add endpoint mocks with `server.use(...)` from
+`@/test/msw/server`. Reusable UI: `@/components/ui/TextField`,
+`@/components/AuthScreen`.
+
 ## Parallelization — lane file ownership (from the frontend plan)
 
 Checkpoints 01–02 are serial (foundation). After 02, three lanes run in

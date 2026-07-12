@@ -1,8 +1,47 @@
-import { afterEach } from 'vitest'
+import { afterAll, afterEach, beforeAll } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
+import { server } from './msw/server'
+import { setAuthToken, setUnauthorizedHandler } from '@/api/client'
 
-afterEach(cleanup)
+// Node 22 ships an experimental native `localStorage` global that shadows
+// jsdom's and exposes no getItem/setItem/removeItem. Install a Map-backed
+// Storage so the auth store's persistence behaves normally under test.
+function installLocalStorage() {
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear: () => store.clear(),
+    getItem: (key) => (store.has(key) ? store.get(key)! : null),
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key) => {
+      store.delete(key)
+    },
+    setItem: (key, value) => {
+      store.set(key, String(value))
+    },
+  }
+  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true })
+  Object.defineProperty(window, 'localStorage', { value: storage, configurable: true, writable: true })
+}
+installLocalStorage()
+
+// ── MSW ──────────────────────────────────────────────────────────────────
+// Unhandled requests bypass rather than error: pages that fetch real endpoints
+// (the lanes' work) shouldn't fail the auth suite just for lacking a handler.
+beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())
+
+afterEach(() => {
+  cleanup()
+  // Reset cross-test module state in the fetch wrapper + persisted session.
+  localStorage.clear()
+  setAuthToken(null)
+  setUnauthorizedHandler(null)
+})
 
 // jsdom has no matchMedia; the shell's useMediaQuery needs a working stub.
 // matches: false → tests exercise the mobile/tablet layout branch.

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Outlet, useMatch, useOutletContext } from 'react-router-dom'
+import { Navigate, Outlet, useLocation, useMatch, useOutletContext } from 'react-router-dom'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { useAuth } from '@/auth/AuthContext'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import BrowsePage from '@/pages/BrowsePage'
@@ -13,6 +14,8 @@ import type { ThemeContextValue } from './ThemeRoot'
  */
 export default function AppShell() {
   const theme = useOutletContext<ThemeContextValue>()
+  const { status } = useAuth()
+  const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
@@ -21,6 +24,32 @@ export default function AppShell() {
   const detailMatch = useMatch('/recipes/:id')
   const isDetail =
     !!detailMatch && detailMatch.params.id !== 'new' && detailMatch.params.id !== 'mine'
+
+  // ── Auth guard ──────────────────────────────────────────────────────────
+  // Every route under AppShell is protected; /login and /register render
+  // outside it (under ThemeRoot). While the boot-time /auth/me check runs we
+  // hold a themed placeholder; a signed-out user is bounced to /login, with
+  // the attempted URL preserved so login can send them back.
+  if (status === 'loading') {
+    return (
+      <div
+        style={{
+          flex: '1 1 auto',
+          minHeight: '100dvh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--muted)',
+          fontSize: 14,
+        }}
+      >
+        Loading…
+      </div>
+    )
+  }
+  if (status === 'unauthenticated') {
+    return <Navigate to="/login" replace state={{ from: location }} />
+  }
 
   // ── Desktop (>=1024px): sidebar + conversation pane + recipe canvas ──
   if (isDesktop) {

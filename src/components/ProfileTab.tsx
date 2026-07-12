@@ -1,3 +1,5 @@
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/auth/AuthContext'
 import type { Mode } from './ThemeRoot'
 
 interface Props {
@@ -6,7 +8,16 @@ interface Props {
 }
 
 export default function ProfileTab({ mode, onSetMode }: Props) {
-  const isLight = mode === 'light'
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const username = user?.username ?? 'Signed in'
+  const initial = username.charAt(0).toUpperCase()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div
@@ -21,7 +32,7 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
     >
       <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 18 }}>Profile</div>
 
-      {/* User card */}
+      {/* User card — real logged-in identity */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -39,10 +50,20 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
           borderRadius: '50%',
           background: 'radial-gradient(circle at 40% 35%, #5fb87e, #2f7349)',
           flexShrink: 0,
-        }} />
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>Alex Rivera</div>
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>Vegetarian · ~30 min meals</div>
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#fff',
+          fontSize: 22,
+          fontWeight: 800,
+        }}>
+          {initial}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 17, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {username}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>Signed in</div>
         </div>
       </div>
 
@@ -95,7 +116,7 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
         </div>
       </div>
 
-      {/* Stats card */}
+      {/* Account section — logout */}
       <div style={{
         fontSize: 12,
         letterSpacing: '0.08em',
@@ -104,31 +125,27 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
         fontWeight: 700,
         margin: '20px 0 10px',
       }}>
-        Your stats
+        Account
       </div>
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 10,
-      }}>
-        {[
-          { value: '47', label: 'Recipes cooked' },
-          { value: '2', label: 'Saved recipes' },
-          { value: '12', label: 'Weeks active' },
-          { value: isLight ? 'Light' : 'Dark', label: 'Current theme' },
-        ].map(({ value, label }) => (
-          <div key={label} style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--cardsh)',
-            borderRadius: 16,
-            padding: '14px 16px',
-          }}>
-            <div style={{ fontSize: 22, fontWeight: 800 }}>{value}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{label}</div>
-          </div>
-        ))}
-      </div>
+      <button
+        onClick={handleLogout}
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          cursor: 'pointer',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          boxShadow: 'var(--cardsh)',
+          borderRadius: 16,
+          padding: '14px 16px',
+          fontSize: 14.5,
+          fontWeight: 700,
+          fontFamily: 'inherit',
+          color: '#d9534f',
+        }}
+      >
+        Log out
+      </button>
     </div>
   )
 }
