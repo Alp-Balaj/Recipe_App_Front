@@ -1,20 +1,18 @@
-import type { Mode, Tab } from './RecipeApp'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { NAV_ITEMS, activeTab } from './navItems'
+import type { Mode } from './ThemeRoot'
 
 interface Props {
-  tab: Tab
-  onGoTo: (tab: Tab) => void
   mode: Mode
   onToggleMode: () => void
   onCollapse: () => void
 }
 
-const NAV_ITEMS: { id: Tab; icon: string; label: string }[] = [
-  { id: 'chat', icon: '◌', label: 'Chat' },
-  { id: 'library', icon: '▤', label: 'Library' },
-  { id: 'profile', icon: '◍', label: 'Profile' },
-]
+export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const current = activeTab(pathname)
 
-export default function Sidebar({ tab, onGoTo, mode, onToggleMode, onCollapse }: Props) {
   return (
     <aside className="sidebar">
       {/* App title (moved here from the chat header) + collapse control */}
@@ -49,14 +47,15 @@ export default function Sidebar({ tab, onGoTo, mode, onToggleMode, onCollapse }:
         </button>
       </div>
 
-      {/* Nav */}
+      {/* Nav — drives the router; active state derives from the URL */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {NAV_ITEMS.map((item) => {
-          const active = tab === item.id
+          const active = current === item.id
           return (
             <button
               key={item.id}
-              onClick={() => onGoTo(item.id)}
+              onClick={() => navigate(item.to)}
+              aria-current={active ? 'page' : undefined}
               style={{
                 display: 'flex',
                 alignItems: 'center',

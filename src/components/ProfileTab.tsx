@@ -1,4 +1,4 @@
-import type { Mode } from './RecipeApp'
+import type { Mode } from './ThemeRoot'
 
 interface Props {
   mode: Mode

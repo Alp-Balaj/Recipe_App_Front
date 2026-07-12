@@ -1,6 +1,6 @@
 import { RECIPES, type RecipeId } from '@/data/recipes'
 import { Badge } from './ui/badge'
-import type { Mode } from './RecipeApp'
+import type { Mode } from './ThemeRoot'
 
 interface Props {
   onOpenRecipe: (id: RecipeId) => void
