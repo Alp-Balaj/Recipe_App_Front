@@ -7,19 +7,46 @@ export default function BottomNav() {
   const current = activeTab(pathname)
 
   return (
-    <div
-      className="bottom-nav"
-      style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        height: 74,
-        background: 'var(--navbg)',
-        borderTop: '1px solid var(--border)',
-        paddingBottom: 6,
-      }}
-    >
+    <>
+      {/* New-recipe FAB (lane B, checkpoint 05 — sanctioned additive edit).
+          Floats just above the tab bar; navigates to the create form. */}
+      <button
+        onClick={() => navigate('/recipes/new')}
+        aria-label="New recipe"
+        style={{
+          position: 'absolute',
+          right: 16,
+          bottom: 74 + 14,
+          width: 52,
+          height: 52,
+          borderRadius: '50%',
+          border: 'none',
+          background: 'var(--accent)',
+          color: 'var(--accent-ink)',
+          fontSize: 26,
+          lineHeight: 1,
+          fontFamily: 'inherit',
+          cursor: 'pointer',
+          boxShadow: 'var(--cardsh)',
+          zIndex: 5,
+        }}
+      >
+        ＋
+      </button>
+
+      <div
+        className="bottom-nav"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 74,
+          background: 'var(--navbg)',
+          borderTop: '1px solid var(--border)',
+          paddingBottom: 6,
+        }}
+      >
       {NAV_ITEMS.map((item) => {
         const active = current === item.id
         return (
@@ -48,6 +75,7 @@ export default function BottomNav() {
           </button>
         )
       })}
-    </div>
+      </div>
+    </>
   )
 }
