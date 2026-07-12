@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw'
-import type { AuthResponse, LoginRequest, RegisterRequest } from '@/api/types'
+import type { AuthResponse, LoginRequest, RecipeListResponse, RegisterRequest } from '@/api/types'
 
 // Wildcard-prefixed paths so these match the real fetched URL regardless of
 // origin or the /api proxy prefix (fetch('/api/auth/login') → ".../auth/login").
@@ -44,4 +44,12 @@ export const handlers = [
       username: 'booteduser',
     })
   }),
+
+  // Default browse list: empty. Keeps any test that lands on /library (the
+  // BrowsePage, checkpoint 04) from hitting the real network; browse-specific
+  // tests override this with `server.use(...)`. Matches the exact `/recipes`
+  // path only — the detail `/recipes/:id` handler is separate.
+  http.get('*/recipes', () =>
+    HttpResponse.json({ items: [], nextCursor: null } satisfies RecipeListResponse),
+  ),
 ]

@@ -8,13 +8,13 @@ import { server } from './msw/server'
 describe('router shell (authenticated)', () => {
   it('redirects / to /library', async () => {
     const router = renderRoute('/')
-    expect(await screen.findByText('Your library')).toBeInTheDocument()
+    expect(await screen.findByText('Browse recipes')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/library')
   })
 
   it('redirects unknown URLs to /library instead of crashing', async () => {
     const router = renderRoute('/definitely/not/a/route')
-    expect(await screen.findByText('Your library')).toBeInTheDocument()
+    expect(await screen.findByText('Browse recipes')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/library')
   })
 

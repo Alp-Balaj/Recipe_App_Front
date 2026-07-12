@@ -15,7 +15,7 @@ describe('LoginPage', () => {
     await user.type(screen.getByLabelText('Password'), 'goodpassword')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(await screen.findByText('Your library')).toBeInTheDocument()
+    expect(await screen.findByText('Browse recipes')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/library')
     expect(localStorage.getItem('recipe_app_auth')).toContain('alice')
   })
@@ -69,7 +69,7 @@ describe('RegisterPage', () => {
     await user.type(screen.getByLabelText('Password'), 'longenough')
     await user.click(screen.getByRole('button', { name: /create account/i }))
 
-    expect(await screen.findByText('Your library')).toBeInTheDocument()
+    expect(await screen.findByText('Browse recipes')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/library')
     // The whole point: register returns a token, so login is never called.
     expect(loginSpy).not.toHaveBeenCalled()
@@ -112,7 +112,7 @@ describe('ProfileTab logout', () => {
     await user.type(await screen.findByLabelText('Username or email'), 'carol')
     await user.type(screen.getByLabelText('Password'), 'goodpassword')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
-    await screen.findByText('Your library')
+    await screen.findByText('Browse recipes')
 
     // Navigate to the profile tab (bottom nav in the mobile test layout).
     await user.click(screen.getByRole('button', { name: /profile/i }))
