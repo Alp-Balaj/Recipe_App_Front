@@ -1,3 +1,13 @@
+// ─────────────────────────────────────────────────────────────────────────
+// DEPRECATED mock data — SCHEDULED FOR DELETION.
+//
+// As of 2026-07-12 (lane A checkpoint 04) the browse + detail pages fetch the
+// real API and no longer import this file. Its ONLY remaining consumer is
+// `src/components/ChatTab.tsx` (the lane C chat teaser). Lane C's checkpoint 07
+// replaces that teaser with the real chat UI — when it drops the ChatTab import,
+// DELETE this file. Do not add new imports of it.
+// ─────────────────────────────────────────────────────────────────────────
+
 export type RecipeId = 'ramen' | 'lentil' | 'shakshuka'
 
 export interface Ingredient {

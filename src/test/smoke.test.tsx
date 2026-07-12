@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { cleanup, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { makeAuthValue, renderRoute } from './utils'
+import { server } from './msw/server'
 
 describe('router shell (authenticated)', () => {
   it('redirects / to /library', async () => {
     const router = renderRoute('/')
-    expect(await screen.findByText('Your library')).toBeInTheDocument()
+    expect(await screen.findByText('Browse recipes')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/library')
   })
 
   it('redirects unknown URLs to /library instead of crashing', async () => {
     const router = renderRoute('/definitely/not/a/route')
-    expect(await screen.findByText('Your library')).toBeInTheDocument()
+    expect(await screen.findByText('Browse recipes')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/library')
   })
 
@@ -27,12 +29,37 @@ describe('router shell (authenticated)', () => {
     expect(await screen.findByText('Appearance')).toBeInTheDocument()
   })
 
-  it('deep-links to a mock recipe detail at /recipes/:id', async () => {
-    renderRoute('/recipes/ramen')
+  it('deep-links to a recipe detail at /recipes/:id (fetched from the API)', async () => {
+    server.use(
+      http.get('*/recipes/:id', () =>
+        HttpResponse.json({
+          id: 'deep-link-id',
+          title: 'Miso ramen',
+          description: 'A warming vegetarian broth.',
+          prepTimeMinutes: 10,
+          cookTimeMinutes: 15,
+          totalTimeMinutes: 25,
+          servings: 2,
+          difficulty: 'Medium',
+          cuisineType: 'Japanese',
+          caloriesPerServing: 420,
+          imageUrl: null,
+          visibility: 'Public',
+          createdAt: '2026-07-01T00:00:00Z',
+          updatedAt: null,
+          ingredients: [{ name: 'miso', quantity: 3, unit: 'tbsp' }],
+          steps: [{ stepNumber: 1, description: 'Simmer.', timerSeconds: null }],
+          tags: ['warm'],
+          createdByUserId: 'someone-else',
+        }),
+      ),
+    )
+    renderRoute('/recipes/deep-link-id')
     expect(await screen.findByText('Miso ramen')).toBeInTheDocument()
   })
 
-  it('shows a not-found state for an unknown recipe id', async () => {
+  it('shows a not-found state when the API 404s a recipe id', async () => {
+    server.use(http.get('*/recipes/:id', () => new HttpResponse(null, { status: 404 })))
     renderRoute('/recipes/does-not-exist')
     expect(await screen.findByText('Recipe not found')).toBeInTheDocument()
   })

@@ -1,24 +1,391 @@
+import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import LibraryTab from '@/components/LibraryTab'
-import type { RecipeId } from '@/data/recipes'
+import { Badge } from '@/components/ui/badge'
+import { useRecipeList, type BrowseFilters } from '@/hooks/useRecipeList'
+import type { Difficulty, RecipeResponse } from '@/api/types'
+import { formatMinutes, gradientFor } from './recipeVisuals'
 
-// Mock-era stand-in for the old RecipeApp saved map; checkpoint 04 replaces
-// this whole page with the real GET /recipes browse and drops the saved concept.
-const SAVED: Record<RecipeId, boolean> = {
-  ramen: true,
-  lentil: true,
-  shakshuka: false,
-}
+const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
+
+const PAGE_STYLE = {
+  position: 'absolute',
+  inset: 0,
+  bottom: 'var(--nav-h, 74px)',
+  overflowY: 'auto',
+  padding: '54px 18px 16px',
+} as const
 
 export default function BrowsePage() {
   const navigate = useNavigate()
-  const savedCount = Object.values(SAVED).filter(Boolean).length
+
+  // Committed filter state — each change produces a new query key, which resets
+  // useInfiniteQuery pagination back to the first page automatically.
+  const [cuisine, setCuisine] = useState('')
+  const [difficulty, setDifficulty] = useState<Difficulty | undefined>(undefined)
+  const [tags, setTags] = useState<string[]>([])
+
+  const filters: BrowseFilters = useMemo(
+    () => ({ cuisine, difficulty, tags }),
+    [cuisine, difficulty, tags],
+  )
+
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetching,
+  } = useRecipeList(filters)
+
+  // Flatten pages, de-duping by id (defensive against any cursor-edge overlap).
+  const recipes = useMemo(() => {
+    const seen = new Set<string>()
+    const out: RecipeResponse[] = []
+    for (const page of data?.pages ?? []) {
+      for (const r of page.items) {
+        if (!seen.has(r.id)) {
+          seen.add(r.id)
+          out.push(r)
+        }
+      }
+    }
+    return out
+  }, [data])
+
+  const hasActiveFilters = !!cuisine || !!difficulty || tags.length > 0
+  const clearFilters = () => {
+    setCuisine('')
+    setDifficulty(undefined)
+    setTags([])
+  }
 
   return (
-    <LibraryTab
-      onOpenRecipe={(id) => navigate(`/recipes/${id}`)}
-      saved={SAVED}
-      savedCount={savedCount}
-    />
+    <div className="scroll" style={PAGE_STYLE}>
+      {/* Header */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em' }}>Browse recipes</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 3 }}>
+          Public recipes from the community and your own.
+        </div>
+      </div>
+
+      {/* Filters */}
+      <Filters
+        cuisine={cuisine}
+        difficulty={difficulty}
+        tags={tags}
+        onCuisine={setCuisine}
+        onDifficulty={setDifficulty}
+        onAddTag={(t) => setTags((prev) => (prev.includes(t) ? prev : [...prev, t]))}
+        onRemoveTag={(t) => setTags((prev) => prev.filter((x) => x !== t))}
+      />
+
+      {hasActiveFilters && (
+        <button onClick={clearFilters} style={clearBtn}>
+          Clear filters
+        </button>
+      )}
+
+      {/* Body states */}
+      {isLoading ? (
+        <StateBlock title="Loading recipes…" body="Fetching the latest from the kitchen." />
+      ) : isError ? (
+        <StateBlock
+          title="Couldn't load recipes"
+          body="Something went wrong reaching the kitchen. Check your connection and try again."
+          action={{ label: 'Try again', onClick: () => refetch() }}
+        />
+      ) : recipes.length === 0 ? (
+        <StateBlock
+          title="No recipes found"
+          body={
+            hasActiveFilters
+              ? 'No recipes match these filters yet. Try loosening them.'
+              : 'Nothing here yet — be the first to add a recipe.'
+          }
+          action={hasActiveFilters ? { label: 'Clear filters', onClick: clearFilters } : undefined}
+        />
+      ) : (
+        <>
+          {recipes.map((r) => (
+            <RecipeCard key={r.id} recipe={r} onOpen={() => navigate(`/recipes/${r.id}`)} />
+          ))}
+
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0 12px' }}>
+            {hasNextPage ? (
+              <button
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                style={{ ...loadMoreBtn, opacity: isFetchingNextPage ? 0.6 : 1 }}
+              >
+                {isFetchingNextPage ? 'Loading…' : 'Load more'}
+              </button>
+            ) : (
+              <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+                {isFetching ? 'Loading…' : "That's everything."}
+              </span>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
+
+// ── Filters ─────────────────────────────────────────────────────────────────
+
+function Filters({
+  cuisine,
+  difficulty,
+  tags,
+  onCuisine,
+  onDifficulty,
+  onAddTag,
+  onRemoveTag,
+}: {
+  cuisine: string
+  difficulty: Difficulty | undefined
+  tags: string[]
+  onCuisine: (v: string) => void
+  onDifficulty: (v: Difficulty | undefined) => void
+  onAddTag: (t: string) => void
+  onRemoveTag: (t: string) => void
+}) {
+  const [cuisineDraft, setCuisineDraft] = useState(cuisine)
+  const [tagDraft, setTagDraft] = useState('')
+
+  const commitCuisine = () => {
+    const v = cuisineDraft.trim()
+    if (v !== cuisine) onCuisine(v)
+  }
+  const commitTag = () => {
+    const v = tagDraft.trim().toLowerCase()
+    if (v) onAddTag(v)
+    setTagDraft('')
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+      {/* Difficulty chips */}
+      <div className="scroll" style={{ display: 'flex', gap: 8, overflowX: 'auto', margin: '0 -18px', padding: '0 18px 2px' }}>
+        <Chip active={!difficulty} onClick={() => onDifficulty(undefined)}>
+          All levels
+        </Chip>
+        {DIFFICULTIES.map((d) => (
+          <Chip key={d} active={difficulty === d} onClick={() => onDifficulty(difficulty === d ? undefined : d)}>
+            {d}
+          </Chip>
+        ))}
+      </div>
+
+      {/* Cuisine + tag inputs */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          value={cuisineDraft}
+          onChange={(e) => setCuisineDraft(e.target.value)}
+          onBlur={commitCuisine}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitCuisine()
+            }
+          }}
+          placeholder="Cuisine (e.g. italian)"
+          aria-label="Filter by cuisine"
+          style={inputStyle}
+        />
+        <input
+          value={tagDraft}
+          onChange={(e) => setTagDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitTag()
+            }
+          }}
+          placeholder="Add a tag + Enter"
+          aria-label="Filter by tag"
+          style={inputStyle}
+        />
+      </div>
+
+      {/* Active tag chips (match-ALL) */}
+      {tags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+          {tags.map((t) => (
+            <button key={t} onClick={() => onRemoveTag(t)} style={tagChip} aria-label={`Remove tag ${t}`}>
+              {t} ✕
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <span
+      onClick={onClick}
+      role="button"
+      style={{
+        flexShrink: 0,
+        fontSize: 13,
+        fontWeight: 600,
+        padding: '7px 15px',
+        borderRadius: 999,
+        background: active ? 'var(--accent)' : 'var(--surface2)',
+        color: active ? 'var(--accent-ink)' : 'var(--muted)',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+// ── Card ────────────────────────────────────────────────────────────────────
+
+function RecipeCard({ recipe, onOpen }: { recipe: RecipeResponse; onOpen: () => void }) {
+  const banner = recipe.imageUrl
+    ? { backgroundImage: `url(${recipe.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : { background: gradientFor(recipe.id || recipe.title) }
+
+  return (
+    <div
+      onClick={onOpen}
+      style={{
+        cursor: 'pointer',
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        boxShadow: 'var(--cardsh)',
+        borderRadius: 22,
+        overflow: 'hidden',
+        marginBottom: 16,
+      }}
+    >
+      <div style={{ height: 104, ...banner }} />
+
+      <div style={{ padding: '15px 16px' }}>
+        <div style={{ fontSize: 18, fontWeight: 800 }}>{recipe.title}</div>
+
+        <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.45, margin: '4px 0 12px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          {recipe.description}
+        </div>
+
+        {/* Stats — time, calories-only (no macros, no saved count). */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 14,
+            fontSize: 12.5,
+            color: 'var(--muted)',
+            paddingBottom: 12,
+            borderBottom: '1px solid var(--hair)',
+            marginBottom: 12,
+          }}
+        >
+          <span>◷ {formatMinutes(recipe.totalTimeMinutes)}</span>
+          {recipe.caloriesPerServing != null && <span>♨ {recipe.caloriesPerServing} kcal</span>}
+          {recipe.cuisineType && <span>{recipe.cuisineType}</span>}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', minWidth: 0 }}>
+            {recipe.tags.slice(0, 3).map((t) => (
+              <Badge
+                key={t}
+                variant="outline"
+                className="text-[11.5px] font-normal"
+                style={{ background: 'var(--tagbg)', borderColor: 'var(--tagborder)', color: 'var(--tagcol)' }}
+              >
+                {t}
+              </Badge>
+            ))}
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>View ›</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Shared state block ──────────────────────────────────────────────────────
+
+function StateBlock({
+  title,
+  body,
+  action,
+}: {
+  title: string
+  body: string
+  action?: { label: string; onClick: () => void }
+}) {
+  return (
+    <div style={{ padding: '40px 4px', textAlign: 'center' }}>
+      <div style={{ fontSize: 16, fontWeight: 800 }}>{title}</div>
+      <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5, margin: '6px auto 16px', maxWidth: 320 }}>
+        {body}
+      </div>
+      {action && (
+        <button onClick={action.onClick} style={loadMoreBtn}>
+          {action.label}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── Inline styles ───────────────────────────────────────────────────────────
+
+const inputStyle = {
+  flex: 1,
+  minWidth: 140,
+  fontSize: 13.5,
+  fontFamily: 'inherit',
+  padding: '9px 12px',
+  borderRadius: 12,
+  border: '1px solid var(--border)',
+  background: 'var(--inputbg)',
+  color: 'var(--text)',
+  outline: 'none',
+} as const
+
+const tagChip = {
+  fontSize: 12.5,
+  fontWeight: 600,
+  padding: '5px 11px',
+  borderRadius: 999,
+  border: 'none',
+  background: 'var(--chipbg)',
+  color: 'var(--chipcol)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+} as const
+
+const clearBtn = {
+  fontSize: 12.5,
+  fontWeight: 700,
+  color: 'var(--accent)',
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  padding: '0 0 12px',
+  fontFamily: 'inherit',
+} as const
+
+const loadMoreBtn = {
+  cursor: 'pointer',
+  border: '1px solid var(--border)',
+  borderRadius: 13,
+  padding: '10px 18px',
+  fontFamily: 'inherit',
+  fontSize: 13.5,
+  fontWeight: 700,
+  background: 'var(--surface2)',
+  color: 'var(--text)',
+} as const
