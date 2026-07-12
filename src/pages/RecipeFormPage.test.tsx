@@ -1,0 +1,128 @@
+import { describe, expect, it, vi } from 'vitest'
+import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import { server } from '@/test/msw/server'
+import { renderRoute } from '@/test/utils'
+import type { CreateRecipeRequest, RecipeResponse } from '@/api/types'
+
+function makeRecipeResponse(overrides: Partial<RecipeResponse> = {}): RecipeResponse {
+  return {
+    id: 'new-recipe-42',
+    title: 'Saved',
+    description: 'desc',
+    prepTimeMinutes: 10,
+    cookTimeMinutes: 20,
+    totalTimeMinutes: 30,
+    servings: 2,
+    difficulty: 'Easy',
+    cuisineType: null,
+    caloriesPerServing: null,
+    imageUrl: null,
+    visibility: 'Public',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: null,
+    ingredients: [],
+    steps: [],
+    tags: [],
+    createdByUserId: '11111111-1111-1111-1111-111111111111',
+    ...overrides,
+  }
+}
+
+/** Fill the minimal set of valid fields (one ingredient + one default step). */
+async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(await screen.findByLabelText('Title'), 'Miso Ramen')
+  await user.type(screen.getByLabelText('Description'), 'Warming bowl')
+  await user.type(screen.getByLabelText('Prep (min)'), '15')
+  await user.type(screen.getByLabelText('Cook (min)'), '25')
+  await user.type(screen.getByLabelText('Servings'), '2')
+  await user.type(screen.getByLabelText('Ingredient 1 quantity'), '1.5')
+  await user.type(screen.getByLabelText('Ingredient 1 unit'), 'cup')
+  await user.type(screen.getByLabelText('Ingredient 1 name'), 'Miso paste')
+  await user.type(screen.getByLabelText('Step 1 instruction'), 'Simmer the broth')
+  await user.type(screen.getByLabelText('Step 1 timer in seconds'), '90')
+  await user.type(screen.getByLabelText('Tags'), 'Vegan, QUICK, vegan')
+}
+
+describe('RecipeFormPage (create)', () => {
+  it('posts a normalized CreateRecipeRequest and navigates to the new detail page', async () => {
+    const user = userEvent.setup()
+    let captured: CreateRecipeRequest | null = null
+    server.use(
+      http.post('*/recipes', async ({ request }) => {
+        captured = (await request.json()) as CreateRecipeRequest
+        return HttpResponse.json(makeRecipeResponse(), { status: 201 })
+      }),
+    )
+
+    const router = renderRoute('/recipes/new')
+    await fillValidForm(user)
+    await user.click(screen.getByRole('button', { name: /publish recipe/i }))
+
+    await vi.waitFor(() => expect(captured).not.toBeNull())
+    const body = captured as unknown as CreateRecipeRequest
+
+    // stepNumber auto-assigned as index + 1 (never a form field).
+    expect(body.steps).toEqual([
+      { stepNumber: 1, description: 'Simmer the broth', timerSeconds: 90 },
+    ])
+    // Tags trimmed + lowercased + de-duped.
+    expect(body.tags).toEqual(['vegan', 'quick'])
+    // Numeric coercion.
+    expect(body.prepTimeMinutes).toBe(15)
+    expect(body.servings).toBe(2)
+    expect(body.ingredients).toEqual([{ name: 'Miso paste', quantity: 1.5, unit: 'cup' }])
+    // Blank optionals become null, not '' or 0.
+    expect(body.caloriesPerServing).toBeNull()
+    expect(body.cuisineType).toBeNull()
+    expect(body.imageUrl).toBeNull()
+
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/recipes/new-recipe-42'))
+  })
+
+  it('blocks submission client-side (zod) and never calls the API', async () => {
+    const user = userEvent.setup()
+    const postSpy = vi.fn()
+    server.use(
+      http.post('*/recipes', () => {
+        postSpy()
+        return HttpResponse.json(makeRecipeResponse(), { status: 201 })
+      }),
+    )
+
+    renderRoute('/recipes/new')
+    await user.click(await screen.findByRole('button', { name: /publish recipe/i }))
+
+    expect(await screen.findByText('Title is required')).toBeInTheDocument()
+    expect(screen.getByText('Description is required')).toBeInTheDocument()
+    expect(postSpy).not.toHaveBeenCalled()
+  })
+
+  it('maps a server 400 ValidationProblem (PascalCase paths) onto the fields', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post('*/recipes', () =>
+        HttpResponse.json(
+          {
+            title: 'Validation failed',
+            status: 400,
+            errors: {
+              Title: ['Server says the title is off'],
+              'Ingredients[0].Name': ['Unknown ingredient'],
+            },
+          },
+          { status: 400 },
+        ),
+      ),
+    )
+
+    renderRoute('/recipes/new')
+    await fillValidForm(user)
+    await user.click(screen.getByRole('button', { name: /publish recipe/i }))
+
+    // "Title" → title field; "Ingredients[0].Name" → ingredients.0.name field.
+    expect(await screen.findByText('Server says the title is off')).toBeInTheDocument()
+    expect(screen.getByText('Unknown ingredient')).toBeInTheDocument()
+  })
+})

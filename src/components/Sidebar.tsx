@@ -47,6 +47,31 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
         </button>
       </div>
 
+      {/* New-recipe entry point (lane B, checkpoint 05 — sanctioned additive edit) */}
+      <button
+        onClick={() => navigate('/recipes/new')}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          width: '100%',
+          cursor: 'pointer',
+          border: 'none',
+          borderRadius: 13,
+          padding: '11px 12px',
+          marginBottom: 14,
+          fontFamily: 'inherit',
+          fontSize: 14.5,
+          fontWeight: 700,
+          textAlign: 'left',
+          background: 'var(--accent)',
+          color: 'var(--accent-ink)',
+        }}
+      >
+        <span style={{ fontSize: 18, width: 20, textAlign: 'center' }}>＋</span>
+        New recipe
+      </button>
+
       {/* Nav — drives the router; active state derives from the URL */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {NAV_ITEMS.map((item) => {
