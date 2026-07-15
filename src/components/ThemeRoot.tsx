@@ -16,7 +16,7 @@ export interface ThemeContextValue {
  * which render outside the tabbed AppShell.
  */
 export default function ThemeRoot() {
-  const [mode, setMode] = useState<Mode>('dark')
+  const [mode, setMode] = useState<Mode>('light')
   const toggleMode = () => setMode((m) => (m === 'light' ? 'dark' : 'light'))
 
   const context: ThemeContextValue = { mode, setMode, toggleMode }
