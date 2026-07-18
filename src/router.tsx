@@ -4,6 +4,7 @@ import AppShell from './components/AppShell'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ChatPage from './pages/ChatPage'
+import FeedPage from './pages/FeedPage'
 import BrowsePage from './pages/BrowsePage'
 import ProfilePage from './pages/ProfilePage'
 import RecipeFormPage from './pages/RecipeFormPage'
@@ -27,6 +28,10 @@ export const routes: RouteObject[] = [
       {
         element: <AppShell />,
         children: [
+          // social-feed cp05 — SANCTIONED ADDITIVE EDIT: the social-feed plan
+          // adds routes additively ("routes are additive — the frozen-router
+          // discipline holds"); /feed is cp05's, /users/:id arrives with cp06.
+          { path: '/feed', element: <FeedPage /> },
           { path: '/chat', element: <ChatPage /> },
           { path: '/library', element: <BrowsePage /> },
           { path: '/profile', element: <ProfilePage /> },

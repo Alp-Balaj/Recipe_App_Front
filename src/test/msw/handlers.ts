@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type { AuthResponse, LoginRequest, RecipeListResponse, RegisterRequest } from '@/api/types'
+import type { FeedListResponse } from '@/api/social'
 
 // Wildcard-prefixed paths so these match the real fetched URL regardless of
 // origin or the /api proxy prefix (fetch('/api/auth/login') → ".../auth/login").
@@ -51,5 +52,12 @@ export const handlers = [
   // path only — the detail `/recipes/:id` handler is separate.
   http.get('*/recipes', () =>
     HttpResponse.json({ items: [], nextCursor: null } satisfies RecipeListResponse),
+  ),
+
+  // Default feed: empty discover. Keeps any test that lands on /feed (the
+  // FeedPage, social-feed cp05) off the real network; feed-specific tests
+  // override with `server.use(...)`.
+  http.get('*/feed', () =>
+    HttpResponse.json({ items: [], nextCursor: null, source: 'discover' } satisfies FeedListResponse),
   ),
 ]

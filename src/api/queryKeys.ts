@@ -36,4 +36,14 @@ export const queryKeys = {
     /** The user's continuous chat thread (checkpoint 07/08). */
     messages: () => ['chat', 'messages'] as const,
   },
+
+  // social-feed cp05 — SANCTIONED ADDITIVE EDIT to this frozen module (the
+  // factory is the one place keys may live, per its own header). Nothing
+  // above this comment changed.
+  feed: {
+    /** Everything feed-related — the optimistic social mutations patch under this. */
+    all: ['feed'] as const,
+    /** The one keyset-paged GET /feed list (cp05, useInfiniteQuery). */
+    list: () => ['feed', 'list'] as const,
+  },
 } as const
