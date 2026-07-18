@@ -1,9 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge } from '@/components/ui/badge'
+import RecipeCard from '@/components/RecipeCard'
+import StateBlock from '@/components/ui/StateBlock'
 import { useRecipeList, type BrowseFilters } from '@/hooks/useRecipeList'
 import type { Difficulty, RecipeResponse } from '@/api/types'
-import { formatMinutes, gradientFor } from './recipeVisuals'
 
 const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
 
@@ -111,7 +111,7 @@ export default function BrowsePage() {
       ) : (
         <>
           {recipes.map((r) => (
-            <RecipeCard key={r.id} recipe={r} onOpen={() => navigate(`/recipes/${r.id}`)} />
+            <RecipeCard key={r.id} recipe={r} variant="browse" onOpen={() => navigate(`/recipes/${r.id}`)} />
           ))}
 
           <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0 12px' }}>
@@ -228,115 +228,25 @@ function Filters({
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <span
+    <button
+      type="button"
       onClick={onClick}
-      role="button"
       style={{
         flexShrink: 0,
         fontSize: 13,
         fontWeight: 600,
         padding: '7px 15px',
         borderRadius: 999,
+        border: 'none',
         background: active ? 'var(--accent)' : 'var(--surface2)',
         color: active ? 'var(--accent-ink)' : 'var(--muted)',
         cursor: 'pointer',
         userSelect: 'none',
+        fontFamily: 'inherit',
       }}
     >
       {children}
-    </span>
-  )
-}
-
-// ── Card ────────────────────────────────────────────────────────────────────
-
-function RecipeCard({ recipe, onOpen }: { recipe: RecipeResponse; onOpen: () => void }) {
-  const banner = recipe.imageUrl
-    ? { backgroundImage: `url(${recipe.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : { background: gradientFor(recipe.id || recipe.title) }
-
-  return (
-    <div
-      onClick={onOpen}
-      style={{
-        cursor: 'pointer',
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        boxShadow: 'var(--cardsh)',
-        borderRadius: 22,
-        overflow: 'hidden',
-        marginBottom: 16,
-      }}
-    >
-      <div style={{ height: 104, ...banner }} />
-
-      <div style={{ padding: '15px 16px' }}>
-        <div style={{ fontSize: 18, fontWeight: 800 }}>{recipe.title}</div>
-
-        <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.45, margin: '4px 0 12px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {recipe.description}
-        </div>
-
-        {/* Stats — time, calories-only (no macros, no saved count). */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 14,
-            fontSize: 12.5,
-            color: 'var(--muted)',
-            paddingBottom: 12,
-            borderBottom: '1px solid var(--hair)',
-            marginBottom: 12,
-          }}
-        >
-          <span>◷ {formatMinutes(recipe.totalTimeMinutes)}</span>
-          {recipe.caloriesPerServing != null && <span>♨ {recipe.caloriesPerServing} kcal</span>}
-          {recipe.cuisineType && <span>{recipe.cuisineType}</span>}
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', minWidth: 0 }}>
-            {recipe.tags.slice(0, 3).map((t) => (
-              <Badge
-                key={t}
-                variant="outline"
-                className="text-[11.5px] font-normal"
-                style={{ background: 'var(--tagbg)', borderColor: 'var(--tagborder)', color: 'var(--tagcol)' }}
-              >
-                {t}
-              </Badge>
-            ))}
-          </div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>View ›</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Shared state block ──────────────────────────────────────────────────────
-
-function StateBlock({
-  title,
-  body,
-  action,
-}: {
-  title: string
-  body: string
-  action?: { label: string; onClick: () => void }
-}) {
-  return (
-    <div style={{ padding: '40px 4px', textAlign: 'center' }}>
-      <div style={{ fontSize: 16, fontWeight: 800 }}>{title}</div>
-      <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5, margin: '6px auto 16px', maxWidth: 320 }}>
-        {body}
-      </div>
-      {action && (
-        <button onClick={action.onClick} style={loadMoreBtn}>
-          {action.label}
-        </button>
-      )}
-    </div>
+    </button>
   )
 }
 

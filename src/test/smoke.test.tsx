@@ -81,6 +81,9 @@ describe('router shell (authenticated)', () => {
   it('flips data-mode when the profile theme toggle is used', async () => {
     renderRoute('/profile')
     const shell = document.querySelector('.app-shell')
+    // The app defaults to light on open (commit 25dc152).
+    expect(shell).toHaveAttribute('data-mode', 'light')
+    await userEvent.click(await screen.findByText('☾ Dark'))
     expect(shell).toHaveAttribute('data-mode', 'dark')
     await userEvent.click(await screen.findByText('☀ Light'))
     expect(shell).toHaveAttribute('data-mode', 'light')

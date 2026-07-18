@@ -1,7 +1,6 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { apiFetch } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import type { Difficulty, RecipeListResponse } from '@/api/types'
+import type { Difficulty } from '@/api/types'
+import { useInfiniteRecipes } from './useInfiniteRecipes'
 
 /** Browse filters the UI drives; a subset of RecipeListQuery (no cursor/limit). */
 export interface BrowseFilters {
@@ -40,20 +39,13 @@ export function normalizeFilters(filters: BrowseFilters): BrowseFilters {
  */
 export function useRecipeList(filters: BrowseFilters) {
   const normalized = normalizeFilters(filters)
-  return useInfiniteQuery({
+  return useInfiniteRecipes({
     queryKey: queryKeys.recipes.list(normalized),
-    queryFn: ({ pageParam, signal }) =>
-      apiFetch<RecipeListResponse>('/recipes', {
-        query: {
-          cuisine: normalized.cuisine,
-          difficulty: normalized.difficulty,
-          tags: normalized.tags,
-          cursor: pageParam,
-          limit: BROWSE_PAGE_SIZE,
-        },
-        signal,
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    pageSize: BROWSE_PAGE_SIZE,
+    query: {
+      cuisine: normalized.cuisine,
+      difficulty: normalized.difficulty,
+      tags: normalized.tags,
+    },
   })
 }

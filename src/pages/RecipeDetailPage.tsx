@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useRecipe, isNotFound } from '@/hooks/useRecipe'
 import type { RecipeResponse, RecipeStep } from '@/api/types'
+import StateBlock from '@/components/ui/StateBlock'
+import Modal from '@/components/ui/Modal'
 import {
   formatMinutes,
   formatQuantity,
@@ -12,52 +14,6 @@ import {
   gradientFor,
   visibilityLabel,
 } from './recipeVisuals'
-
-const PAGE_STYLE = {
-  position: 'absolute',
-  inset: 0,
-  bottom: 'var(--nav-h, 74px)',
-  overflowY: 'auto',
-  padding: '54px 18px 16px',
-} as const
-
-/** Shared shell for the loading / not-found / error placeholder states. */
-function DetailMessage({
-  title,
-  body,
-  action,
-}: {
-  title: string
-  body: string
-  action?: { label: string; onClick: () => void }
-}) {
-  return (
-    <div className="scroll" style={PAGE_STYLE}>
-      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em' }}>{title}</div>
-      <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5, margin: '6px 0 18px' }}>
-        {body}
-      </div>
-      {action && (
-        <button
-          onClick={action.onClick}
-          style={{
-            cursor: 'pointer',
-            border: 'none',
-            borderRadius: 13,
-            padding: '11px 16px',
-            fontFamily: 'inherit',
-            fontSize: 14,
-            fontWeight: 700,
-            background: 'var(--accent)',
-            color: 'var(--accent-ink)',
-          }}
-        >
-          {action.label}
-        </button>
-      )}
-    </div>
-  )
-}
 
 export default function RecipeDetailPage() {
   const { id } = useParams()
@@ -73,12 +29,13 @@ export default function RecipeDetailPage() {
   }
 
   if (isLoading) {
-    return <DetailMessage title="Loading recipe…" body="Fetching the details." />
+    return <StateBlock variant="page" title="Loading recipe…" body="Fetching the details." />
   }
 
   if (isError && isNotFound(error)) {
     return (
-      <DetailMessage
+      <StateBlock
+        variant="page"
         title="Recipe not found"
         body="This recipe doesn't exist, was removed, or isn't shared with you."
         action={{ label: 'Back to library', onClick: () => navigate('/library', { replace: true }) }}
@@ -88,7 +45,8 @@ export default function RecipeDetailPage() {
 
   if (isError || !recipe) {
     return (
-      <DetailMessage
+      <StateBlock
+        variant="page"
         title="Couldn't load this recipe"
         body="Something went wrong reaching the kitchen. Check your connection and try again."
         action={{ label: 'Try again', onClick: () => refetch() }}
@@ -333,19 +291,7 @@ function CookMode({ recipe, onExit }: { recipe: RecipeResponse; onExit: () => vo
   const last = i === steps.length - 1
 
   return (
-    <div
-      role="dialog"
-      aria-label="Step-by-step cooking"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 20,
-        background: 'var(--bg)',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '54px 22px 22px',
-      }}
-    >
+    <Modal variant="full" label="Step-by-step cooking" onClose={onExit}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 12.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700 }}>
           Step {i + 1} of {steps.length}
@@ -384,7 +330,7 @@ function CookMode({ recipe, onExit }: { recipe: RecipeResponse; onExit: () => vo
           {last ? 'Done ✓' : 'Next →'}
         </Button>
       </div>
-    </div>
+    </Modal>
   )
 }
 

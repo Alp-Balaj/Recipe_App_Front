@@ -7,6 +7,7 @@ import type { GetMessagesResponse, SendMessageResponse } from '@/api/chat'
 import type { ThemeContextValue } from '@/components/ThemeRoot'
 import { useChatApi } from '@/components/chat/ChatApiContext'
 import MessageBubble, { TypingBubble } from '@/components/chat/MessageBubble'
+import StateBlock from '@/components/ui/StateBlock'
 
 const PAGE_LIMIT = 20
 
@@ -152,9 +153,7 @@ export default function ChatPage() {
           </div>
         )}
 
-        {history.isLoading && (
-          <div style={{ color: 'var(--muted)', fontSize: 14, textAlign: 'center', padding: 20 }}>Loading…</div>
-        )}
+        {history.isLoading && <StateBlock title="Loading…" />}
 
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} />

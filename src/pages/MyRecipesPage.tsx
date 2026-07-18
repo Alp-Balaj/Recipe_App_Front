@@ -7,17 +7,25 @@
 // client-side filtering proves too coarse at scale, the flagged ?mine=true
 // backend micro-addition is the sanctioned next step (see the plan).
 //
-// Edit reuses the shared RecipeForm in an overlay (there is no /recipes/:id/edit
+// Edit reuses the shared RecipeForm in a Modal (there is no /recipes/:id/edit
 // route — the router is frozen), submitting PUT /recipes/{id}; 403 and 404 are
 // surfaced distinctly. Delete asks for confirmation, then soft-deletes.
+//
+// Consolidation (fe · consolidation): the recipe card, the loading/error/empty
+// blocks, the pagination hook, and the edit/delete overlays are now the shared
+// primitives (RecipeCard / StateBlock / useInfiniteRecipes / Modal) rather than
+// page-local copies.
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { apiFetch, ApiError } from '@/api/client'
+import { ApiError } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import type { RecipeListResponse, RecipeResponse } from '@/api/types'
+import type { RecipeResponse } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { useUpdateRecipe, useDeleteRecipe } from '@/hooks/useRecipeMutations'
+import { useInfiniteRecipes } from '@/hooks/useInfiniteRecipes'
+import RecipeCard from '@/components/RecipeCard'
+import StateBlock from '@/components/ui/StateBlock'
+import Modal from '@/components/ui/Modal'
 import { RecipeForm, recipeResponseToFormValues } from './RecipeFormPage.shared'
 
 const PAGE_LIMIT = 50
@@ -44,16 +52,10 @@ export default function MyRecipesPage() {
   const updateRecipe = useUpdateRecipe()
   const deleteRecipe = useDeleteRecipe()
 
-  const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useInfiniteQuery({
-      queryKey: queryKeys.recipes.mine(),
-      queryFn: ({ pageParam }) =>
-        apiFetch<RecipeListResponse>('/recipes', {
-          query: { cursor: pageParam ?? undefined, limit: PAGE_LIMIT },
-        }),
-      initialPageParam: undefined as string | undefined,
-      getNextPageParam: (last) => last.nextCursor ?? undefined,
-    })
+  const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteRecipes({
+    queryKey: queryKeys.recipes.mine(),
+    pageSize: PAGE_LIMIT,
+  })
 
   const mine = useMemo(() => {
     const all = (data?.pages ?? []).flatMap((p) => p.items)
@@ -138,30 +140,24 @@ export default function MyRecipesPage() {
         </div>
       )}
 
-      {isLoading && <StateNote>Loading your recipes…</StateNote>}
+      {isLoading && <StateBlock title="Loading your recipes…" />}
 
       {isError && !isLoading && (
-        <StateNote>
-          Couldn't load your recipes.{' '}
-          <button onClick={() => refetch()} style={linkButtonStyle}>
-            Retry
-          </button>
-        </StateNote>
+        <StateBlock title="Couldn't load your recipes." action={{ label: 'Retry', onClick: () => refetch() }} />
       )}
 
       {!isLoading && !isError && mine.length === 0 && (
-        <StateNote>
-          You haven't posted any recipes yet.{' '}
-          <button onClick={() => navigate('/recipes/new')} style={linkButtonStyle}>
-            Create your first
-          </button>
-        </StateNote>
+        <StateBlock
+          title="You haven't posted any recipes yet."
+          action={{ label: 'Create your first', onClick: () => navigate('/recipes/new') }}
+        />
       )}
 
       {mine.map((r) => (
-        <MyRecipeCard
+        <RecipeCard
           key={r.id}
           recipe={r}
+          variant="mine"
           onOpen={() => navigate(`/recipes/${r.id}`)}
           onEdit={() => {
             setBanner(null)
@@ -198,10 +194,8 @@ export default function MyRecipesPage() {
 
       {/* Edit overlay */}
       {editing && (
-        <Overlay onBackdrop={() => setEditing(null)}>
-          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 16 }}>
-            Edit recipe
-          </div>
+        <Modal variant="sheet" label="Edit recipe" onClose={() => setEditing(null)}>
+          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 16 }}>Edit recipe</div>
           <RecipeForm
             defaultValues={recipeResponseToFormValues(editing)}
             submitLabel="Save changes"
@@ -214,12 +208,12 @@ export default function MyRecipesPage() {
             onCancel={() => setEditing(null)}
             onError={handleEditError}
           />
-        </Overlay>
+        </Modal>
       )}
 
       {/* Delete confirmation */}
       {confirmDelete && (
-        <Overlay onBackdrop={() => setConfirmDelete(null)} center>
+        <Modal variant="center" label="Delete recipe" onClose={() => setConfirmDelete(null)}>
           <div
             style={{
               background: 'var(--surface)',
@@ -271,204 +265,8 @@ export default function MyRecipesPage() {
               </button>
             </div>
           </div>
-        </Overlay>
+        </Modal>
       )}
-    </div>
-  )
-}
-
-// ── Pieces ──────────────────────────────────────────────────────────────────
-
-const linkButtonStyle: React.CSSProperties = {
-  border: 'none',
-  background: 'none',
-  padding: 0,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  fontSize: 'inherit',
-  fontWeight: 700,
-  color: 'var(--accent)',
-}
-
-function StateNote({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        boxShadow: 'var(--cardsh)',
-        borderRadius: 20,
-        padding: '22px 18px',
-        fontSize: 14.5,
-        color: 'var(--muted)',
-        lineHeight: 1.5,
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function MyRecipeCard({
-  recipe,
-  onOpen,
-  onEdit,
-  onDelete,
-}: {
-  recipe: RecipeResponse
-  onOpen: () => void
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  return (
-    <div
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        boxShadow: 'var(--cardsh)',
-        borderRadius: 20,
-        overflow: 'hidden',
-        marginBottom: 16,
-      }}
-    >
-      <div
-        onClick={onOpen}
-        role="button"
-        style={{ cursor: 'pointer' }}
-      >
-        {recipe.imageUrl ? (
-          <img
-            src={recipe.imageUrl}
-            alt=""
-            style={{ display: 'block', width: '100%', height: 104, objectFit: 'cover' }}
-          />
-        ) : (
-          <div
-            style={{
-              height: 104,
-              background: 'linear-gradient(135deg, var(--surface2), var(--chipbg))',
-            }}
-          />
-        )}
-
-        <div style={{ padding: '14px 16px 6px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>{recipe.title}</div>
-            <span
-              style={{
-                flexShrink: 0,
-                fontSize: 11,
-                fontWeight: 700,
-                padding: '3px 9px',
-                borderRadius: 999,
-                background: 'var(--chipbg)',
-                color: 'var(--chipcol)',
-              }}
-            >
-              {recipe.visibility === 'FriendsOnly' ? 'Friends' : recipe.visibility}
-            </span>
-          </div>
-
-          <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.45, margin: '4px 0 12px' }}>
-            {recipe.description}
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              gap: 14,
-              fontSize: 12.5,
-              color: 'var(--muted)',
-              paddingBottom: 12,
-              borderBottom: '1px solid var(--hair)',
-            }}
-          >
-            <span>◷ {recipe.totalTimeMinutes} min</span>
-            {recipe.caloriesPerServing != null && <span>♨ {recipe.caloriesPerServing} kcal</span>}
-            <span>▤ {recipe.ingredients.length}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Owner affordances — this page only ever shows the caller's recipes. */}
-      <div style={{ display: 'flex', gap: 8, padding: '10px 16px 14px' }}>
-        <button
-          onClick={onEdit}
-          style={{
-            cursor: 'pointer',
-            border: '1px solid var(--border)',
-            borderRadius: 11,
-            padding: '8px 14px',
-            fontFamily: 'inherit',
-            fontSize: 13,
-            fontWeight: 700,
-            background: 'var(--surface2)',
-            color: 'var(--text)',
-          }}
-        >
-          Edit
-        </button>
-        <button
-          onClick={onDelete}
-          style={{
-            cursor: 'pointer',
-            border: '1px solid var(--border)',
-            borderRadius: 11,
-            padding: '8px 14px',
-            fontFamily: 'inherit',
-            fontSize: 13,
-            fontWeight: 700,
-            background: 'var(--surface2)',
-            color: ERROR_COLOR,
-          }}
-        >
-          Delete
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function Overlay({
-  children,
-  onBackdrop,
-  center = false,
-}: {
-  children: React.ReactNode
-  onBackdrop: () => void
-  center?: boolean
-}) {
-  return (
-    <div
-      onClick={onBackdrop}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'var(--backdrop)',
-        display: 'flex',
-        alignItems: center ? 'center' : 'flex-start',
-        justifyContent: 'center',
-        padding: center ? 18 : '0',
-        zIndex: 10,
-        overflowY: 'auto',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="scroll"
-        style={
-          center
-            ? { width: '100%', maxWidth: 380 }
-            : {
-                width: '100%',
-                minHeight: '100%',
-                background: 'var(--bg)',
-                padding: '46px 18px 24px',
-              }
-        }
-      >
-        {children}
-      </div>
     </div>
   )
 }

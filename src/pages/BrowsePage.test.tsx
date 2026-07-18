@@ -113,4 +113,41 @@ describe('BrowsePage', () => {
     await userEvent.click(await screen.findByText('Tap me'))
     await waitFor(() => expect(router.state.location.pathname).toBe('/recipes/go-here'))
   })
+
+  // ── Accessibility (fe · consolidation) ────────────────────────────────────
+
+  it('activates a focused recipe card with the Enter key', async () => {
+    server.use(listHandler(() => HttpResponse.json({ items: [makeRecipe({ id: 'kbd-enter', title: 'Enter recipe' })], nextCursor: null })))
+    const router = renderRoute('/library')
+    const card = await screen.findByRole('link', { name: 'Enter recipe' })
+    card.focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/recipes/kbd-enter'))
+  })
+
+  it('activates a focused recipe card with the Space key', async () => {
+    server.use(listHandler(() => HttpResponse.json({ items: [makeRecipe({ id: 'kbd-space', title: 'Space recipe' })], nextCursor: null })))
+    const router = renderRoute('/library')
+    const card = await screen.findByRole('link', { name: 'Space recipe' })
+    card.focus()
+    await userEvent.keyboard(' ')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/recipes/kbd-space'))
+  })
+
+  it('applies a difficulty filter when the chip is activated by keyboard', async () => {
+    const urls: string[] = []
+    server.use(
+      listHandler((url) => {
+        urls.push(url.pathname + url.search)
+        return HttpResponse.json({ items: [makeRecipe({ title: 'Kbd filtered' })], nextCursor: null })
+      }),
+    )
+    renderRoute('/library')
+    expect(await screen.findByText('Kbd filtered')).toBeInTheDocument()
+
+    const chip = screen.getByRole('button', { name: 'Medium' })
+    chip.focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(urls.some((u) => u.includes('difficulty=Medium'))).toBe(true))
+  })
 })
