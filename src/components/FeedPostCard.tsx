@@ -7,29 +7,47 @@
 // Presentational: like/save state and counts come from the cached feed
 // envelope via props; the page wires useSocialMutations. Share is owned here
 // (pure browser API — Web Share with clipboard fallback + a transient flash).
-// The comment count is display-only until cp06's comment sheet.
+// cp06: the comment affordance is live — it opens the comment sheet (mobile
+// bottom sheet) or an inline panel under the action row (desktop).
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { FeedItemResponse } from '@/api/social'
+import Avatar from '@/components/Avatar'
+import { CommentSheet, CommentsPanel } from '@/components/CommentsPanel'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { resolveImageUrl } from '@/lib/images'
 import { shareLink } from '@/lib/share'
+import { timeAgo } from '@/lib/time'
 import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 
 interface FeedPostCardProps {
   item: FeedItemResponse
   /** Open the recipe detail (/recipes/:id). */
   onOpen: () => void
-  /** Open the author's profile (/users/:id — a stub link until cp06). */
+  /** Open the author's profile (/users/:id). */
   onOpenAuthor: () => void
   /** Toggle like to the given desired state (optimistic upstream). */
   onToggleLike: (next: boolean) => void
   /** Toggle save to the given desired state (optimistic upstream). */
   onToggleSave: (next: boolean) => void
+  /** Whether this card's comments are open (page-level: one card at a time). */
+  commentsOpen: boolean
+  /** Toggle this card's comments open/closed. */
+  onToggleComments: () => void
 }
 
-export default function FeedPostCard({ item, onOpen, onOpenAuthor, onToggleLike, onToggleSave }: FeedPostCardProps) {
+export default function FeedPostCard({
+  item,
+  onOpen,
+  onOpenAuthor,
+  onToggleLike,
+  onToggleSave,
+  commentsOpen,
+  onToggleComments,
+}: FeedPostCardProps) {
   const { recipe, author, likeCount, commentCount, likedByMe, savedByMe } = item
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   return (
     <article
@@ -98,9 +116,14 @@ export default function FeedPostCard({ item, onOpen, onOpenAuthor, onToggleLike,
           <span style={{ fontSize: 17 }}>{likedByMe ? '♥' : '♡'}</span> {likeCount}
         </button>
 
-        <span aria-label={`${commentCount} comments`} style={{ ...actionBtn, cursor: 'default' }}>
+        <button
+          onClick={onToggleComments}
+          aria-label={`${commentCount} comments`}
+          aria-expanded={commentsOpen}
+          style={{ ...actionBtn, color: commentsOpen ? 'var(--accent)' : 'var(--muted)' }}
+        >
           <span style={{ fontSize: 16 }}>◌</span> {commentCount}
-        </span>
+        </button>
 
         <ShareButton title={recipe.title} recipeId={recipe.id} />
 
@@ -148,40 +171,26 @@ export default function FeedPostCard({ item, onOpen, onOpenAuthor, onToggleLike,
           {recipe.description}
         </div>
       </div>
+
+      {/* Comments — desktop: inline panel under the card body; mobile: bottom
+          sheet (the light-shot testimonial rows live in CommentsPanel). */}
+      {commentsOpen &&
+        (isDesktop ? (
+          <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px 14px' }}>
+            <CommentsPanel recipeId={recipe.id} recipeAuthorId={recipe.createdByUserId} />
+          </div>
+        ) : (
+          <CommentSheet
+            recipeId={recipe.id}
+            recipeAuthorId={recipe.createdByUserId}
+            onClose={onToggleComments}
+          />
+        ))}
     </article>
   )
 }
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
-
-function Avatar({ username, profileImageUrl, seed }: { username: string; profileImageUrl?: string | null; seed: string }) {
-  return (
-    <div
-      aria-hidden
-      style={{
-        flexShrink: 0,
-        width: 32,
-        height: 32,
-        borderRadius: '50%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 13,
-        fontWeight: 800,
-        color: '#fff',
-        ...(profileImageUrl
-          ? {
-              backgroundImage: `url(${resolveImageUrl(profileImageUrl)})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-            }
-          : { background: gradientFor(seed || username) }),
-      }}
-    >
-      {profileImageUrl ? null : username.slice(0, 1).toUpperCase()}
-    </div>
-  )
-}
 
 function ShareButton({ title, recipeId }: { title: string; recipeId: string }) {
   const [flash, setFlash] = useState<'idle' | 'copied' | 'shared' | 'failed'>('idle')
@@ -204,21 +213,6 @@ function ShareButton({ title, recipeId }: { title: string; recipeId: string }) {
       <span style={{ fontSize: 15 }}>↗</span> {label}
     </button>
   )
-}
-
-/** "just now" / "12m ago" / "5h ago" / "3d ago" / "12 Jul". */
-function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime()
-  if (!Number.isFinite(then)) return ''
-  const secs = Math.max(0, Math.floor((Date.now() - then) / 1000))
-  if (secs < 60) return 'just now'
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return new Date(then).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
 // ── Styles ──────────────────────────────────────────────────────────────────

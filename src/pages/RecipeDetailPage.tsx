@@ -4,9 +4,13 @@ import { useAuth } from '@/auth/AuthContext'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useRecipe, isNotFound } from '@/hooks/useRecipe'
+import { useSocialEnvelope } from '@/hooks/useSocialEnvelope'
+import { useSocialMutations } from '@/hooks/useSocialMutations'
 import type { RecipeResponse, RecipeStep } from '@/api/types'
+import { CommentsPanel } from '@/components/CommentsPanel'
 import StateBlock from '@/components/ui/StateBlock'
 import Modal from '@/components/ui/Modal'
+import { resolveImageUrl } from '@/lib/images'
 import {
   formatMinutes,
   formatQuantity,
@@ -21,6 +25,11 @@ export default function RecipeDetailPage() {
   const { user } = useAuth()
   const { data: recipe, isLoading, isError, error, refetch } = useRecipe(id)
   const [cooking, setCooking] = useState(false)
+  // cp06: like/save via the decision-I3 envelope seam (feed-cache hits when
+  // the reader arrived from /feed; unknown otherwise — toggles stay safe
+  // because the backend endpoints are idempotent).
+  const envelope = useSocialEnvelope(id ?? '')
+  const { toggleLike, toggleSave } = useSocialMutations()
 
   const close = () => {
     // Back to wherever we came from; deep links with no in-app history → library.
@@ -55,8 +64,9 @@ export default function RecipeDetailPage() {
   }
 
   const isOwn = !!user && recipe.createdByUserId === user.userId
+  // cp06: cp04 uploads are RELATIVE urls — route them through the /api proxy.
   const header = recipe.imageUrl
-    ? { backgroundImage: `url(${recipe.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    ? { backgroundImage: `url(${resolveImageUrl(recipe.imageUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
     : { background: gradientFor(recipe.id || recipe.title) }
 
   return (
@@ -80,14 +90,41 @@ export default function RecipeDetailPage() {
           >
             ←
           </button>
-          {/* Saved recipes are phase 5 — the heart is disabled with a tooltip. */}
+          {/* cp06: the header hearts go live — like + save through the shared
+              social hook (state from the envelope seam; counts show when known). */}
           <button
-            disabled
-            title="Saving recipes is coming soon"
-            aria-label="Save recipe (coming soon)"
-            style={{ ...roundIconBtn(17), right: 18, left: 'auto', opacity: 0.45, cursor: 'not-allowed' }}
+            onClick={() => toggleLike.mutate({ recipeId: recipe.id, next: !envelope.likedByMe })}
+            aria-pressed={envelope.likedByMe === true}
+            aria-label={envelope.likedByMe ? 'Unlike' : 'Like'}
+            style={{
+              ...roundIconBtn(17),
+              right: 64,
+              left: 'auto',
+              width: 'auto',
+              minWidth: 38,
+              padding: '0 12px',
+              gap: 6,
+              borderRadius: 999,
+              color: envelope.likedByMe ? 'var(--accent)' : '#fff',
+            }}
           >
-            ♡
+            {envelope.likedByMe ? '♥' : '♡'}
+            {envelope.likeCount !== null && (
+              <span style={{ fontSize: 12.5, fontWeight: 700 }}>{envelope.likeCount}</span>
+            )}
+          </button>
+          <button
+            onClick={() => toggleSave.mutate({ recipeId: recipe.id, next: !envelope.savedByMe })}
+            aria-pressed={envelope.savedByMe === true}
+            aria-label={envelope.savedByMe ? 'Remove from saved' : 'Save recipe'}
+            style={{
+              ...roundIconBtn(16),
+              right: 18,
+              left: 'auto',
+              color: envelope.savedByMe ? 'var(--accent)' : '#fff',
+            }}
+          >
+            {envelope.savedByMe ? '⚑' : '⚐'}
           </button>
         </div>
 
@@ -198,6 +235,13 @@ export default function RecipeDetailPage() {
               </ol>
             </>
           )}
+
+          {/* Comments — cp06: the inline testimonial-row panel (both widths;
+              the feed card is where the mobile bottom sheet lives). */}
+          <SectionLabel>
+            Comments{envelope.commentCount !== null ? ` (${envelope.commentCount})` : ''}
+          </SectionLabel>
+          <CommentsPanel recipeId={recipe.id} recipeAuthorId={recipe.createdByUserId} />
         </div>
       </div>
 

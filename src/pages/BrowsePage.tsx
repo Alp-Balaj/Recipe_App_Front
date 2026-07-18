@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import RecipeCard from '@/components/RecipeCard'
+import SocialRecipeCard from '@/components/SocialRecipeCard'
 import StateBlock from '@/components/ui/StateBlock'
 import { useRecipeList, type BrowseFilters } from '@/hooks/useRecipeList'
 import type { Difficulty, RecipeResponse } from '@/api/types'
@@ -110,8 +110,9 @@ export default function BrowsePage() {
         />
       ) : (
         <>
+          {/* cp06: browse cards adopt like/save via the shared social layer. */}
           {recipes.map((r) => (
-            <RecipeCard key={r.id} recipe={r} variant="browse" onOpen={() => navigate(`/recipes/${r.id}`)} />
+            <SocialRecipeCard key={r.id} recipe={r} onOpen={() => navigate(`/recipes/${r.id}`)} />
           ))}
 
           <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0 12px' }}>

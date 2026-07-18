@@ -46,4 +46,33 @@ export const queryKeys = {
     /** The one keyset-paged GET /feed list (cp05, useInfiniteQuery). */
     list: () => ['feed', 'list'] as const,
   },
+
+  // social-feed cp06 — SANCTIONED ADDITIVE EDIT to this frozen module (same
+  // rationale as the cp05 block above). Nothing above this comment changed.
+  comments: {
+    /** Every comment list — invalidate to refetch all recipes' comments. */
+    all: ['comments'] as const,
+    /** One recipe's keyset-paged GET /recipes/{id}/comments (useInfiniteQuery). */
+    list: (recipeId: string) => ['comments', 'list', recipeId] as const,
+  },
+  users: {
+    /** Everything user-profile-related. */
+    all: ['users'] as const,
+    /** GET /users/{id} — a public profile (counts + followedByMe). */
+    profile: (id: string) => ['users', 'profile', id] as const,
+    /** GET /users/{id}/recipes — the profile grid (useInfiniteQuery). */
+    recipes: (id: string) => ['users', 'recipes', id] as const,
+  },
+  saved: {
+    /** Everything saved-list-related. */
+    all: ['saved'] as const,
+    /** GET /users/me/saved-recipes — the profile Saved tab (useInfiniteQuery). */
+    list: () => ['saved', 'list'] as const,
+  },
+  social: {
+    /** All per-recipe social envelopes (the decision-I3 seam for non-feed surfaces). */
+    envelopes: ['social', 'envelope'] as const,
+    /** One recipe's cached SocialEnvelope (seeded from feed hits; patched by mutations). */
+    envelope: (recipeId: string) => ['social', 'envelope', recipeId] as const,
+  },
 } as const

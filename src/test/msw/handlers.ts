@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type { AuthResponse, LoginRequest, RecipeListResponse, RegisterRequest } from '@/api/types'
-import type { FeedListResponse } from '@/api/social'
+import type { CommentListResponse, FeedListResponse, UserProfileResponse } from '@/api/social'
 
 // Wildcard-prefixed paths so these match the real fetched URL regardless of
 // origin or the /api proxy prefix (fetch('/api/auth/login') → ".../auth/login").
@@ -12,6 +12,23 @@ export function makeAuthResponse(username: string): AuthResponse {
     expiresAtUtc: '2999-01-01T00:00:00Z',
     userId: '11111111-1111-1111-1111-111111111111',
     username,
+  }
+}
+
+/** A UserProfileResponse fixture (social-feed cp06); override what you assert. */
+export function makeUserProfile(over: Partial<UserProfileResponse> = {}): UserProfileResponse {
+  return {
+    id: '11111111-1111-1111-1111-111111111111',
+    username: 'testuser',
+    bio: null,
+    profileImageUrl: null,
+    cookingRank: 0,
+    createdAt: '2026-07-01T00:00:00Z',
+    followerCount: 0,
+    followingCount: 0,
+    recipeCount: 0,
+    followedByMe: false,
+    ...over,
   }
 }
 
@@ -59,5 +76,28 @@ export const handlers = [
   // override with `server.use(...)`.
   http.get('*/feed', () =>
     HttpResponse.json({ items: [], nextCursor: null, source: 'discover' } satisfies FeedListResponse),
+  ),
+
+  // ── social-feed cp06 defaults — same rationale as the /recipes + /feed
+  // fallbacks above; cp06-specific tests override with `server.use(...)`. ──
+
+  // The profile Saved tab (fetched whenever it's opened). Registered before
+  // the `*/users/:id` matcher for clarity (`:id` is single-segment anyway).
+  http.get('*/users/me/saved-recipes', () =>
+    HttpResponse.json({ items: [], nextCursor: null } satisfies RecipeListResponse),
+  ),
+
+  // Public profile — ProfileTab now calls GET /users/{id} with the caller's
+  // own id on every /profile render, so a default MUST exist.
+  http.get('*/users/:id', () => HttpResponse.json(makeUserProfile())),
+
+  // The /users/:id recipe grid.
+  http.get('*/users/:id/recipes', () =>
+    HttpResponse.json({ items: [], nextCursor: null } satisfies RecipeListResponse),
+  ),
+
+  // A recipe's comment list (detail page + comment sheet).
+  http.get('*/recipes/:id/comments', () =>
+    HttpResponse.json({ items: [], nextCursor: null } satisfies CommentListResponse),
   ),
 ]

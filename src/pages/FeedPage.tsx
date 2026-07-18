@@ -6,11 +6,11 @@
 // useSocialMutations hook — counts update in the cached envelope without a
 // refetch. The cold-start "discover" source is visually labeled; empty/
 // error/loading states use the shared StateBlock. Author links navigate to
-// /users/:id (a stub until cp06 adds the profile route — the catch-all
-// currently lands them on /library).
+// /users/:id (cp06's public profile). cp06 also wires the card's comment
+// affordance — this page just tracks which card's comments are open.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import FeedPostCard from '@/components/FeedPostCard'
 import StateBlock from '@/components/ui/StateBlock'
@@ -39,6 +39,8 @@ export default function FeedPage() {
     isFetching,
   } = useFeed()
   const { toggleLike, toggleSave } = useSocialMutations()
+  // cp06: which card's comments are open (one at a time, page-owned).
+  const [openCommentsId, setOpenCommentsId] = useState<string | null>(null)
 
   // Flatten pages, de-duping by recipe id (defensive against cursor-edge overlap).
   const items = useMemo(() => {
@@ -119,6 +121,10 @@ export default function FeedPage() {
               onOpenAuthor={() => navigate(`/users/${item.author.id}`)}
               onToggleLike={(next) => toggleLike.mutate({ recipeId: item.recipe.id, next })}
               onToggleSave={(next) => toggleSave.mutate({ recipeId: item.recipe.id, next })}
+              commentsOpen={openCommentsId === item.recipe.id}
+              onToggleComments={() =>
+                setOpenCommentsId((cur) => (cur === item.recipe.id ? null : item.recipe.id))
+              }
             />
           ))}
 

@@ -13,12 +13,14 @@
 //
 // Layout is picked by `variant`: "center" (a small centered card, e.g. a
 // confirm), "sheet" (a full-width top-aligned scroll sheet, e.g. the edit
-// form), "full" (an opaque full-bleed panel, e.g. cook mode).
+// form), "full" (an opaque full-bleed panel, e.g. cook mode), "bottom" (a
+// bottom sheet — ADDITIVE variant from social-feed cp06 for the mobile
+// comment sheet; existing variants untouched).
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
-type ModalVariant = 'center' | 'sheet' | 'full'
+type ModalVariant = 'center' | 'sheet' | 'full' | 'bottom'
 
 interface ModalProps {
   onClose: () => void
@@ -105,6 +107,15 @@ export default function Modal({ onClose, label, variant = 'center', children }: 
 function backdropStyle(variant: ModalVariant): CSSProperties {
   const base: CSSProperties = { position: 'absolute', inset: 0, zIndex: variant === 'full' ? 20 : 10 }
   if (variant === 'full') return base
+  if (variant === 'bottom') {
+    return {
+      ...base,
+      background: 'var(--backdrop)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+    }
+  }
   return {
     ...base,
     background: 'var(--backdrop)',
@@ -118,6 +129,18 @@ function backdropStyle(variant: ModalVariant): CSSProperties {
 
 function panelStyle(variant: ModalVariant): CSSProperties {
   if (variant === 'center') return { width: '100%', maxWidth: 380, outline: 'none' }
+  if (variant === 'bottom')
+    return {
+      width: '100%',
+      maxHeight: '78%',
+      background: 'var(--bg)',
+      borderRadius: '20px 20px 0 0',
+      padding: '14px 18px 20px',
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      outline: 'none',
+    }
   if (variant === 'sheet')
     return { width: '100%', minHeight: '100%', background: 'var(--bg)', padding: '46px 18px 24px', outline: 'none' }
   // full

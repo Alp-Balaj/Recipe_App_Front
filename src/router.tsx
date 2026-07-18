@@ -10,6 +10,7 @@ import ProfilePage from './pages/ProfilePage'
 import RecipeFormPage from './pages/RecipeFormPage'
 import MyRecipesPage from './pages/MyRecipesPage'
 import RecipeDetailPage from './pages/RecipeDetailPage'
+import UserProfilePage from './pages/UserProfilePage'
 
 /**
  * The ONE route-registration file (frozen after checkpoint 01).
@@ -28,10 +29,11 @@ export const routes: RouteObject[] = [
       {
         element: <AppShell />,
         children: [
-          // social-feed cp05 — SANCTIONED ADDITIVE EDIT: the social-feed plan
-          // adds routes additively ("routes are additive — the frozen-router
-          // discipline holds"); /feed is cp05's, /users/:id arrives with cp06.
+          // social-feed cp05+cp06 — SANCTIONED ADDITIVE EDIT: the social-feed
+          // plan adds routes additively ("routes are additive — the frozen-
+          // router discipline holds"); /feed is cp05's, /users/:id is cp06's.
           { path: '/feed', element: <FeedPage /> },
+          { path: '/users/:id', element: <UserProfilePage /> },
           { path: '/chat', element: <ChatPage /> },
           { path: '/library', element: <BrowsePage /> },
           { path: '/profile', element: <ProfilePage /> },

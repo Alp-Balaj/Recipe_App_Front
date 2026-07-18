@@ -12,12 +12,26 @@
 // operable (role="link" + tabIndex + Enter/Space), matching the old SuggestionCard.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import type { RecipeResponse } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 
 type RecipeCardVariant = 'browse' | 'mine' | 'suggestion'
+
+/**
+ * Optional like/save affordances (social-feed cp06, ADDITIVE — cards without
+ * this prop render exactly as before). State comes from the decision-I3
+ * SocialEnvelope seam, so counts/flags may be null (= unknown on this
+ * surface): unknown flags render as "not yet", unknown counts are hidden.
+ */
+export interface RecipeCardSocial {
+  likeCount: number | null
+  likedByMe: boolean | null
+  savedByMe: boolean | null
+  onToggleLike: (next: boolean) => void
+  onToggleSave: (next: boolean) => void
+}
 
 interface RecipeCardProps {
   recipe: RecipeResponse
@@ -28,6 +42,8 @@ interface RecipeCardProps {
   onEdit?: () => void
   /** Owner action (variant="mine"): opens the delete confirmation. */
   onDelete?: () => void
+  /** Like/save action row (browse-style cards; cp06). */
+  social?: RecipeCardSocial
 }
 
 const tagBadgeStyle = { background: 'var(--tagbg)', borderColor: 'var(--tagborder)', color: 'var(--tagcol)' } as const
@@ -56,9 +72,11 @@ function Banner({ recipe, height = 104 }: { recipe: RecipeResponse; height?: num
   return <div style={{ height, ...bg }} />
 }
 
-export default function RecipeCard({ recipe, variant, onOpen, onEdit, onDelete }: RecipeCardProps) {
+export default function RecipeCard({ recipe, variant, onOpen, onEdit, onDelete, social }: RecipeCardProps) {
   if (variant === 'suggestion') return <SuggestionCardBody recipe={recipe} onOpen={onOpen} />
-  return <BannerCardBody recipe={recipe} variant={variant} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} />
+  return (
+    <BannerCardBody recipe={recipe} variant={variant} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} social={social} />
+  )
 }
 
 // ── Browse + mine: the vertical banner card ─────────────────────────────────
@@ -69,12 +87,14 @@ function BannerCardBody({
   onOpen,
   onEdit,
   onDelete,
+  social,
 }: {
   recipe: RecipeResponse
   variant: 'browse' | 'mine'
   onOpen: () => void
   onEdit?: () => void
   onDelete?: () => void
+  social?: RecipeCardSocial
 }) {
   const isMine = variant === 'mine'
 
@@ -170,8 +190,51 @@ function BannerCardBody({
           </OwnerButton>
         </div>
       )}
+
+      {/* cp06: like/save action row (outside the link region, same aria idiom
+          as the feed card). Rendered only when the surface passes `social`. */}
+      {social && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px 8px' }}>
+          <button
+            onClick={() => social.onToggleLike(!social.likedByMe)}
+            aria-pressed={social.likedByMe === true}
+            aria-label={social.likedByMe ? 'Unlike' : 'Like'}
+            style={{ ...socialBtn, color: social.likedByMe ? 'var(--accent)' : 'var(--muted)' }}
+          >
+            <span style={{ fontSize: 16 }}>{social.likedByMe ? '♥' : '♡'}</span>
+            {social.likeCount !== null && <span>{social.likeCount}</span>}
+          </button>
+          <button
+            onClick={() => social.onToggleSave(!social.savedByMe)}
+            aria-pressed={social.savedByMe === true}
+            aria-label={social.savedByMe ? 'Remove from saved' : 'Save recipe'}
+            style={{
+              ...socialBtn,
+              marginLeft: 'auto',
+              color: social.savedByMe ? 'var(--accent)' : 'var(--muted)',
+            }}
+          >
+            <span style={{ fontSize: 15 }}>{social.savedByMe ? '⚑' : '⚐'}</span>
+            {social.savedByMe ? 'Saved' : 'Save'}
+          </button>
+        </div>
+      )}
     </div>
   )
+}
+
+const socialBtn: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  border: 'none',
+  background: 'transparent',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: 13,
+  fontWeight: 700,
+  padding: '7px 9px',
+  borderRadius: 10,
 }
 
 function OwnerButton({ children, onClick, danger }: { children: ReactNode; onClick?: () => void; danger?: boolean }) {
