@@ -150,10 +150,13 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5 }}>
             <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent)' }}>✦ {rank.value}</span>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rank.title}</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>pts · {rank.title}</span>
           </div>
           <div style={{ height: 6, borderRadius: 999, background: 'var(--surface2)', marginTop: 10, overflow: 'hidden' }}>
             <div style={{ width: `${rank.progress}%`, height: '100%', background: 'var(--accent-grad)' }} />
+          </div>
+          <div style={{ marginTop: 7, fontSize: 10.5, color: 'var(--muted)' }}>
+            {rank.pointsToNext != null ? `${rank.pointsToNext} pts to ${rank.nextTitle}` : 'Top tier'}
           </div>
         </div>
 

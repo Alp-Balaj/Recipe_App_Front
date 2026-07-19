@@ -62,11 +62,13 @@ export function deriveBadges(stats: BadgeStats): ProfileBadge[] {
       earned: followerCount >= 10,
     },
     {
+      // cookingRank is a POINTS score (see lib/cookingRank.ts), not a small count —
+      // 200 pts is the backend's first tier boundary (Novice → Home cook).
       id: 'sous-chef',
       icon: '✦',
-      name: 'Sous-chef',
-      desc: 'Reach cooking rank 5',
-      earned: cookingRank >= 5,
+      name: 'Rising cook',
+      desc: 'Reach 200 cooking points',
+      earned: cookingRank >= 200,
     },
     {
       id: 'social-cook',

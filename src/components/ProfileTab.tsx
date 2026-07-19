@@ -308,7 +308,7 @@ function RankCard({ rank }: { rank: CookingRankMeta }) {
           <div style={rankGlyph}>✦</div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 800 }}>{rank.title}</div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>Rank {rank.value}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{rank.value} pts</div>
           </div>
         </div>
       </div>
@@ -316,7 +316,7 @@ function RankCard({ rank }: { rank: CookingRankMeta }) {
         <div style={{ width: `${rank.progress}%`, height: '100%', background: 'var(--accent-grad)' }} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7, fontSize: 10.5, color: 'var(--muted)' }}>
-        <span>{rank.progress}% to next</span>
+        <span>{rank.pointsToNext != null ? `${rank.pointsToNext} pts to next` : 'Top tier'}</span>
         <span>{rank.nextTitle ? `Next: ${rank.nextTitle}` : 'Top tier'}</span>
       </div>
     </div>

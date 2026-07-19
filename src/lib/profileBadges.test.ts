@@ -9,10 +9,10 @@ describe('deriveBadges', () => {
   })
 
   it('earns badges as the real counters cross their thresholds', () => {
-    const badges = deriveBadges({ recipeCount: 12, followerCount: 3, followingCount: 6, cookingRank: 6 })
+    const badges = deriveBadges({ recipeCount: 12, followerCount: 3, followingCount: 6, cookingRank: 200 })
     const earned = new Set(badges.filter((b) => b.earned).map((b) => b.id))
     // recipeCount 12 → first-recipe + recipe-shelf; followerCount 3 → getting-noticed;
-    // followingCount 6 → social-cook; cookingRank 6 → sous-chef. rising-star (≥10 followers) locked.
+    // followingCount 6 → social-cook; cookingRank 200 pts → sous-chef. rising-star (≥10 followers) locked.
     expect(earned).toEqual(new Set(['first-recipe', 'recipe-shelf', 'getting-noticed', 'sous-chef', 'social-cook']))
     expect(earned.has('rising-star')).toBe(false)
     expect(earnedBadgeCount(badges)).toBe(5)

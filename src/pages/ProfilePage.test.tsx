@@ -62,9 +62,9 @@ describe('ProfilePage — hero + rank + counts', () => {
     expect(screen.getByRole('button', { name: '3 Followers' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '1 Following' })).toBeInTheDocument()
 
-    // Derived rank tier (rank 4 → "Home cook") + the raw rank line.
-    expect(screen.getAllByText('Home cook').length).toBeGreaterThan(0)
-    expect(screen.getByText('Rank 4')).toBeInTheDocument()
+    // Derived rank tier (4 pts → "Novice", the entry tier) + the raw points line.
+    expect(screen.getAllByText('Novice').length).toBeGreaterThan(0)
+    expect(screen.getByText('4 pts')).toBeInTheDocument()
   })
 
   it('derives the badge count from real stats (2 of 6 here)', async () => {
@@ -253,11 +253,11 @@ describe('ProfilePage — desktop layout', () => {
         dispatchEvent: () => false,
       })) as typeof window.matchMedia
 
-    useProfile({ cookingRank: 6, followerCount: 12, followingCount: 4, recipeCount: 8 })
+    useProfile({ cookingRank: 200, followerCount: 12, followingCount: 4, recipeCount: 8 })
     const router = renderRoute('/profile')
 
     // Summary column stats + the desktop content-pane New-recipe button.
-    // rec≥1, fol≥1, fol≥10, rank≥5 → 4 badges earned.
+    // rec≥1, fol≥1, fol≥10, rank≥200 pts → 4 badges earned.
     expect(await screen.findByRole('button', { name: '8 Recipes' })).toBeInTheDocument()
     expect(screen.getByText('4 of 6')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '＋ New recipe' }))

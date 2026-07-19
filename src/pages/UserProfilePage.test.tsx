@@ -55,7 +55,7 @@ describe('UserProfilePage', () => {
 
     expect(await screen.findByText('chef_ana')).toBeInTheDocument()
     expect(screen.getByText('Weeknight wok wizard.')).toBeInTheDocument()
-    expect(screen.getByText('✦ Rank 3')).toBeInTheDocument()
+    expect(screen.getByText('✦ 3 pts · Novice')).toBeInTheDocument()
     expect(screen.getByText('5')).toBeInTheDocument()
     expect(screen.getByText('Followers')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()

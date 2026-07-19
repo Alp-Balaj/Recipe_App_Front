@@ -19,6 +19,7 @@ import StateBlock from '@/components/ui/StateBlock'
 import { isNotFound } from '@/hooks/useRecipe'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
 import { useUserProfile, useUserRecipes } from '@/hooks/useUserProfile'
+import { cookingRankMeta } from '@/lib/cookingRank'
 import { resolveImageUrl } from '@/lib/images'
 import { gradientFor } from '@/pages/recipeVisuals'
 
@@ -122,7 +123,7 @@ export default function UserProfilePage() {
             {profile.username}
           </div>
           <div style={{ marginTop: 5 }}>
-            <span style={rankChip}>✦ Rank {profile.cookingRank}</span>
+            <span style={rankChip}>✦ {profile.cookingRank} pts · {cookingRankMeta(profile.cookingRank).title}</span>
           </div>
         </div>
       </div>
