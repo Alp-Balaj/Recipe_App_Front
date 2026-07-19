@@ -8,13 +8,13 @@ import { server } from './msw/server'
 describe('router shell (authenticated)', () => {
   it('redirects / to /library', async () => {
     const router = renderRoute('/')
-    expect(await screen.findByText('Browse recipes')).toBeInTheDocument()
+    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/library')
   })
 
   it('redirects unknown URLs to /library instead of crashing', async () => {
     const router = renderRoute('/definitely/not/a/route')
-    expect(await screen.findByText('Browse recipes')).toBeInTheDocument()
+    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/library')
   })
 
@@ -81,12 +81,12 @@ describe('router shell (authenticated)', () => {
   it('flips data-mode when the profile theme toggle is used', async () => {
     renderRoute('/profile')
     const shell = document.querySelector('.app-shell')
-    // The app defaults to light on open (commit 25dc152).
-    expect(shell).toHaveAttribute('data-mode', 'light')
-    await userEvent.click(await screen.findByText('☾ Dark'))
+    // The imported redesign is dark-native, so the app opens in dark mode.
     expect(shell).toHaveAttribute('data-mode', 'dark')
     await userEvent.click(await screen.findByText('☀ Light'))
     expect(shell).toHaveAttribute('data-mode', 'light')
+    await userEvent.click(await screen.findByText('☾ Dark'))
+    expect(shell).toHaveAttribute('data-mode', 'dark')
   })
 })
 

@@ -16,7 +16,10 @@ export interface ThemeContextValue {
  * which render outside the tabbed AppShell.
  */
 export default function ThemeRoot() {
-  const [mode, setMode] = useState<Mode>('light')
+  // The imported redesign is dark-native; dark is the default open state.
+  // The toggle (Profile · Appearance, and the sidebar moon) flips to the warm
+  // light variant and back.
+  const [mode, setMode] = useState<Mode>('dark')
   const toggleMode = () => setMode((m) => (m === 'light' ? 'dark' : 'light'))
 
   const context: ThemeContextValue = { mode, setMode, toggleMode }

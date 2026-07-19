@@ -25,6 +25,15 @@ export default function AppShell() {
   const isDetail =
     !!detailMatch && detailMatch.params.id !== 'new' && detailMatch.params.id !== 'mine'
 
+  // The redesigned Library + Feed use a wide, multi-column desktop canvas
+  // (design 2a/2b), so their conversation-inner column breaks out of the
+  // narrow chat-column width. Chat / profile / authoring stay in the readable
+  // ~720px column. Detail keeps the library backdrop wide behind the canvas.
+  const isWidePage =
+    isDetail ||
+    location.pathname.startsWith('/library') ||
+    location.pathname.startsWith('/feed')
+
   // ── Auth guard ──────────────────────────────────────────────────────────
   // Every route under AppShell is protected; /login and /register render
   // outside it (under ThemeRoot). While the boot-time /auth/me check runs we
@@ -76,7 +85,7 @@ export default function AppShell() {
           )}
 
           <section className="conversation-pane">
-            <div className="conversation-inner">
+            <div className="conversation-inner" style={isWidePage ? { maxWidth: 1240 } : undefined}>
               {/* On a detail URL the outlet renders in the canvas pane instead;
                   the library backs the conversation pane so the two-pane look
                   survives deep links and refreshes. */}

@@ -106,12 +106,12 @@ body { margin: 0; }
   }
 
   .sidebar {
-    flex: 0 0 200px;
+    flex: 0 0 252px;
     display: flex;
     flex-direction: column;
     background: var(--navbg);
     border-right: 1px solid var(--border);
-    padding: 22px 14px 18px;
+    padding: 24px 16px 18px;
   }
 
   .desktop-main {
@@ -172,46 +172,60 @@ body { margin: 0; }
 
 }
 
-/* ── Light theme (default) ── */
+/* ────────────────────────────────────────────────────────────────
+   Recipe App Redesign — warm amber on near-black (imported design).
+   Dark is the design's native palette; light is a warm-paper variant
+   in the same amber family so the theme toggle stays coherent.
+   Shared accent gradient + idle-nav tokens are theme-agnostic values
+   the sidebar / bottom-nav / CTAs read.
+   ──────────────────────────────────────────────────────────────── */
+
+/* ── Light theme (warm paper) ── */
 [data-mode="light"] {
-  --bg: #eff2e8;
+  --bg: #f7f1e8;
   --surface: #ffffff;
-  --surface2: #e6ecdb;
-  --border: #dde4d0;
-  --text: #202a20;
-  --muted: #869180;
-  --accent: #3a8f5b;
+  --surface2: #f1e8da;
+  --border: #e8ddcc;
+  --text: #241d14;
+  --muted: #8a7e6d;
+  --accent: #d9772e;
   --accent-ink: #ffffff;
-  --cardsh: 0 3px 14px -6px rgba(40,70,30,.22);
+  --accent-grad: linear-gradient(135deg, #f7a94e, #e07c33);
+  --accent-soft: rgba(217, 119, 46, 0.12);
+  --navidle: #a1957f;
+  --cardsh: 0 3px 14px -6px rgba(90, 55, 20, 0.2);
   --inputbg: #ffffff;
-  --navbg: #f6f8f1;
-  --tagbg: #e7efdd;
+  --navbg: #fbf5ec;
+  --tagbg: #f4ecdd;
   --tagborder: transparent;
-  --tagcol: #5a7a4f;
-  --hair: #e4e9da;
-  --chipbg: #e7efdd;
-  --chipcol: #3f6b46;
-  --backdrop: #d7dacf;
+  --tagcol: #a4692a;
+  --hair: #ece2d2;
+  --chipbg: rgba(217, 119, 46, 0.12);
+  --chipcol: #b3651f;
+  --backdrop: #e6dccb;
 }
 
-/* ── Dark theme ── */
+/* ── Dark theme (design native) ── */
 [data-mode="dark"] {
-  --bg: #151a15;
-  --surface: #1c241c;
-  --surface2: #212a21;
-  --border: #2a342a;
-  --text: #eef3ec;
-  --muted: #93a092;
-  --accent: #3d9460;
-  --accent-ink: #ffffff;
+  --bg: #0c0b0a;
+  --surface: #1a1815;
+  --surface2: #1c1a17;
+  --border: #262220;
+  --text: #f2ede7;
+  --muted: #8f887e;
+  --accent: #f0a45c;
+  --accent-ink: #1a1207;
+  --accent-grad: linear-gradient(135deg, #f7a94e, #e07c33);
+  --accent-soft: rgba(240, 164, 92, 0.14);
+  --navidle: #6c655d;
   --cardsh: none;
-  --inputbg: #1c241c;
-  --navbg: #131713;
-  --tagbg: transparent;
-  --tagborder: #33402f;
-  --tagcol: #aebfa8;
-  --hair: transparent;
-  --chipbg: #1f3324;
-  --chipcol: #6fd49a;
-  --backdrop: #0e120e;
+  --inputbg: #1c1a17;
+  --navbg: #100e0d;
+  --tagbg: #1f1a15;
+  --tagborder: #2c2620;
+  --tagcol: #c9a578;
+  --hair: #262220;
+  --chipbg: rgba(240, 164, 92, 0.14);
+  --chipcol: #f0a45c;
+  --backdrop: #060505;
 }
