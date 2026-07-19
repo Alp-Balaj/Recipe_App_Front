@@ -20,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { RecipeResponse } from './types'
-import { createMockChatApi } from './chat.mock'
+import { createRealChatApi } from './chat.real'
 
 /**
  * ChatMessageResponse — 1:1 with the backend DTO
@@ -71,7 +71,8 @@ export interface ChatApi {
 }
 
 // ── Active provider ─────────────────────────────────────────────────────────
-// CHECKPOINT 08 SWAP POINT: change this ONE line to the real client
-// (`createRealChatApi()`), and nothing else in the app moves. The mock stays
-// behind `createMockChatApi` for tests (MSW).
-export const chatApi: ChatApi = createMockChatApi()
+// CHECKPOINT 08 SWAP POINT (chat-ai v2): this ONE line selects the active client
+// and nothing else in the app moves. Now the REAL client, which bridges this
+// single-thread contract onto the /chat/conversations routes (see chat.real.ts).
+// The mock stays available via `createMockChatApi` (chat.mock.ts) for tests.
+export const chatApi: ChatApi = createRealChatApi()
