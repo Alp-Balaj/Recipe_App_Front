@@ -15,6 +15,7 @@
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import type { RecipeResponse } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
+import { resolveImageUrl } from '@/lib/images'
 import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 
 type RecipeCardVariant = 'browse' | 'mine' | 'suggestion'
@@ -65,9 +66,11 @@ function linkProps(recipe: RecipeResponse, onOpen: () => void) {
 }
 
 /** The image (or gradient fallback) banner shared by the browse + mine cards. */
+// cp07: imageUrl goes through resolveImageUrl — cp04 uploads return RELATIVE
+// urls (/images/…) that must be fetched via the /api proxy prefix.
 function Banner({ recipe, height = 104 }: { recipe: RecipeResponse; height?: number }) {
   const bg = recipe.imageUrl
-    ? { backgroundImage: `url(${recipe.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    ? { backgroundImage: `url(${resolveImageUrl(recipe.imageUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
     : { background: gradientFor(recipe.id || recipe.title) }
   return <div style={{ height, ...bg }} />
 }
@@ -283,8 +286,9 @@ function SuggestionCardBody({ recipe, onOpen }: { recipe: RecipeResponse; onOpen
           width: 48,
           height: 48,
           borderRadius: 14,
+          // cp07: relative cp04 upload urls resolve through the /api prefix.
           background: recipe.imageUrl
-            ? `center / cover no-repeat url(${recipe.imageUrl})`
+            ? `center / cover no-repeat url(${resolveImageUrl(recipe.imageUrl)})`
             : gradientFor(recipe.id || recipe.title),
         }}
       />

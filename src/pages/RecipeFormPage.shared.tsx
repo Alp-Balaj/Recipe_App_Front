@@ -10,12 +10,15 @@
 // PascalCase property paths back onto the camelCase form fields.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useForm, useFieldArray, type UseFormSetError } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { ApiValidationError } from '@/api/client'
+import { ApiError, ApiUnauthorizedError, ApiValidationError } from '@/api/client'
+import { uploadImage, IMAGE_ACCEPT, IMAGE_ALLOWED_TYPES, IMAGE_MAX_BYTES } from '@/api/images'
 import type { CreateRecipeRequest, RecipeResponse } from '@/api/types'
+import { useAuth } from '@/auth/AuthContext'
+import { resolveImageUrl } from '@/lib/images'
 import TextField from '@/components/ui/TextField'
 
 // ── Schema (mirrors the backend CreateRecipeRequestValidator) ───────────────
@@ -223,6 +226,40 @@ export function applyServerErrors(
   return unmapped
 }
 
+// ── Photo upload (social-feed cp07) ─────────────────────────────────────────
+
+/**
+ * Map an upload failure onto a legible sentence. The backend 400s carry a
+ * ValidationProblem keyed on `file` (type/size/magic-byte); 429 is the
+ * `images` rate lane (20/min); anything else gets the generic fallback.
+ */
+export function uploadErrorMessage(err: unknown): string {
+  if (err instanceof ApiValidationError) {
+    const first = Object.values(err.errors).flat()[0]
+    return first ?? 'That image was rejected — use a JPEG, PNG, or WebP under 5 MB.'
+  }
+  if (err instanceof ApiUnauthorizedError) {
+    return 'Your session has expired — please sign in again.'
+  }
+  if (err instanceof ApiError && err.status === 429) {
+    return 'Too many uploads right now — wait a minute and try again.'
+  }
+  return 'The photo upload failed. Check your connection and try again.'
+}
+
+// Visually-hidden-but-focusable file input (label acts as the button).
+const srOnlyInputStyle: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+}
+
 // ── Presentational bits ─────────────────────────────────────────────────────
 
 const ERROR_COLOR = '#d9534f'
@@ -345,12 +382,92 @@ export function RecipeForm({
     handleSubmit,
     control,
     setError,
+    setValue,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<RecipeFormValues>({ resolver: zodResolver(recipeFormSchema), defaultValues })
 
   const ingredients = useFieldArray({ control, name: 'ingredients' })
   const steps = useFieldArray({ control, name: 'steps' })
+
+  // ── Photo upload (social-feed cp07) ──────────────────────────────────────
+  // On select: client-side pre-checks (save the 20/min `images` rate budget),
+  // instant local preview while the multipart POST runs, then the returned
+  // RELATIVE url lands in the existing `imageUrl` field and previews through
+  // resolveImageUrl. `seq` guards a replaced/removed upload from clobbering
+  // the newer state; submit is blocked while an upload is pending.
+  const { user } = useAuth()
+  const [uploadPending, setUploadPending] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [localPreview, setLocalPreview] = useState<string | null>(null)
+  const uploadRef = useRef<{ seq: number; controller: AbortController | null }>({
+    seq: 0,
+    controller: null,
+  })
+
+  const imageUrl = watch('imageUrl').trim()
+  const previewSrc = localPreview ?? (imageUrl ? resolveImageUrl(imageUrl) : null)
+
+  const handlePhotoSelected = async (file: File) => {
+    setUploadError(null)
+
+    // Pre-checks mirror the backend rules (allowlist + 5 MB cap) so obvious
+    // rejects never spend an upload slot; the backend stays the authority.
+    if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
+      setUploadError('That file type is not supported — choose a JPEG, PNG, or WebP image.')
+      return
+    }
+    if (file.size > IMAGE_MAX_BYTES) {
+      setUploadError('That image is too large — the limit is 5 MB.')
+      return
+    }
+
+    uploadRef.current.controller?.abort()
+    const controller = new AbortController()
+    const seq = ++uploadRef.current.seq
+    uploadRef.current.controller = controller
+
+    // Instant preview while the upload runs. Best-effort: under vitest, Node's
+    // native URL.createObjectURL exists but rejects jsdom File objects, so a
+    // failure here just means "no local preview" — never a broken upload.
+    let local: string | null = null
+    try {
+      if (typeof URL.createObjectURL === 'function') local = URL.createObjectURL(file)
+    } catch {
+      local = null
+    }
+    setLocalPreview(local)
+    setUploadPending(true)
+
+    try {
+      const { url } = await uploadImage(file, {
+        token: user?.token ?? null,
+        signal: controller.signal,
+      })
+      if (seq !== uploadRef.current.seq) return
+      setValue('imageUrl', url, { shouldDirty: true })
+    } catch (err) {
+      if (seq !== uploadRef.current.seq || controller.signal.aborted) return
+      setUploadError(uploadErrorMessage(err))
+    } finally {
+      if (seq === uploadRef.current.seq) {
+        setUploadPending(false)
+        setLocalPreview(null)
+        uploadRef.current.controller = null
+      }
+      if (local && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(local)
+    }
+  }
+
+  const removePhoto = () => {
+    uploadRef.current.controller?.abort()
+    uploadRef.current.seq++
+    uploadRef.current.controller = null
+    setUploadPending(false)
+    setLocalPreview(null)
+    setUploadError(null)
+    setValue('imageUrl', '', { shouldDirty: true })
+  }
 
   // Banner lives in RHF's root error slot so it clears on the next submit.
   const banner = errors.root?.message
@@ -461,6 +578,56 @@ export function RecipeForm({
               <option value="FriendsOnly">Friends only</option>
             </select>
           </label>
+        </div>
+      </Card>
+
+      {/* Photo (social-feed cp07) — uploads land in the imageUrl field. */}
+      <Card>
+        <SectionTitle>Photo</SectionTitle>
+        {previewSrc && (
+          <img
+            src={previewSrc}
+            alt="Recipe photo preview"
+            style={{
+              display: 'block',
+              width: '100%',
+              maxHeight: 220,
+              objectFit: 'cover',
+              borderRadius: 14,
+              border: '1px solid var(--border)',
+              marginBottom: 12,
+            }}
+          />
+        )}
+        {uploadPending && (
+          <div role="status" style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
+            Uploading photo…
+          </div>
+        )}
+        <FieldError message={uploadError ?? undefined} />
+        <div style={{ display: 'flex', gap: 10, margin: uploadError ? '8px 0 10px' : '0 0 10px' }}>
+          <label style={{ ...smallButtonStyle('ghost'), position: 'relative' }}>
+            {previewSrc ? 'Replace photo' : 'Add photo'}
+            <input
+              type="file"
+              accept={IMAGE_ACCEPT}
+              disabled={uploadPending}
+              style={srOnlyInputStyle}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = '' // allow re-selecting the same file
+                if (file) void handlePhotoSelected(file)
+              }}
+            />
+          </label>
+          {previewSrc && !uploadPending && (
+            <button type="button" onClick={removePhoto} style={smallButtonStyle('danger')}>
+              Remove photo
+            </button>
+          )}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+          JPEG, PNG, or WebP, up to 5 MB. Optional — you can publish without one.
         </div>
       </Card>
 
@@ -629,7 +796,9 @@ export function RecipeForm({
       <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
         <button
           type="submit"
-          disabled={isSubmitting}
+          // cp07: an in-flight photo upload blocks submit so a half-uploaded
+          // image can never race the save (the url lands only on 201).
+          disabled={isSubmitting || uploadPending}
           style={{
             flex: 1,
             padding: '12px 14px',
@@ -640,11 +809,11 @@ export function RecipeForm({
             fontSize: 14.5,
             fontWeight: 700,
             fontFamily: 'inherit',
-            cursor: isSubmitting ? 'default' : 'pointer',
-            opacity: isSubmitting ? 0.6 : 1,
+            cursor: isSubmitting || uploadPending ? 'default' : 'pointer',
+            opacity: isSubmitting || uploadPending ? 0.6 : 1,
           }}
         >
-          {isSubmitting ? pendingLabel : submitLabel}
+          {isSubmitting ? pendingLabel : uploadPending ? 'Uploading photo…' : submitLabel}
         </button>
         {onCancel && (
           <button
