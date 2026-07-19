@@ -100,4 +100,11 @@ export const handlers = [
   http.get('*/recipes/:id/comments', () =>
     HttpResponse.json({ items: [], nextCursor: null } satisfies CommentListResponse),
   ),
+
+  // ── F1 default (ADDITIVE, 2026-07-19): the detail page's envelope fallback
+  // now fetches GET /recipes/{id}/social on mount. Default to 404 (= "no
+  // envelope"), which reproduces the pre-F1 unknown-state rendering exactly,
+  // so every earlier test behaves byte-identically; fallback-specific tests
+  // override with a 200 RecipeSocialResponse via `server.use(...)`. ──
+  http.get('*/recipes/:id/social', () => new HttpResponse(null, { status: 404 })),
 ]

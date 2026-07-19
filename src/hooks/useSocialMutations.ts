@@ -41,7 +41,7 @@ import {
   type UserProfileResponse,
 } from '@/api/social'
 import type { RecipeListResponse } from '@/api/types'
-import type { SocialEnvelope } from './useSocialEnvelope'
+import { UNKNOWN_ENVELOPE, type SocialEnvelope } from './useSocialEnvelope'
 
 /** recipeId + the DESIRED state (true = like/save it, false = undo that). */
 export interface SocialToggleVars {
@@ -78,6 +78,23 @@ function patchFeedCaches(
       })),
     }
   })
+}
+
+/**
+ * F1: settle the recipe's envelope entry before an optimistic like/save patch.
+ * The detail page's GET /recipes/{id}/social fallback may still be in flight —
+ * cancel it (its late result must not clobber the patch) and make sure an
+ * entry EXISTS to patch (patchEnvelopeCache skips missing entries, which
+ * would silently drop the user's toggle on a surface still waiting for the
+ * fallback). The seeded all-unknown entry keeps the "no invented counts" rule:
+ * flags flip, null counts stay null.
+ */
+async function settleEnvelopeEntry(queryClient: QueryClient, recipeId: string): Promise<void> {
+  const key = queryKeys.social.envelope(recipeId)
+  await queryClient.cancelQueries({ queryKey: key })
+  if (queryClient.getQueryData<SocialEnvelope>(key) === undefined) {
+    queryClient.setQueryData<SocialEnvelope>(key, { ...UNKNOWN_ENVELOPE })
+  }
 }
 
 /** Patch the recipe's standalone SocialEnvelope entry IF a surface created one. */
@@ -138,6 +155,7 @@ export function useSocialMutations() {
       next ? likeRecipe(recipeId) : unlikeRecipe(recipeId),
     onMutate: async ({ recipeId, next }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.feed.all })
+      await settleEnvelopeEntry(queryClient, recipeId)
       const snapshot = snapshotCaches(queryClient, [
         queryKeys.feed.all,
         queryKeys.social.envelope(recipeId),
@@ -170,6 +188,7 @@ export function useSocialMutations() {
     onMutate: async ({ recipeId, next }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.feed.all })
       await queryClient.cancelQueries({ queryKey: queryKeys.saved.all })
+      await settleEnvelopeEntry(queryClient, recipeId)
       const snapshot = snapshotCaches(queryClient, [
         queryKeys.feed.all,
         queryKeys.social.envelope(recipeId),

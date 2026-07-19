@@ -22,6 +22,8 @@
 //   GET    /users/{id}            → 200 UserProfileResponse | 404
 //   GET    /users/{id}/recipes    → 200 RecipeListResponse | 404
 //   GET    /users/me/saved-recipes→ 200 RecipeListResponse (SavedAt DESC)
+// F1 addition (decision recipe-social-envelope-endpoint, verified 2026-07-19):
+//   GET    /recipes/{id}/social   → 200 RecipeSocialResponse | 404
 // All list endpoints: ?cursor&limit (default 20, cap 50, <=0 → 400).
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -86,6 +88,30 @@ export function saveRecipe(recipeId: string): Promise<void> {
 /** DELETE /recipes/{id}/saves → 204 (idempotent). */
 export function unsaveRecipe(recipeId: string): Promise<void> {
   return apiFetch<void>(`/recipes/${recipeId}/saves`, { method: 'DELETE' })
+}
+
+// ── F1: per-recipe social envelope ──────────────────────────────────────────
+
+/**
+ * RecipeSocialResponse — GET /recipes/{id}/social (decision
+ * recipe-social-envelope-endpoint, resolving cp08 finding F1): EXACTLY the
+ * feed item minus the recipe, derived so the two sources can never disagree
+ * (the backend pins the same parity with an integration test).
+ */
+export type RecipeSocialResponse = Omit<FeedItemResponse, 'recipe'>
+
+/**
+ * GET /recipes/{id}/social → 200 | 404. Visibility identical to
+ * GET /recipes/{id}: Public or caller-owned → 200 (authors see their own
+ * recipes at ANY visibility); anything else — other users' Private/
+ * FriendsOnly, soft-deleted, nonexistent — is a 404, never a 403. Counts are
+ * live per-request; flags are caller-relative. Rides the `social` rate lane.
+ */
+export function getRecipeSocial(
+  recipeId: string,
+  signal?: AbortSignal,
+): Promise<RecipeSocialResponse> {
+  return apiFetch<RecipeSocialResponse>(`/recipes/${recipeId}/social`, { signal })
 }
 
 // ── cp06: comments ──────────────────────────────────────────────────────────

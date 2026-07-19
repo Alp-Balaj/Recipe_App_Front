@@ -26,9 +26,12 @@ export default function RecipeDetailPage() {
   const { data: recipe, isLoading, isError, error, refetch } = useRecipe(id)
   const [cooking, setCooking] = useState(false)
   // cp06: like/save via the decision-I3 envelope seam (feed-cache hits when
-  // the reader arrived from /feed; unknown otherwise — toggles stay safe
-  // because the backend endpoints are idempotent).
-  const envelope = useSocialEnvelope(id ?? '')
+  // the reader arrived from /feed). F1 (decision recipe-social-envelope-
+  // endpoint): when the caches can't answer — notably for the recipe's OWN
+  // author, whose posts never reach their feed — fall back to ONE
+  // GET /recipes/{id}/social to seed real counts + flags; 404 degrades to
+  // the old hidden-counts rendering.
+  const envelope = useSocialEnvelope(id ?? '', undefined, { fetchFallback: true })
   const { toggleLike, toggleSave } = useSocialMutations()
 
   const close = () => {
