@@ -25,14 +25,15 @@ export default function AppShell() {
   const isDetail =
     !!detailMatch && detailMatch.params.id !== 'new' && detailMatch.params.id !== 'mine'
 
-  // The redesigned Library + Feed use a wide, multi-column desktop canvas
-  // (design 2a/2b), so their conversation-inner column breaks out of the
-  // narrow chat-column width. Chat / profile / authoring stay in the readable
-  // ~720px column. Detail keeps the library backdrop wide behind the canvas.
+  // The redesigned Library + Feed + Profile use a wide, multi-column desktop
+  // canvas (design 2a/2b/4a), so their conversation-inner column breaks out of
+  // the narrow chat-column width. Chat / authoring stay in the readable ~720px
+  // column. Detail keeps the library backdrop wide behind the canvas.
   const isWidePage =
     isDetail ||
     location.pathname.startsWith('/library') ||
-    location.pathname.startsWith('/feed')
+    location.pathname.startsWith('/feed') ||
+    location.pathname.startsWith('/profile')
 
   // ── Auth guard ──────────────────────────────────────────────────────────
   // Every route under AppShell is protected; /login and /register render

@@ -25,8 +25,8 @@ describe('router shell (authenticated)', () => {
 
   it('renders the profile at /profile', async () => {
     renderRoute('/profile')
-    // 'Profile' alone also matches the nav label; 'Appearance' is unique to the tab body.
-    expect(await screen.findByText('Appearance')).toBeInTheDocument()
+    // The Settings action is unique to the profile body (design 3b hero).
+    expect(await screen.findByRole('button', { name: '⚙ Settings' })).toBeInTheDocument()
   })
 
   it('deep-links to a recipe detail at /recipes/:id (fetched from the API)', async () => {
@@ -83,6 +83,8 @@ describe('router shell (authenticated)', () => {
     const shell = document.querySelector('.app-shell')
     // The imported redesign is dark-native, so the app opens in dark mode.
     expect(shell).toHaveAttribute('data-mode', 'dark')
+    // The theme toggle lives in Settings (design 3e).
+    await userEvent.click(await screen.findByRole('button', { name: '⚙ Settings' }))
     await userEvent.click(await screen.findByText('☀ Light'))
     expect(shell).toHaveAttribute('data-mode', 'light')
     await userEvent.click(await screen.findByText('☾ Dark'))

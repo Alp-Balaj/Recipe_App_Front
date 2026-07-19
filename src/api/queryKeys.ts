@@ -62,6 +62,10 @@ export const queryKeys = {
     profile: (id: string) => ['users', 'profile', id] as const,
     /** GET /users/{id}/recipes — the profile grid (useInfiniteQuery). */
     recipes: (id: string) => ['users', 'recipes', id] as const,
+    /** GET /users/{id}/followers — the follower list overlay (useInfiniteQuery). */
+    followers: (id: string) => ['users', 'followers', id] as const,
+    /** GET /users/{id}/following — the following list overlay (useInfiniteQuery). */
+    following: (id: string) => ['users', 'following', id] as const,
   },
   saved: {
     /** Everything saved-list-related. */

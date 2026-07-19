@@ -118,8 +118,9 @@ describe('ProfileTab logout', () => {
     await user.click(screen.getByRole('button', { name: /profile/i }))
     expect(await screen.findByText('carol')).toBeInTheDocument()
 
-    // Log out → back at the login screen, session cleared.
-    await user.click(screen.getByRole('button', { name: /log out/i }))
+    // Log out lives in Settings (design 3e) → open it, then log out.
+    await user.click(await screen.findByRole('button', { name: '⚙ Settings' }))
+    await user.click(await screen.findByRole('button', { name: /log out/i }))
     expect(await screen.findByText('Welcome back')).toBeInTheDocument()
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
     expect(localStorage.getItem('recipe_app_auth')).toBeNull()

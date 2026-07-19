@@ -5,10 +5,16 @@
 // retry; reuse isNotFound from useRecipe to branch on it.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import { getUserProfile, getUserRecipes } from '@/api/social'
+import {
+  getUserProfile,
+  getUserRecipes,
+  updateMyProfile,
+  type UpdateProfileRequest,
+  type UserProfileResponse,
+} from '@/api/social'
 
 /** Tiles per grid page — a multiple of the 3-column grid width. */
 export const PROFILE_GRID_PAGE_SIZE = 12
@@ -21,6 +27,22 @@ export function useUserProfile(userId: string | undefined) {
     enabled: !!userId,
     retry: (failureCount, error) =>
       !(error instanceof ApiError && error.status === 404) && failureCount < 1,
+  })
+}
+
+/**
+ * PUT /users/me — the account-settings Edit Profile save. On success seeds the
+ * caller's own profile cache with the fresh server copy so /profile updates
+ * without a refetch round-trip. The username→AuthContext sync lives at the call
+ * site (it owns useAuth); a 409 surfaces as ApiConflictError for "username taken".
+ */
+export function useUpdateProfile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (req: UpdateProfileRequest) => updateMyProfile(req),
+    onSuccess: (updated: UserProfileResponse) => {
+      queryClient.setQueryData(queryKeys.users.profile(updated.id), updated)
+    },
   })
 }
 

@@ -20,6 +20,7 @@
 //   POST   /users/{id}/follow     → 204 | 400 (self) | 404
 //   DELETE /users/{id}/follow     → 204 | 404 (unknown user)
 //   GET    /users/{id}            → 200 UserProfileResponse | 404
+//   PUT    /users/me              → 200 UserProfileResponse | 400 | 409 (username taken)
 //   GET    /users/{id}/recipes    → 200 RecipeListResponse | 404
 //   GET    /users/me/saved-recipes→ 200 RecipeListResponse (SavedAt DESC)
 // F1 addition (decision recipe-social-envelope-endpoint, verified 2026-07-19):
@@ -28,7 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch } from './client'
-import type { RecipeListResponse, RecipeResponse } from './types'
+import type { RecipeListResponse, RecipeResponse, Visibility } from './types'
 
 /** UserSummaryResponse — the compact author block on feed items + follow lists. */
 export interface UserSummaryResponse {
@@ -183,6 +184,19 @@ export interface UserProfileResponse {
   followingCount: number
   recipeCount: number
   followedByMe: boolean
+  /** The caller-chosen default visibility applied to new recipes (edited on /profile → Settings). */
+  defaultRecipeVisibility: Visibility
+}
+
+/**
+ * UpdateProfileRequest — PUT /users/me (the account-settings Edit Profile form).
+ * Every field is sent on save; `bio`/`profileImageUrl` clear to null when empty.
+ */
+export interface UpdateProfileRequest {
+  username: string
+  bio?: string | null
+  profileImageUrl?: string | null
+  defaultRecipeVisibility: Visibility
 }
 
 /** GET /users/{id}/followers | /following → 200 body (FollowedAt DESC keyset). */
@@ -201,9 +215,41 @@ export function unfollowUser(userId: string): Promise<void> {
   return apiFetch<void>(`/users/${userId}/follow`, { method: 'DELETE' })
 }
 
+/**
+ * PUT /users/me → 200 updated UserProfileResponse | 400 (validation) |
+ * 409 (username taken → ApiConflictError). Updates the caller's own account.
+ */
+export function updateMyProfile(req: UpdateProfileRequest): Promise<UserProfileResponse> {
+  return apiFetch<UserProfileResponse>('/users/me', { method: 'PUT', body: req })
+}
+
 /** GET /users/{id} → 200 UserProfileResponse (recipeCount is caller-visible only). */
 export function getUserProfile(userId: string, signal?: AbortSignal): Promise<UserProfileResponse> {
   return apiFetch<UserProfileResponse>(`/users/${userId}`, { signal })
+}
+
+/** GET /users/{id}/followers — accounts following this user (FollowedAt DESC keyset). */
+export function getFollowers(
+  userId: string,
+  params: { cursor?: string; limit?: number; signal?: AbortSignal },
+): Promise<FollowListResponse> {
+  const { cursor, limit, signal } = params
+  return apiFetch<FollowListResponse>(`/users/${userId}/followers`, {
+    query: { cursor, limit },
+    signal,
+  })
+}
+
+/** GET /users/{id}/following — accounts this user follows (FollowedAt DESC keyset). */
+export function getFollowing(
+  userId: string,
+  params: { cursor?: string; limit?: number; signal?: AbortSignal },
+): Promise<FollowListResponse> {
+  const { cursor, limit, signal } = params
+  return apiFetch<FollowListResponse>(`/users/${userId}/following`, {
+    query: { cursor, limit },
+    signal,
+  })
 }
 
 /** GET /users/{id}/recipes — that author's recipes visible to the caller (keyset). */

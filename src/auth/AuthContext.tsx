@@ -34,6 +34,12 @@ export interface AuthContextValue {
   register: (req: RegisterRequest) => Promise<void>
   /** Clears the session (localStorage + token + query cache). */
   logout: () => void
+  /**
+   * Patch the cached username after a self-edit (PUT /users/me). Keeps the header
+   * and avatar seed in sync immediately; a later /auth/me boot is now DB-backed and
+   * agrees. No-op when signed out.
+   */
+  updateUsername: (username: string) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
@@ -96,6 +102,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearSession()
   }, [clearSession])
 
+  const updateUsername = useCallback(
+    (username: string) => {
+      setUser((prev) => {
+        if (!prev || prev.username === username) return prev
+        const next = { ...prev, username }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+        return next
+      })
+    },
+    [],
+  )
+
   // Register the global 401 → clear-session handler for the fetch wrapper.
   useEffect(() => {
     setUnauthorizedHandler(clearSession)
@@ -130,8 +148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [persist])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, login, register, logout }),
-    [user, status, login, register, logout],
+    () => ({ user, status, login, register, logout, updateUsername }),
+    [user, status, login, register, logout, updateUsername],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

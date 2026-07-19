@@ -27,6 +27,8 @@ export interface CookingRankMeta {
   title: string
   /** Percentage progress toward the next tier (0–100; 100 at the top tier). */
   progress: number
+  /** The next tier's title, or undefined at the top tier. */
+  nextTitle?: string
 }
 
 /** Map a raw cookingRank integer to its titled tier + progress-to-next. */
@@ -44,5 +46,10 @@ export function cookingRankMeta(rank: number): CookingRankMeta {
     ? Math.round(((value - tier.min) / (next.min - tier.min)) * 100)
     : 100
 
-  return { value, title: tier.title, progress: Math.max(0, Math.min(100, progress)) }
+  return {
+    value,
+    title: tier.title,
+    progress: Math.max(0, Math.min(100, progress)),
+    nextTitle: next?.title,
+  }
 }

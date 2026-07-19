@@ -28,6 +28,7 @@ export function makeUserProfile(over: Partial<UserProfileResponse> = {}): UserPr
     followingCount: 0,
     recipeCount: 0,
     followedByMe: false,
+    defaultRecipeVisibility: 'Public',
     ...over,
   }
 }
@@ -87,6 +88,15 @@ export const handlers = [
     HttpResponse.json({ items: [], nextCursor: null } satisfies RecipeListResponse),
   ),
 
+  // Account settings — PUT /users/me echoes the merged profile back. Registered
+  // before `*/users/:id` so the literal `me` segment doesn't fall through to it
+  // (msw matches the PUT method anyway; kept adjacent for clarity). Edit-profile
+  // tests override with `server.use(...)` to assert conflict / validation paths.
+  http.put('*/users/me', async ({ request }) => {
+    const body = (await request.json()) as Partial<UserProfileResponse>
+    return HttpResponse.json(makeUserProfile(body))
+  }),
+
   // Public profile — ProfileTab now calls GET /users/{id} with the caller's
   // own id on every /profile render, so a default MUST exist.
   http.get('*/users/:id', () => HttpResponse.json(makeUserProfile())),
@@ -95,6 +105,11 @@ export const handlers = [
   http.get('*/users/:id/recipes', () =>
     HttpResponse.json({ items: [], nextCursor: null } satisfies RecipeListResponse),
   ),
+
+  // Follower / following lists — opened from the profile stat tiles (Recipe
+  // App Redesign). Default to empty; overlay-specific tests override.
+  http.get('*/users/:id/followers', () => HttpResponse.json({ items: [], nextCursor: null })),
+  http.get('*/users/:id/following', () => HttpResponse.json({ items: [], nextCursor: null })),
 
   // A recipe's comment list (detail page + comment sheet).
   http.get('*/recipes/:id/comments', () =>
