@@ -34,7 +34,11 @@ export const routes: RouteObject[] = [
           // router discipline holds"); /feed is cp05's, /users/:id is cp06's.
           { path: '/feed', element: <FeedPage /> },
           { path: '/users/:id', element: <UserProfilePage /> },
+          // chat-ai v3 — SANCTIONED ADDITIVE route (same discipline as the
+          // social-feed additive routes above): /chat is the new-conversation
+          // surface, /chat/:conversationId deep-links one thread.
           { path: '/chat', element: <ChatPage /> },
+          { path: '/chat/:conversationId', element: <ChatPage /> },
           { path: '/library', element: <BrowsePage /> },
           { path: '/profile', element: <ProfilePage /> },
           { path: '/recipes/new', element: <RecipeFormPage /> },

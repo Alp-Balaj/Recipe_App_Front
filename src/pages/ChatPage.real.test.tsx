@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -12,15 +12,16 @@ import type { ThemeContextValue } from '@/components/ThemeRoot'
 import type { ChatMessageResponse } from '@/api/chat'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Real-client bridge tests. ChatPage is driven through createRealChatApi()
-// (the actual production client), with MSW standing in for the backend's
-// /chat/conversations surface. These verify the single-thread → conversation
-// bridge in chat.real.ts: the three branches (B3) plus the identical UI render.
+// Real-client bridge tests (chat-ai v3). ChatPage is driven through
+// createRealChatApi() (the actual production client), with MSW standing in for
+// the backend's /chat/conversations surface. These verify the conversation-
+// aware client: create-then-deep-link, further turns route to /{id}/messages,
+// deep-load renders history, and the drawer's delete calls DELETE /{id}.
 // ─────────────────────────────────────────────────────────────────────────
 
 const theme: ThemeContextValue = { mode: 'dark', setMode: () => {}, toggleMode: () => {} }
 
-function renderRealChat() {
+function renderRealChat(initialPath = '/chat') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter(
     [
@@ -28,15 +29,15 @@ function renderRealChat() {
         element: <Outlet context={theme} />,
         children: [
           { path: '/chat', element: <ChatPage /> },
+          { path: '/chat/:conversationId', element: <ChatPage /> },
           { path: '/recipes/:id', element: <RecipeSink /> },
         ],
       },
     ],
-    { initialEntries: ['/chat'] },
+    { initialEntries: [initialPath] },
   )
   render(
     <QueryClientProvider client={client}>
-      {/* A fresh real client per case → its own lazily-resolved active conversation. */}
       <ChatApiProvider value={createRealChatApi()}>
         <RouterProvider router={router} />
       </ChatApiProvider>
@@ -50,7 +51,7 @@ function RecipeSink() {
   return <div data-testid="recipe-detail">Recipe {id}</div>
 }
 
-// ── envelope fixtures ────────────────────────────────────────────────────────
+// ── fixtures ─────────────────────────────────────────────────────────────────
 
 let seq = 0
 function makeMessage(role: 'user' | 'assistant', content: string): ChatMessageResponse {
@@ -66,19 +67,17 @@ function makeMessage(role: 'user' | 'assistant', content: string): ChatMessageRe
 
 const CONVERSATION_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
-function conversation(id = CONVERSATION_ID) {
-  return { id, title: 'A chat', createdAt: '2026-07-19T10:00:00Z', updatedAt: '2026-07-19T10:00:00Z' }
+function conversation(id = CONVERSATION_ID, title = 'A chat') {
+  return { id, title, createdAt: '2026-07-19T10:00:00Z', updatedAt: '2026-07-19T10:00:00Z' }
 }
 
 describe('ChatPage (real client bridge)', () => {
-  it('(a) first send with no active conversation → POST /chat/conversations', async () => {
+  it('(a) first send on /chat → POST /chat/conversations, then deep-links to /chat/:id', async () => {
     const user = userEvent.setup()
     let startBody: { content: string } | null = null
 
     server.use(
-      // Cold load: fresh user, no conversations yet.
       http.get('*/chat/conversations', () => HttpResponse.json({ items: [], nextCursor: null })),
-      // First turn starts the conversation.
       http.post('*/chat/conversations', async ({ request }) => {
         startBody = (await request.json()) as { content: string }
         return HttpResponse.json({
@@ -87,11 +86,18 @@ describe('ChatPage (real client bridge)', () => {
           assistantMessage: makeMessage('assistant', 'Here is a first idea for you.'),
         })
       }),
+      // After the deep-link, the newly-enabled messages query background-refetches
+      // this conversation — the realistic backend returns the just-created turns.
+      http.get('*/chat/conversations/:id/messages', () =>
+        HttpResponse.json({
+          items: [makeMessage('assistant', 'Here is a first idea for you.'), makeMessage('user', 'something warm')],
+          nextCursor: null,
+        }),
+      ),
     )
 
-    renderRealChat()
-    // Cold load settles with an empty thread (no greeting from a real backend).
-    await waitFor(() => expect(screen.queryByText(/Loading…/)).not.toBeInTheDocument())
+    const router = renderRealChat('/chat')
+    await screen.findByText(/This starts a new conversation/i)
 
     await user.type(screen.getByLabelText('Message the assistant'), 'something warm')
     await user.click(screen.getByLabelText('Send message'))
@@ -99,20 +105,17 @@ describe('ChatPage (real client bridge)', () => {
     expect(await screen.findByText('Here is a first idea for you.')).toBeInTheDocument()
     expect(screen.getByText('something warm')).toBeInTheDocument()
     expect(startBody).toEqual({ content: 'something warm' })
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/chat/${CONVERSATION_ID}`))
   })
 
-  it('(b) subsequent send → POST /chat/conversations/{id}/messages', async () => {
+  it('(b) a further send on /chat/:id → POST /chat/conversations/{id}/messages', async () => {
     const user = userEvent.setup()
     const turnUrls: string[] = []
 
     server.use(
-      http.get('*/chat/conversations', () => HttpResponse.json({ items: [], nextCursor: null })),
-      http.post('*/chat/conversations', () =>
-        HttpResponse.json({
-          conversation: conversation(),
-          userMessage: makeMessage('user', 'first'),
-          assistantMessage: makeMessage('assistant', 'reply one'),
-        }),
+      http.get('*/chat/conversations', () => HttpResponse.json({ items: [conversation()], nextCursor: null })),
+      http.get('*/chat/conversations/:id/messages', () =>
+        HttpResponse.json({ items: [makeMessage('assistant', 'earlier reply')], nextCursor: null }),
       ),
       http.post('*/chat/conversations/:id/messages', async ({ request, params }) => {
         turnUrls.push(String(params.id))
@@ -124,15 +127,9 @@ describe('ChatPage (real client bridge)', () => {
       }),
     )
 
-    renderRealChat()
-    await waitFor(() => expect(screen.queryByText(/Loading…/)).not.toBeInTheDocument())
+    renderRealChat(`/chat/${CONVERSATION_ID}`)
+    await screen.findByText('earlier reply')
 
-    // First send creates the conversation (POST /conversations, sets active id)…
-    await user.type(screen.getByLabelText('Message the assistant'), 'first')
-    await user.click(screen.getByLabelText('Send message'))
-    await screen.findByText('reply one')
-
-    // …the second send routes to the existing conversation's /messages endpoint.
     await user.type(screen.getByLabelText('Message the assistant'), 'again')
     await user.click(screen.getByLabelText('Send message'))
     expect(await screen.findByText('reply two')).toBeInTheDocument()
@@ -140,30 +137,54 @@ describe('ChatPage (real client bridge)', () => {
     expect(turnUrls).toEqual([CONVERSATION_ID])
   })
 
-  it('(c) cold load with existing history → GET /conversations then GET /{id}/messages', async () => {
-    let listHit = false
+  it('(c) deep-load /chat/:id → GET /{id}/messages renders history', async () => {
     const messagesUrls: string[] = []
 
     server.use(
       http.get('*/chat/conversations/:id/messages', ({ params }) => {
         messagesUrls.push(String(params.id))
-        // Newest-first page (CreatedAt DESC), like the real endpoint.
         return HttpResponse.json({
           items: [makeMessage('assistant', 'welcome back'), makeMessage('user', 'earlier question')],
           nextCursor: null,
         })
       }),
-      http.get('*/chat/conversations', () => {
-        listHit = true
-        return HttpResponse.json({ items: [conversation()], nextCursor: null })
-      }),
+      http.get('*/chat/conversations', () => HttpResponse.json({ items: [conversation()], nextCursor: null })),
     )
 
-    renderRealChat()
+    renderRealChat(`/chat/${CONVERSATION_ID}`)
 
     expect(await screen.findByText('welcome back')).toBeInTheDocument()
     expect(screen.getByText('earlier question')).toBeInTheDocument()
-    expect(listHit).toBe(true)
     expect(messagesUrls).toEqual([CONVERSATION_ID])
+  })
+
+  it('(d) the drawer deletes a conversation → DELETE /chat/conversations/{id}', async () => {
+    const user = userEvent.setup()
+    const deleteUrls: string[] = []
+
+    server.use(
+      http.get('*/chat/conversations', () =>
+        HttpResponse.json({ items: [conversation(CONVERSATION_ID, 'Dinner ideas')], nextCursor: null }),
+      ),
+      http.get('*/chat/conversations/:id/messages', () =>
+        HttpResponse.json({ items: [makeMessage('assistant', 'hi there')], nextCursor: null }),
+      ),
+      http.delete('*/chat/conversations/:id', ({ params }) => {
+        deleteUrls.push(String(params.id))
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+
+    const router = renderRealChat(`/chat/${CONVERSATION_ID}`)
+    await screen.findByText('hi there')
+
+    await user.click(screen.getByLabelText('Open conversations'))
+    const drawer = await screen.findByRole('dialog', { name: 'Conversations' })
+
+    await user.click(within(drawer).getByRole('button', { name: 'Delete Dinner ideas' }))
+    await user.click(within(drawer).getByRole('button', { name: 'Confirm delete Dinner ideas' }))
+
+    await waitFor(() => expect(deleteUrls).toEqual([CONVERSATION_ID]))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/chat'))
   })
 })

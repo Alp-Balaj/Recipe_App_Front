@@ -33,8 +33,22 @@ export const queryKeys = {
   },
 
   chat: {
-    /** The user's continuous chat thread (checkpoint 07/08). */
+    /** The user's continuous chat thread (checkpoint 07/08 — single-thread v2). */
     messages: () => ['chat', 'messages'] as const,
+
+    // chat-ai v3 (multiple conversations) — SANCTIONED ADDITIVE EDIT, same
+    // rationale as the social-feed blocks below: the factory is the one place
+    // keys may live. Nothing above changed.
+    /** The keyset-paged list of the caller's conversations (useInfiniteQuery). */
+    conversations: () => ['chat', 'conversations'] as const,
+    /**
+     * One conversation's keyset-paged message history (useInfiniteQuery). Note
+     * the DISTINCT 'conversation' (singular) segment — it deliberately does NOT
+     * sit under `conversations()` so invalidating the list never cascades into
+     * (and refetch-clobbers) an open thread's optimistic turns.
+     */
+    conversationMessages: (conversationId: string) =>
+      ['chat', 'conversation', conversationId, 'messages'] as const,
   },
 
   // social-feed cp05 — SANCTIONED ADDITIVE EDIT to this frozen module (the

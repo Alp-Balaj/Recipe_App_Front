@@ -3,19 +3,24 @@
 //
 // NEW module (not one of the frozen shared modules). Owned by lane C.
 //
-// This file defines:
-//   1. The wire shapes + `ChatApi` interface, mirroring the chat-ai plan's
-//      "Wire contract" section EXACTLY so checkpoint 08 is a provider swap,
-//      not a refactor:
-//        POST /chat/messages { content }
-//          → 200 { userMessage, assistantMessage }   (both ChatMessageResponse)
-//        GET  /chat/messages?cursor=&limit=
-//          → 200 { items, nextCursor }                (CreatedAt DESC, Id DESC)
-//        ChatMessageResponse(Id, Role, Content, CreatedAt,
-//                            SuggestedRecipes: List<RecipeResponse>)
-//      One continuous thread per user (no conversation ids in v1).
-//   2. The active provider — a single exported `chatApi`. At checkpoint 07 it
-//      is the mock; checkpoint 08 flips the ONE marked line to the real client.
+// v3 — MULTIPLE conversations per user. The backend has always exposed the
+// nested /chat/conversations surface (chat-ai cp3); v2 bridged it down to one
+// invisible active thread, v3 surfaces the real thing. This file defines:
+//   1. The wire shapes + a conversation-aware `ChatApi`, mirroring the backend
+//      endpoints (chat-ai plan, ChatEndpoints.cs) 1:1:
+//        POST   /chat/conversations                 { content }
+//          → 200 { conversation, userMessage, assistantMessage }
+//        GET    /chat/conversations?cursor=&limit=
+//          → 200 { items: ConversationSummary[], nextCursor }   (UpdatedAt DESC, Id DESC)
+//        PATCH  /chat/conversations/{id}            { title }
+//          → 200 ConversationSummary
+//        DELETE /chat/conversations/{id}            → 204
+//        POST   /chat/conversations/{id}/messages   { content }
+//          → 200 { userMessage, assistantMessage }              (both ChatMessageResponse)
+//        GET    /chat/conversations/{id}/messages?cursor=&limit=
+//          → 200 { items, nextCursor }                          (CreatedAt DESC, Id DESC)
+//   2. The active provider — a single exported `chatApi`. Production creates the
+//      real client; tests inject a fresh mock per case via ChatApiContext.
 //      Nothing outside this file knows which implementation is active.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -38,20 +43,46 @@ export interface ChatMessageResponse {
   suggestedRecipes: RecipeResponse[]
 }
 
-/** POST /chat/messages → 200 body. */
+/**
+ * ConversationSummary — 1:1 with the backend ConversationResponse
+ * (Guid Id, string Title, DateTime CreatedAt, DateTime UpdatedAt). The list is
+ * ordered UpdatedAt DESC so the most recently active thread sits on top.
+ */
+export interface ConversationSummary {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** POST /chat/conversations → 200 body (a brand-new conversation's first turn). */
+export interface StartConversationResponse {
+  conversation: ConversationSummary
+  userMessage: ChatMessageResponse
+  assistantMessage: ChatMessageResponse
+}
+
+/** POST /chat/conversations/{id}/messages → 200 body (a further turn). */
 export interface SendMessageResponse {
   userMessage: ChatMessageResponse
   assistantMessage: ChatMessageResponse
 }
 
-/** GET /chat/messages query params. cursor is the opaque base64url keyset token. */
-export interface GetMessagesParams {
+/** Keyset paging params shared by both list endpoints. cursor is an opaque base64url token. */
+export interface PageParams {
   cursor?: string | null
   /** default 20, capped at 50 by the backend. */
   limit?: number
 }
 
-/** GET /chat/messages → 200 body. Ordered CreatedAt DESC, Id DESC (newest first). */
+/** GET /chat/conversations → 200 body. Ordered UpdatedAt DESC, Id DESC. */
+export interface ConversationListResponse {
+  items: ConversationSummary[]
+  /** null on the last (oldest) page. */
+  nextCursor: string | null
+}
+
+/** GET /chat/conversations/{id}/messages → 200 body. Ordered CreatedAt DESC, Id DESC. */
 export interface GetMessagesResponse {
   items: ChatMessageResponse[]
   /** null on the last (oldest) page. */
@@ -60,19 +91,26 @@ export interface GetMessagesResponse {
 
 /**
  * The one seam every chat data call goes through. The real implementation
- * (checkpoint 08) will route these through the frozen `apiFetch` wrapper; the
- * mock (checkpoint 07) serves canned replies + real-or-fixture suggestions.
+ * routes these through the frozen `apiFetch` wrapper (which prefixes /api,
+ * attaches the bearer, and throws typed errors — a 502 AssistantUnavailable
+ * surfaces as ApiError). The mock serves canned data for tests.
  */
 export interface ChatApi {
-  /** POST /chat/messages — persist the user turn, get the assistant's reply. */
-  sendMessage(content: string, signal?: AbortSignal): Promise<SendMessageResponse>
-  /** GET /chat/messages — one page of history, newest first; page OLDER via nextCursor. */
-  getMessages(params?: GetMessagesParams, signal?: AbortSignal): Promise<GetMessagesResponse>
+  /** GET /chat/conversations — one page of the caller's conversations, newest-active first. */
+  listConversations(params?: PageParams, signal?: AbortSignal): Promise<ConversationListResponse>
+  /** POST /chat/conversations — create a conversation, title it, run its first turn. */
+  startConversation(content: string, signal?: AbortSignal): Promise<StartConversationResponse>
+  /** PATCH /chat/conversations/{id} — rename a conversation. */
+  renameConversation(conversationId: string, title: string, signal?: AbortSignal): Promise<ConversationSummary>
+  /** DELETE /chat/conversations/{id} — soft-delete a conversation. */
+  deleteConversation(conversationId: string, signal?: AbortSignal): Promise<void>
+  /** POST /chat/conversations/{id}/messages — persist the user turn, get the assistant's reply. */
+  sendMessage(conversationId: string, content: string, signal?: AbortSignal): Promise<SendMessageResponse>
+  /** GET /chat/conversations/{id}/messages — one page of a conversation's history, newest first. */
+  getMessages(conversationId: string, params?: PageParams, signal?: AbortSignal): Promise<GetMessagesResponse>
 }
 
 // ── Active provider ─────────────────────────────────────────────────────────
-// CHECKPOINT 08 SWAP POINT (chat-ai v2): this ONE line selects the active client
-// and nothing else in the app moves. Now the REAL client, which bridges this
-// single-thread contract onto the /chat/conversations routes (see chat.real.ts).
+// The REAL client, talking to the /chat/conversations routes (see chat.real.ts).
 // The mock stays available via `createMockChatApi` (chat.mock.ts) for tests.
 export const chatApi: ChatApi = createRealChatApi()

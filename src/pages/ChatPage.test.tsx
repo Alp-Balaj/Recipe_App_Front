@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, RouterProvider, createMemoryRouter, useParams } from 'react-router-dom'
 import ChatPage from './ChatPage'
-import { createMockChatApi, FALLBACK_RECIPES } from '@/api/chat.mock'
+import { createMockChatApi, mockConversationId, FALLBACK_RECIPES } from '@/api/chat.mock'
 import type { ChatApi } from '@/api/chat'
 import { ChatApiProvider } from '@/components/chat/ChatApiContext'
 import type { ThemeContextValue } from '@/components/ThemeRoot'
@@ -13,10 +13,11 @@ const theme: ThemeContextValue = { mode: 'dark', setMode: () => {}, toggleMode: 
 
 /**
  * Mount ChatPage in a minimal router that supplies the outlet theme context and
- * a /recipes/:id sink route, with an injected ChatApi. Self-contained so each
- * case gets a fresh mock thread (no cross-test pollution of the app singleton).
+ * a /recipes/:id sink, with an injected ChatApi. Both /chat and
+ * /chat/:conversationId point at ChatPage (mirroring the real router). Each case
+ * gets a fresh mock so no conversation state leaks across tests.
  */
-function renderChat(api: ChatApi) {
+function renderChat(api: ChatApi, initialPath = '/chat') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter(
     [
@@ -24,11 +25,12 @@ function renderChat(api: ChatApi) {
         element: <Outlet context={theme} />,
         children: [
           { path: '/chat', element: <ChatPage /> },
+          { path: '/chat/:conversationId', element: <ChatPage /> },
           { path: '/recipes/:id', element: <RecipeSink /> },
         ],
       },
     ],
-    { initialEntries: ['/chat'] },
+    { initialEntries: [initialPath] },
   )
   render(
     <QueryClientProvider client={client}>
@@ -45,27 +47,24 @@ function RecipeSink() {
   return <div data-testid="recipe-detail">Recipe {id}</div>
 }
 
-describe('ChatPage', () => {
+const CONV_1 = mockConversationId(1)
+
+describe('ChatPage — a single conversation', () => {
   it('renders the seeded thread (assistant greeting) from getMessages', async () => {
-    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 3 }))
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 3 }), `/chat/${CONV_1}`)
     expect(await screen.findByText(/Tell me what you're craving/i)).toBeInTheDocument()
   })
 
   it('sending a message appends the user turn and an assistant reply', async () => {
     const user = userEvent.setup()
-    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }))
-
-    // Wait for the initial history to settle.
+    // seedCount 1 → the thread is just the greeting (no seeded replies/suggestions
+    // to collide with the assertions below).
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }), `/chat/${CONV_1}`)
     await screen.findByText(/Tell me what you're craving/i)
 
-    const input = screen.getByLabelText('Message the assistant')
-    await user.type(input, 'Something warm and vegan')
+    await user.type(screen.getByLabelText('Message the assistant'), 'Something warm and vegan')
     await user.click(screen.getByLabelText('Send message'))
 
-    // Wait for the assistant reply to land — once it renders, the send settled
-    // (the optimistic bubble was swapped for the persisted turns in one commit),
-    // so both the user turn and the reply are stably in the document. Re-query
-    // rather than holding a node reference across the pending→settled swap.
     await waitFor(() =>
       expect(screen.getByText(/here are|should hit the spot|match|fit the bill/i)).toBeInTheDocument(),
     )
@@ -74,16 +73,13 @@ describe('ChatPage', () => {
 
   it('renders suggestion cards inside assistant messages and links to /recipes/:id', async () => {
     const user = userEvent.setup()
-    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }))
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }), `/chat/${CONV_1}`)
     await screen.findByText(/Tell me what you're craving/i)
 
     await user.type(screen.getByLabelText('Message the assistant'), 'ideas please')
     await user.click(screen.getByLabelText('Send message'))
 
-    // Suggestions come from fixtures offline (no GET /recipes handler in tests).
     const card = await screen.findByRole('link', { name: FALLBACK_RECIPES[0].title })
-    expect(card).toBeInTheDocument()
-
     await user.click(card)
     const detail = await screen.findByTestId('recipe-detail')
     expect(within(detail).getByText(new RegExp(FALLBACK_RECIPES[0].id))).toBeInTheDocument()
@@ -92,16 +88,80 @@ describe('ChatPage', () => {
   it('pages older messages via the scroll-back control', async () => {
     const user = userEvent.setup()
     // 24+ seeded messages > one page of 20 → a second (older) page exists.
-    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 24 }))
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 24 }), `/chat/${CONV_1}`)
 
-    // The greeting is the OLDEST message, so it sits on the second page and is
-    // absent until we scroll back.
     const loadMore = await screen.findByRole('button', { name: /load earlier messages/i })
     expect(screen.queryByText(/Tell me what you're craving/i)).not.toBeInTheDocument()
 
     await user.click(loadMore)
-
-    // After paging, the greeting (oldest message) is now loaded.
     expect(await screen.findByText(/Tell me what you're craving/i)).toBeInTheDocument()
+  })
+})
+
+describe('ChatPage — multiple conversations', () => {
+  it('a first send on /chat creates a conversation and deep-links to /chat/:id', async () => {
+    const user = userEvent.setup()
+    // Fresh user, no seeded conversations → the new one gets id #1.
+    const router = renderChat(createMockChatApi({ latencyMs: 0, conversationCount: 0 }), '/chat')
+
+    // New-chat surface: the welcome copy, not a loaded thread.
+    expect(await screen.findByText(/This starts a new conversation/i)).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Message the assistant'), 'quick weeknight pasta')
+    await user.click(screen.getByLabelText('Send message'))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/chat/${mockConversationId(1)}`))
+    // The first message both titles the conversation (header) and shows as the
+    // user turn (bubble), so it renders at least once — findAll also waits out
+    // the post-navigation render.
+    expect((await screen.findAllByText('quick weeknight pasta')).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('the drawer lists conversations and switches the active thread', async () => {
+    const user = userEvent.setup()
+    // Two seeded conversations: 'Weeknight dinners' (#1) and 'Something warm and vegan' (#2).
+    const router = renderChat(createMockChatApi({ latencyMs: 0, seedCount: 3 }), `/chat/${CONV_1}`)
+    await screen.findByText(/Tell me what you're craving/i)
+
+    await user.click(screen.getByLabelText('Open conversations'))
+    const drawer = await screen.findByRole('dialog', { name: 'Conversations' })
+
+    // Switch to the other conversation.
+    await user.click(within(drawer).getByRole('button', { name: 'Something warm and vegan' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/chat/${mockConversationId(2)}`))
+  })
+
+  it('the drawer renames a conversation', async () => {
+    const user = userEvent.setup()
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 3 }), `/chat/${CONV_1}`)
+    await screen.findByText(/Tell me what you're craving/i)
+
+    await user.click(screen.getByLabelText('Open conversations'))
+    const drawer = await screen.findByRole('dialog', { name: 'Conversations' })
+
+    await user.click(within(drawer).getByRole('button', { name: 'Rename Weeknight dinners' }))
+    const input = within(drawer).getByLabelText('Conversation title')
+    await user.clear(input)
+    await user.type(input, 'Cosy autumn meals{Enter}')
+
+    expect(await within(drawer).findByRole('button', { name: 'Cosy autumn meals' })).toBeInTheDocument()
+  })
+
+  it('the drawer deletes a conversation after confirmation', async () => {
+    const user = userEvent.setup()
+    const router = renderChat(createMockChatApi({ latencyMs: 0, seedCount: 3 }), `/chat/${CONV_1}`)
+    await screen.findByText(/Tell me what you're craving/i)
+
+    await user.click(screen.getByLabelText('Open conversations'))
+    const drawer = await screen.findByRole('dialog', { name: 'Conversations' })
+
+    await user.click(within(drawer).getByRole('button', { name: 'Delete Weeknight dinners' }))
+    await user.click(within(drawer).getByRole('button', { name: 'Confirm delete Weeknight dinners' }))
+
+    // Deleting the active thread falls back to the new-chat surface.
+    await waitFor(() => expect(router.state.location.pathname).toBe('/chat'))
+    await waitFor(() =>
+      expect(within(drawer).queryByRole('button', { name: 'Weeknight dinners' })).not.toBeInTheDocument(),
+    )
   })
 })
