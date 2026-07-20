@@ -81,14 +81,14 @@ describe('router shell (authenticated)', () => {
   it('flips data-mode when the profile theme toggle is used', async () => {
     renderRoute('/profile')
     const shell = document.querySelector('.app-shell')
-    // The imported redesign is dark-native, so the app opens in dark mode.
-    expect(shell).toHaveAttribute('data-mode', 'dark')
+    // The imported redesign is light-native, so the app opens in light mode.
+    expect(shell).toHaveAttribute('data-mode', 'light')
     // The theme toggle lives in Settings (design 3e).
     await userEvent.click(await screen.findByRole('button', { name: '⚙ Settings' }))
-    await userEvent.click(await screen.findByText('☀ Light'))
-    expect(shell).toHaveAttribute('data-mode', 'light')
     await userEvent.click(await screen.findByText('☾ Dark'))
     expect(shell).toHaveAttribute('data-mode', 'dark')
+    await userEvent.click(await screen.findByText('☀ Light'))
+    expect(shell).toHaveAttribute('data-mode', 'light')
   })
 })
 

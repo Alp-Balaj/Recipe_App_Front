@@ -173,59 +173,62 @@ body { margin: 0; }
 }
 
 /* ────────────────────────────────────────────────────────────────
-   Recipe App Redesign — warm amber on near-black (imported design).
-   Dark is the design's native palette; light is a warm-paper variant
-   in the same amber family so the theme toggle stays coherent.
+   Recipe App Redesign — warm cream/paper with a golden accent
+   (imported design "Recipe App Redesign").
+   Light is the design's native palette (cream surfaces, charcoal ink
+   #37352b, gold #8a6d1f interactive, #ecde87→#c6a24c gradient). Dark is
+   a coherent warm-charcoal counterpart in the same gold family so the
+   theme toggle stays consistent (the design ships no dark mockup).
    Shared accent gradient + idle-nav tokens are theme-agnostic values
    the sidebar / bottom-nav / CTAs read.
    ──────────────────────────────────────────────────────────────── */
 
-/* ── Light theme (warm paper) ── */
+/* ── Light theme (design native — warm cream / gold) ── */
 [data-mode="light"] {
-  --bg: #f7f1e8;
+  --bg: #f3f0e8;
   --surface: #ffffff;
-  --surface2: #f1e8da;
-  --border: #e8ddcc;
-  --text: #241d14;
-  --muted: #8a7e6d;
-  --accent: #d9772e;
-  --accent-ink: #ffffff;
-  --accent-grad: linear-gradient(135deg, #f7a94e, #e07c33);
-  --accent-soft: rgba(217, 119, 46, 0.12);
-  --navidle: #a1957f;
-  --cardsh: 0 3px 14px -6px rgba(90, 55, 20, 0.2);
+  --surface2: #f4ecc9;
+  --border: #e4dcc4;
+  --text: #37352b;
+  --muted: #9a8f6a;
+  --accent: #8a6d1f;
+  --accent-ink: #fdf9ec;
+  --accent-grad: linear-gradient(135deg, #ecde87, #c6a24c);
+  --accent-soft: rgba(198, 162, 76, 0.18);
+  --navidle: #a89a6f;
+  --cardsh: 0 4px 16px -8px rgba(55, 53, 43, 0.22);
   --inputbg: #ffffff;
-  --navbg: #fbf5ec;
-  --tagbg: #f4ecdd;
+  --navbg: #fbf6ea;
+  --tagbg: #f4ecc9;
   --tagborder: transparent;
-  --tagcol: #a4692a;
-  --hair: #ece2d2;
-  --chipbg: rgba(217, 119, 46, 0.12);
-  --chipcol: #b3651f;
-  --backdrop: #e6dccb;
+  --tagcol: #8a6d1f;
+  --hair: #ece3d0;
+  --chipbg: rgba(198, 162, 76, 0.16);
+  --chipcol: #8a6d1f;
+  --backdrop: #e9e5da;
 }
 
-/* ── Dark theme (design native) ── */
+/* ── Dark theme (warm-charcoal counterpart in the gold family) ── */
 [data-mode="dark"] {
-  --bg: #0c0b0a;
-  --surface: #1a1815;
-  --surface2: #1c1a17;
-  --border: #262220;
-  --text: #f2ede7;
-  --muted: #8f887e;
-  --accent: #f0a45c;
-  --accent-ink: #1a1207;
-  --accent-grad: linear-gradient(135deg, #f7a94e, #e07c33);
-  --accent-soft: rgba(240, 164, 92, 0.14);
-  --navidle: #6c655d;
+  --bg: #17130c;
+  --surface: #201b12;
+  --surface2: #292217;
+  --border: #342c1e;
+  --text: #f3ede0;
+  --muted: #a99c80;
+  --accent: #d9b45c;
+  --accent-ink: #251d0b;
+  --accent-grad: linear-gradient(135deg, #ecde87, #c6a24c);
+  --accent-soft: rgba(217, 180, 92, 0.16);
+  --navidle: #7d7157;
   --cardsh: none;
-  --inputbg: #1c1a17;
-  --navbg: #100e0d;
-  --tagbg: #1f1a15;
-  --tagborder: #2c2620;
-  --tagcol: #c9a578;
-  --hair: #262220;
-  --chipbg: rgba(240, 164, 92, 0.14);
-  --chipcol: #f0a45c;
-  --backdrop: #060505;
+  --inputbg: #201b12;
+  --navbg: #120f09;
+  --tagbg: #292217;
+  --tagborder: #383020;
+  --tagcol: #d9b45c;
+  --hair: #342c1e;
+  --chipbg: rgba(217, 180, 92, 0.16);
+  --chipcol: #e2c069;
+  --backdrop: #0b0906;
 }
