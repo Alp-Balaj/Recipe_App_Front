@@ -1,10 +1,12 @@
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import { PlusIcon } from './navIcons'
 import { NAV_ITEMS, activeTab } from './navItems'
+import { useBackdropPath } from './recipeCanvas'
 
 export default function BottomNav() {
   const navigate = useNavigate()
-  const { pathname } = useLocation()
-  const current = activeTab(pathname)
+  // An open recipe overlays the page it was opened from — keep that tab lit.
+  const current = activeTab(useBackdropPath())
 
   return (
     <>
@@ -21,17 +23,18 @@ export default function BottomNav() {
           height: 52,
           borderRadius: '50%',
           border: 'none',
-          background: 'var(--accent-grad)',
-          color: '#1a1207',
-          fontSize: 26,
-          lineHeight: 1,
+          background: 'var(--olive)',
+          color: 'var(--olive-ink)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           fontFamily: 'inherit',
           cursor: 'pointer',
           boxShadow: 'var(--cardsh)',
           zIndex: 5,
         }}
       >
-        ＋
+        <PlusIcon size={24} />
       </button>
 
       <div
@@ -70,7 +73,7 @@ export default function BottomNav() {
               padding: 0,
             }}
           >
-            <div style={{ fontSize: 19 }}>{item.icon}</div>
+            <item.icon size={22} />
             <div style={{ fontSize: 11, fontWeight: 600 }}>{item.label}</div>
           </button>
         )

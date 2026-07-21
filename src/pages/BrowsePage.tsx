@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
 import SocialRecipeCard from '@/components/SocialRecipeCard'
 import StateBlock from '@/components/ui/StateBlock'
+import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useRecipeList, type BrowseFilters } from '@/hooks/useRecipeList'
 import type { Difficulty, RecipeResponse } from '@/api/types'
@@ -10,7 +10,9 @@ import { formatMinutes, gradientFor } from './recipeVisuals'
 const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
 
 export default function BrowsePage() {
-  const navigate = useNavigate()
+  // BrowsePage also renders as the canvas BACKDROP, where `useLocation()` is a
+  // /recipes/:id URL — useOpenRecipe carries the real backdrop through.
+  const openRecipe = useOpenRecipe()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   // Committed filter state — each change produces a new query key, which resets
@@ -102,10 +104,10 @@ export default function BrowsePage() {
   ) : (
     <>
       {isDesktop ? (
-        <DesktopResults recipes={visible} onOpen={(id) => navigate(`/recipes/${id}`)} />
+        <DesktopResults recipes={visible} onOpen={openRecipe} />
       ) : (
         visible.map((r) => (
-          <SocialRecipeCard key={r.id} recipe={r} onOpen={() => navigate(`/recipes/${r.id}`)} />
+          <SocialRecipeCard key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />
         ))
       )}
 

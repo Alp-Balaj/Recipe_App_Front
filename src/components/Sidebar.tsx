@@ -1,9 +1,13 @@
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import Avatar from '@/components/Avatar'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { cookingRankMeta } from '@/lib/cookingRank'
-import { NAV_ITEMS, activeTab } from './navItems'
+import { MoonIcon, PlusIcon, SunIcon } from './navIcons'
+import { DESKTOP_NAV_ITEMS, activeTab } from './navItems'
+import { useBackdropPath } from './recipeCanvas'
+import { PanelIcon } from './SidebarRail'
+import SidebarSections from './SidebarSections'
 import type { Mode } from './ThemeRoot'
 
 interface Props {
@@ -20,10 +24,11 @@ interface Props {
  */
 export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
   const navigate = useNavigate()
-  const { pathname } = useLocation()
   const { user } = useAuth()
   const { data: profile } = useUserProfile(user?.userId)
-  const current = activeTab(pathname)
+  // The open recipe is a canvas over a page, not a destination: the tab that
+  // stays lit is the one for the page behind it.
+  const current = activeTab(useBackdropPath())
   const username = user?.username ?? 'You'
   const rank = cookingRankMeta(profile?.cookingRank ?? 0)
 
@@ -31,48 +36,44 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
     <aside className="sidebar">
       {/* Brand + collapse control */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px', marginBottom: 24 }}>
-        <div
+        {/* <span
           aria-hidden
           style={{
-            width: 34,
-            height: 34,
-            borderRadius: 11,
-            background: 'var(--accent-grad)',
+            flexShrink: 0,
+            width: 32,
+            height: 32,
+            borderRadius: 10,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 17,
-            flexShrink: 0,
           }}
         >
-          🍳
-        </div>
-        <div style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.15 }}>
-          What are
-          <br />
-          we cooking?
+          <BrandLogo />
+        </span> */}
+        <div style={{ flex: 1, minWidth: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.15 }}>
+          Cooked!
         </div>
         <button
           onClick={onCollapse}
-          title="Hide sidebar"
-          aria-label="Hide sidebar"
+          title="Close sidebar"
+          aria-label="Close sidebar"
+          aria-expanded
           style={{
             flexShrink: 0,
-            width: 28,
-            height: 28,
+            width: 30,
+            height: 30,
             borderRadius: 9,
-            border: '1px solid var(--border)',
+            border: 'none',
             background: 'transparent',
             color: 'var(--muted)',
             cursor: 'pointer',
-            fontSize: 14,
             fontFamily: 'inherit',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          «
+          <PanelIcon />
         </button>
       </div>
 
@@ -93,50 +94,56 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
           fontFamily: 'inherit',
           fontSize: 14,
           fontWeight: 800,
-          background: 'var(--accent-grad)',
-          color: '#1a1207',
+          background: 'var(--olive)',
+          color: 'var(--olive-ink)',
         }}
       >
-        <span style={{ fontSize: 16 }}>＋</span>
+        <PlusIcon size={17} />
         New recipe
       </button>
 
-      {/* Nav — drives the router; active state derives from the URL. */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {NAV_ITEMS.map((item) => {
-          const active = current === item.id
-          return (
-            <button
-              key={item.id}
-              onClick={() => navigate(item.to)}
-              aria-current={active ? 'page' : undefined}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 13,
-                width: '100%',
-                cursor: 'pointer',
-                border: 'none',
-                borderRadius: 13,
-                padding: '11px 13px',
-                fontFamily: 'inherit',
-                fontSize: 14.5,
-                fontWeight: 600,
-                textAlign: 'left',
-                transition: 'background 0.2s, color 0.2s',
-                background: active ? 'var(--accent-soft)' : 'transparent',
-                color: active ? 'var(--accent)' : 'var(--muted)',
-              }}
-            >
-              <span style={{ fontSize: 17, width: 20, textAlign: 'center' }}>{item.icon}</span>
-              {item.label}
-            </button>
-          )
-        })}
-      </nav>
+      {/* Nav + the Recipes/Chats sections scroll together; the footer stays pinned. */}
+      <div className="scroll" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', margin: '0 -4px', padding: '0 4px' }}>
+        {/* Nav — drives the router; active state derives from the URL. */}
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {DESKTOP_NAV_ITEMS.map((item) => {
+            const active = current === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => navigate(item.to)}
+                aria-current={active ? 'page' : undefined}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 13,
+                  width: '100%',
+                  cursor: 'pointer',
+                  border: 'none',
+                  borderRadius: 13,
+                  padding: '11px 13px',
+                  fontFamily: 'inherit',
+                  fontSize: 14.5,
+                  fontWeight: 600,
+                  textAlign: 'left',
+                  transition: 'background 0.2s, color 0.2s',
+                  background: active ? 'var(--accent-soft)' : 'transparent',
+                  color: active ? 'var(--accent)' : 'var(--muted)',
+                }}
+              >
+                <item.icon size={19} />
+                {item.label}
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* Collapsible Recipes / Chats lists (ChatGPT pattern). */}
+        <SidebarSections />
+      </div>
 
       {/* Footer — cooking-rank card + profile row (with theme toggle). */}
-      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 12 }}>
         <div
           style={{
             background: 'var(--surface)',
@@ -178,9 +185,9 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
             onClick={onToggleMode}
             title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            style={{ flexShrink: 0, background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer', fontFamily: 'inherit', padding: 4 }}
+            style={{ flexShrink: 0, display: 'flex', background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit', padding: 4 }}
           >
-            {mode === 'dark' ? '☀' : '☾'}
+            {mode === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
           </button>
         </div>
       </div>

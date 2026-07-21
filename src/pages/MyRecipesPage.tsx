@@ -25,6 +25,7 @@ import { useUpdateRecipe, useDeleteRecipe } from '@/hooks/useRecipeMutations'
 import { useInfiniteRecipes } from '@/hooks/useInfiniteRecipes'
 import RecipeCard from '@/components/RecipeCard'
 import StateBlock from '@/components/ui/StateBlock'
+import { useOpenRecipe } from '@/components/recipeCanvas'
 import Modal from '@/components/ui/Modal'
 import { RecipeForm, recipeResponseToFormValues } from './RecipeFormPage.shared'
 
@@ -43,6 +44,7 @@ const ERROR_COLOR = '#d9534f'
 export default function MyRecipesPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const openRecipe = useOpenRecipe()
   const userId = user?.userId
 
   const [editing, setEditing] = useState<RecipeResponse | null>(null)
@@ -158,7 +160,7 @@ export default function MyRecipesPage() {
           key={r.id}
           recipe={r}
           variant="mine"
-          onOpen={() => navigate(`/recipes/${r.id}`)}
+          onOpen={() => openRecipe(r.id)}
           onEdit={() => {
             setBanner(null)
             setEditing(r)

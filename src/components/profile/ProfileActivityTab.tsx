@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom'
 import { queryKeys } from '@/api/queryKeys'
 import { useAuth } from '@/auth/AuthContext'
 import StateBlock from '@/components/ui/StateBlock'
+import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useInfiniteRecipes } from '@/hooks/useInfiniteRecipes'
 import { formatRelativeTime } from '@/lib/relativeTime'
 
@@ -22,6 +23,7 @@ interface ActivityItem {
 export default function ProfileActivityTab() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const openRecipe = useOpenRecipe()
   const userId = user?.userId
 
   const { data, isLoading, isError, refetch } = useInfiniteRecipes({
@@ -54,7 +56,7 @@ export default function ProfileActivityTab() {
   return (
     <div>
       {items.map((a) => (
-        <button key={a.id} onClick={() => navigate(`/recipes/${a.id}`)} style={row}>
+        <button key={a.id} onClick={() => openRecipe(a.id)} style={row}>
           <span style={iconTile}>▦</span>
           <span style={{ flex: 1, minWidth: 0, textAlign: 'left', paddingTop: 1 }}>
             <span style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.4 }}>

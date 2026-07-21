@@ -1,10 +1,25 @@
-import { useState } from 'react'
-import { Navigate, Outlet, useLocation, useMatch, useOutletContext } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import {
+  Navigate,
+  Outlet,
+  useLocation,
+  useMatch,
+  useOutletContext,
+  useRoutes,
+  type RouteObject,
+} from 'react-router-dom'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useAuth } from '@/auth/AuthContext'
 import Sidebar from './Sidebar'
+import SidebarRail from './SidebarRail'
 import BottomNav from './BottomNav'
+import { useBackdropPath } from './recipeCanvas'
 import BrowsePage from '@/pages/BrowsePage'
+import ChatPage from '@/pages/ChatPage'
+import FeedPage from '@/pages/FeedPage'
+import MyRecipesPage from '@/pages/MyRecipesPage'
+import ProfilePage from '@/pages/ProfilePage'
+import UserProfilePage from '@/pages/UserProfilePage'
 import type { ThemeContextValue } from './ThemeRoot'
 
 /**
@@ -25,15 +40,44 @@ export default function AppShell() {
   const isDetail =
     !!detailMatch && detailMatch.params.id !== 'new' && detailMatch.params.id !== 'mine'
 
+  // ── The page behind the canvas ────────────────────────────────────────────
+  // A detail URL replaces the outlet, so the conversation pane renders the page
+  // the reader opened the recipe FROM (see recipeCanvas.ts) — a chat thread, the
+  // feed, a profile — matched here as descendant routes so those pages still get
+  // their :params and the theme outlet context. Anything not listed (or a deep
+  // link carrying no backdrop) falls back to the library, the old behaviour.
+  const backdropPath = useBackdropPath()
+  const backdropRoutes = useMemo<RouteObject[]>(
+    () => [
+      {
+        element: <Outlet context={theme} />,
+        children: [
+          { path: '/feed', element: <FeedPage /> },
+          { path: '/chat', element: <ChatPage /> },
+          { path: '/chat/:conversationId', element: <ChatPage /> },
+          { path: '/users/:id', element: <UserProfilePage /> },
+          { path: '/profile', element: <ProfilePage /> },
+          { path: '/recipes/mine', element: <MyRecipesPage /> },
+          { path: '*', element: <BrowsePage /> },
+        ],
+      },
+    ],
+    [theme],
+  )
+  const backdrop = useRoutes(backdropRoutes, backdropPath)
+
   // The redesigned Library + Feed + Profile use a wide, multi-column desktop
   // canvas (design 2a/2b/4a), so their conversation-inner column breaks out of
   // the narrow chat-column width. Chat / authoring stay in the readable ~720px
   // column. Detail keeps the library backdrop wide behind the canvas.
+  // On a detail URL the pane shows the backdrop, so it's the BACKDROP's width
+  // that matters (a chat behind the canvas stays a readable column).
+  const panePath = isDetail ? backdropPath : location.pathname
   const isWidePage =
-    isDetail ||
-    location.pathname.startsWith('/library') ||
-    location.pathname.startsWith('/feed') ||
-    location.pathname.startsWith('/profile')
+    panePath.startsWith('/library') ||
+    panePath.startsWith('/feed') ||
+    panePath.startsWith('/users') ||
+    panePath.startsWith('/profile')
 
   // ── Auth guard ──────────────────────────────────────────────────────────
   // Every route under AppShell is protected; /login and /register render
@@ -65,32 +109,26 @@ export default function AppShell() {
   if (isDesktop) {
     return (
       <div className="desktop-layout">
-        {sidebarOpen && (
+        {sidebarOpen ? (
           <Sidebar
             mode={theme.mode}
             onToggleMode={theme.toggleMode}
             onCollapse={() => setSidebarOpen(false)}
           />
+        ) : (
+          <SidebarRail
+            mode={theme.mode}
+            onToggleMode={theme.toggleMode}
+            onExpand={() => setSidebarOpen(true)}
+          />
         )}
 
         <div className="desktop-main">
-          {!sidebarOpen && (
-            <button
-              className="sidebar-reopen"
-              onClick={() => setSidebarOpen(true)}
-              title="Show sidebar"
-              aria-label="Show sidebar"
-            >
-              »
-            </button>
-          )}
-
           <section className="conversation-pane">
             <div className="conversation-inner" style={isWidePage ? { maxWidth: 1240 } : undefined}>
-              {/* On a detail URL the outlet renders in the canvas pane instead;
-                  the library backs the conversation pane so the two-pane look
-                  survives deep links and refreshes. */}
-              {isDetail ? <BrowsePage /> : <Outlet context={theme} />}
+              {/* On a detail URL the outlet renders in the canvas pane instead,
+                  and the page the recipe was opened from backs this pane. */}
+              {isDetail ? backdrop : <Outlet context={theme} />}
             </div>
           </section>
 

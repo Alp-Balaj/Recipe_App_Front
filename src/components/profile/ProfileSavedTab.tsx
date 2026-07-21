@@ -10,10 +10,12 @@ import { useNavigate } from 'react-router-dom'
 import type { RecipeResponse } from '@/api/types'
 import SocialRecipeCard from '@/components/SocialRecipeCard'
 import StateBlock from '@/components/ui/StateBlock'
+import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useSavedRecipes } from '@/hooks/useSavedRecipes'
 
 export default function ProfileSavedTab() {
   const navigate = useNavigate()
+  const openRecipe = useOpenRecipe()
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage, isFetching } =
     useSavedRecipes()
 
@@ -56,7 +58,7 @@ export default function ProfileSavedTab() {
   return (
     <>
       {recipes.map((r) => (
-        <SocialRecipeCard key={r.id} recipe={r} seed={{ savedByMe: true }} onOpen={() => navigate(`/recipes/${r.id}`)} />
+        <SocialRecipeCard key={r.id} recipe={r} seed={{ savedByMe: true }} onOpen={() => openRecipe(r.id)} />
       ))}
 
       <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0 12px' }}>

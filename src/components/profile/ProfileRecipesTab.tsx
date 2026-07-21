@@ -16,6 +16,7 @@ import type { RecipeResponse } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import Modal from '@/components/ui/Modal'
 import StateBlock from '@/components/ui/StateBlock'
+import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useInfiniteRecipes } from '@/hooks/useInfiniteRecipes'
 import { useDeleteRecipe, useUpdateRecipe } from '@/hooks/useRecipeMutations'
 import { RecipeForm, recipeResponseToFormValues } from '@/pages/RecipeFormPage.shared'
@@ -27,6 +28,7 @@ const ERROR_COLOR = '#d9534f'
 export default function ProfileRecipesTab({ columns = 1 }: { columns?: number }) {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const openRecipe = useOpenRecipe()
   const userId = user?.userId
 
   const [editing, setEditing] = useState<RecipeResponse | null>(null)
@@ -126,7 +128,7 @@ export default function ProfileRecipesTab({ columns = 1 }: { columns?: number })
             <RecipeListRow
               key={r.id}
               recipe={r}
-              onOpen={() => navigate(`/recipes/${r.id}`)}
+              onOpen={() => openRecipe(r.id)}
               onEdit={() => {
                 setBanner(null)
                 setEditing(r)

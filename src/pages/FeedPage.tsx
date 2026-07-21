@@ -18,6 +18,7 @@ import FeedPostCard from '@/components/FeedPostCard'
 import ImmersiveFeedCard from '@/components/ImmersiveFeedCard'
 import Avatar from '@/components/Avatar'
 import StateBlock from '@/components/ui/StateBlock'
+import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useFeed } from '@/hooks/useFeed'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
@@ -25,6 +26,7 @@ import type { FeedItemResponse, UserSummaryResponse } from '@/api/social'
 
 export default function FeedPage() {
   const navigate = useNavigate()
+  const openRecipe = useOpenRecipe()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const {
     data,
@@ -58,7 +60,8 @@ export default function FeedPage() {
   const isDiscover = source === 'discover'
 
   const cardProps = (item: FeedItemResponse) => ({
-    onOpen: () => navigate(`/recipes/${item.recipe.id}`),
+    // The feed stays behind the canvas — see recipeCanvas.ts.
+    onOpen: () => openRecipe(item.recipe.id),
     onOpenAuthor: () => navigate(`/users/${item.author.id}`),
     onToggleLike: (next: boolean) => toggleLike.mutate({ recipeId: item.recipe.id, next }),
     onToggleSave: (next: boolean) => toggleSave.mutate({ recipeId: item.recipe.id, next }),

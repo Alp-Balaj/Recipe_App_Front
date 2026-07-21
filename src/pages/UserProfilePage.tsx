@@ -16,6 +16,7 @@ import type { RecipeResponse } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import Avatar from '@/components/Avatar'
 import StateBlock from '@/components/ui/StateBlock'
+import { useOpenRecipe } from '@/components/recipeCanvas'
 import { isNotFound } from '@/hooks/useRecipe'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
 import { useUserProfile, useUserRecipes } from '@/hooks/useUserProfile'
@@ -34,6 +35,7 @@ const PAGE_STYLE = {
 export default function UserProfilePage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const openRecipe = useOpenRecipe()
   const { user } = useAuth()
   const isOwn = !!user && user.userId === id
 
@@ -166,7 +168,7 @@ export default function UserProfilePage() {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
             {recipes.map((r) => (
-              <GridTile key={r.id} recipe={r} onOpen={() => navigate(`/recipes/${r.id}`)} />
+              <GridTile key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />
             ))}
           </div>
           {hasNextPage && (
