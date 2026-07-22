@@ -157,7 +157,7 @@ describe('RecipeDetailPage envelope fallback (F1)', () => {
     )
     // Browse first: the card derives a cache-only, all-unknown envelope entry
     // (list surfaces deliberately do NOT fetch — no N-per-page fan-out).
-    renderRoute('/library')
+    renderRoute('/discover')
     expect(await screen.findByText('Upgraded udon')).toBeInTheDocument()
     expect(socialRequests).toBe(0)
 

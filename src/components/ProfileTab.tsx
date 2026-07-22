@@ -25,6 +25,7 @@ import { useUserProfile } from '@/hooks/useUserProfile'
 import type { FollowListKind } from '@/hooks/useFollowList'
 import { cookingRankMeta, type CookingRankMeta } from '@/lib/cookingRank'
 import { deriveBadges, earnedBadgeCount, type ProfileBadge } from '@/lib/profileBadges'
+import { gradientFor } from '@/pages/recipeVisuals'
 import type { Mode } from './ThemeRoot'
 import FollowListModal from './profile/FollowListModal'
 import ProfileActivityTab from './profile/ProfileActivityTab'
@@ -227,48 +228,78 @@ function MobileProfile(p: LayoutProps) {
 function DesktopProfile(p: LayoutProps) {
   return (
     <div className="scroll" style={desktopPage}>
-      {p.shareToast && <ShareToast text={p.shareToast} />}
+      {/* Full-bleed cover, keyed off the user so it's stable per profile. */}
+      <div style={{ height: 150, background: gradientFor(p.userId ?? p.username) }} />
 
-      <div style={{ display: 'flex', gap: 26, alignItems: 'flex-start' }}>
-        {/* Left summary column (sticky) */}
-        <div style={summaryCol}>
-          <div style={summaryCard}>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <AvatarWithLevel username={p.username} userId={p.userId} profile={p.profile} rank={p.rank.value} size={96} />
+      <div style={{ padding: '0 40px 44px', maxWidth: 1080 }}>
+        {/* Hero — the avatar overlaps the cover; identity left, actions right. */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, marginTop: -46 }}>
+          <AvatarWithLevel
+            username={p.username}
+            userId={p.userId}
+            profile={p.profile}
+            rank={p.rank.value}
+            size={104}
+            onCover
+          />
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              gap: 18,
+              flexWrap: 'wrap',
+              paddingBottom: 6,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em' }}>{p.username}</div>
+              <div style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: 2 }}>{p.rank.title}</div>
             </div>
-            <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '-0.01em', marginTop: 14 }}>{p.username}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{p.rank.title}</div>
-            {p.profile?.bio && (
-              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.5, marginTop: 12 }}>{p.profile.bio}</div>
-            )}
-
-            <div style={{ display: 'flex', margin: '18px 0 16px' }}>
-              <StatCell value={p.profile?.recipeCount} label="Recipes" onClick={() => p.onTab('recipes')} divider />
-              <StatCell value={p.profile?.followerCount} label="Followers" onClick={() => p.onOpenFollow('followers')} divider />
-              <StatCell value={p.profile?.followingCount} label="Following" onClick={() => p.onOpenFollow('following')} />
-            </div>
-
-            <div style={{ display: 'flex', gap: 9 }}>
-              <ActionButton primary onClick={p.onOpenSettings}>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <HeaderButton primary onClick={p.onOpenSettings}>
                 ⚙ Settings
-              </ActionButton>
-              <ActionButton onClick={p.onShareProfile}>↗ Share</ActionButton>
+              </HeaderButton>
+              <HeaderButton onClick={p.onShareProfile}>↗ Share</HeaderButton>
             </div>
           </div>
-
-          <RankCard rank={p.rank} />
-          <BadgesCard badges={p.badges} earned={p.earned} />
         </div>
 
-        {/* Right content pane */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={contentHeader}>
-            <TabBar tab={p.tab} onTab={p.onTab} recipeCount={p.profile?.recipeCount} />
-            <button onClick={p.onNewRecipe} style={newRecipeBtn}>
-              ＋ New recipe
-            </button>
+        {p.profile?.bio && (
+          <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5, marginTop: 14, maxWidth: 620 }}>
+            {p.profile.bio}
           </div>
-          <div style={{ marginTop: 18 }}>{p.renderTabContent(2)}</div>
+        )}
+
+        {p.shareToast && (
+          <div style={{ marginTop: 16 }}>
+            <ShareToast text={p.shareToast} />
+          </div>
+        )}
+
+        {/* Design 4b: a 340px stats/rank/badges rail beside the tabbed grid. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 22, marginTop: 26, alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={{ display: 'flex', ...statStrip, borderRadius: 18, padding: '16px 0' }}>
+              <StatCell value={p.profile?.recipeCount} label="Recipes" onClick={() => p.onTab('recipes')} divider desktop />
+              <StatCell value={p.profile?.followerCount} label="Followers" onClick={() => p.onOpenFollow('followers')} divider desktop />
+              <StatCell value={p.profile?.followingCount} label="Following" onClick={() => p.onOpenFollow('following')} desktop />
+            </div>
+
+            <RankCard rank={p.rank} desktop />
+            <BadgesCard badges={p.badges} earned={p.earned} desktop />
+          </div>
+
+          <div style={{ minWidth: 0 }}>
+            <div style={contentHeader}>
+              <TabBar tab={p.tab} onTab={p.onTab} recipeCount={p.profile?.recipeCount} desktop />
+              <button onClick={p.onNewRecipe} style={newRecipeBtn}>
+                ＋ New recipe
+              </button>
+            </div>
+            <div style={{ marginTop: 20 }}>{p.renderTabContent(2)}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -283,56 +314,81 @@ function AvatarWithLevel({
   profile,
   rank,
   size,
+  onCover,
 }: {
   username: string
   userId: string | undefined
   profile?: UserProfileResponse
   rank: number
   size: number
+  /** Desktop hero: the avatar overlaps the cover, so it gets a plain page-
+   *  coloured cut-out ring instead of the olive halo used on the mobile hero. */
+  onCover?: boolean
 }) {
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      <div style={{ borderRadius: '50%', boxShadow: '0 0 0 2px var(--surface), 0 0 0 4px var(--accent)' }}>
+    <div style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
+      <div
+        style={{
+          borderRadius: '50%',
+          boxShadow: onCover ? '0 0 0 5px var(--bg)' : '0 0 0 2px var(--bg), 0 0 0 4px var(--accent-fill)',
+        }}
+      >
         <Avatar username={username} profileImageUrl={profile?.profileImageUrl} seed={userId ?? username} size={size} />
       </div>
-      <div style={levelBadge}>Lv {rank}</div>
+      <div style={{ ...levelBadge, ...(onCover ? { bottom: 2, right: -2 } : null) }}>Lv {rank}</div>
     </div>
   )
 }
 
-function RankCard({ rank }: { rank: CookingRankMeta }) {
+function RankCard({ rank, desktop }: { rank: CookingRankMeta; desktop?: boolean }) {
+  // Desktop folds "x to next" into the subtitle line; mobile keeps the two
+  // labels under the bar (design 4b vs 3b).
+  const toNext = rank.pointsToNext != null && rank.nextTitle ? `${rank.pointsToNext} to ${rank.nextTitle}` : null
+
   return (
-    <div style={rankCard}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <div style={rankGlyph}>✦</div>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>{rank.title}</div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{rank.value} pts</div>
+    <div style={desktop ? { ...rankCard, borderRadius: 18, padding: '17px 18px' } : rankCard}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+        <div style={desktop ? { ...rankGlyph, width: 42, height: 42, fontSize: 20 } : rankGlyph}>✦</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800 }}>{rank.title}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+            {rank.value} pts{desktop && toNext ? ` · ${toNext}` : ''}
           </div>
         </div>
       </div>
-      <div style={{ height: 8, borderRadius: 999, background: 'var(--surface2)', marginTop: 14, overflow: 'hidden' }}>
+      <div
+        style={{
+          height: 8,
+          borderRadius: 999,
+          background: 'var(--surface2)',
+          marginTop: desktop ? 15 : 14,
+          overflow: 'hidden',
+        }}
+      >
         <div style={{ width: `${rank.progress}%`, height: '100%', background: 'var(--accent-grad)' }} />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7, fontSize: 10.5, color: 'var(--muted)' }}>
-        <span>{rank.pointsToNext != null ? `${rank.pointsToNext} pts to next` : 'Top tier'}</span>
-        <span>{rank.nextTitle ? `Next: ${rank.nextTitle}` : 'Top tier'}</span>
-      </div>
+      {!desktop && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7, fontSize: 10.5, color: 'var(--muted)' }}>
+          <span>{rank.pointsToNext != null ? `${rank.pointsToNext} pts to next` : 'Top tier'}</span>
+          <span>{rank.nextTitle ? `Next: ${rank.nextTitle}` : 'Top tier'}</span>
+        </div>
+      )}
     </div>
   )
 }
 
-function BadgesCard({ badges, earned }: { badges: ProfileBadge[]; earned: number }) {
+function BadgesCard({ badges, earned, desktop }: { badges: ProfileBadge[]; earned: number; desktop?: boolean }) {
+  const tile = desktop ? 50 : 48
+
   return (
-    <div style={badgesCard}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+    <div style={desktop ? { ...badgesCard, borderRadius: 18, padding: '17px 18px' } : badgesCard}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: desktop ? 15 : 14 }}>
         <div style={{ fontSize: 14, fontWeight: 800 }}>Badges</div>
         <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent)' }}>
           {`${earned} of ${badges.length}`}
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: desktop ? 14 : 12 }}>
         {badges.map((b) => (
           <div
             key={b.id}
@@ -341,19 +397,21 @@ function BadgesCard({ badges, earned }: { badges: ProfileBadge[]; earned: number
           >
             <div
               style={{
-                width: 48,
-                height: 48,
+                width: tile,
+                height: tile,
                 borderRadius: 15,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 20,
+                fontSize: desktop ? 21 : 20,
                 background: b.earned ? 'var(--accent-soft)' : 'var(--surface2)',
               }}
             >
               {b.icon}
             </div>
-            <div style={{ fontSize: 9.5, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2 }}>{b.name}</div>
+            <div style={{ fontSize: desktop ? 10 : 9.5, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2 }}>
+              {b.name}
+            </div>
           </div>
         ))}
       </div>
@@ -366,11 +424,13 @@ function StatCell({
   label,
   onClick,
   divider,
+  desktop,
 }: {
   value: number | undefined
   label: string
   onClick: () => void
   divider?: boolean
+  desktop?: boolean
 }) {
   return (
     <button
@@ -387,7 +447,7 @@ function StatCell({
         padding: '2px 6px',
       }}
     >
-      <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{value ?? '—'}</div>
+      <div style={{ fontSize: desktop ? 20 : 17, fontWeight: 800, color: 'var(--text)' }}>{value ?? '—'}</div>
       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, marginTop: 2 }}>{label}</div>
     </button>
   )
@@ -398,21 +458,26 @@ function TabBar({
   onTab,
   recipeCount,
   centered,
+  desktop,
 }: {
   tab: ContentTab
   onTab: (t: ContentTab) => void
   recipeCount?: number
   centered?: boolean
+  desktop?: boolean
 }) {
+  const size = desktop ? 14 : 13.5
+
   return (
     <div
       style={{
         display: 'flex',
-        gap: centered ? 24 : 28,
+        gap: desktop ? 26 : centered ? 24 : 28,
         justifyContent: centered ? 'center' : 'flex-start',
         borderBottom: '1px solid var(--border)',
-        fontSize: 13.5,
+        fontSize: size,
         fontWeight: 700,
+        flex: desktop ? 1 : undefined,
       }}
     >
       {TABS.map((t) => {
@@ -427,12 +492,12 @@ function TabBar({
               border: 'none',
               cursor: 'pointer',
               fontFamily: 'inherit',
-              fontSize: 13.5,
+              fontSize: size,
               fontWeight: 700,
-              padding: '2px 0 11px',
+              padding: desktop ? '2px 0 12px' : '2px 0 11px',
               marginBottom: -1,
               color: active ? 'var(--text)' : 'var(--navidle)',
-              borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
+              borderBottom: active ? '2px solid var(--accent-fill)' : '2px solid transparent',
             }}
           >
             {t.label}
@@ -468,7 +533,30 @@ function ActionButton({
         fontFamily: 'inherit',
         fontSize: 13.5,
         fontWeight: primary ? 800 : 700,
-        background: primary ? 'var(--accent)' : 'var(--surface2)',
+        background: primary ? 'var(--accent-fill)' : 'var(--surface2)',
+        color: primary ? 'var(--accent-ink)' : 'var(--text)',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Desktop hero action — the same pair as mobile, sized to sit beside the name
+ *  rather than stretch across the column (design 4b). */
+function HeaderButton({ children, onClick, primary }: { children: ReactNode; onClick: () => void; primary?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        cursor: 'pointer',
+        border: primary ? 'none' : '1px solid var(--border)',
+        borderRadius: 12,
+        padding: '11px 20px',
+        fontFamily: 'inherit',
+        fontSize: 13.5,
+        fontWeight: primary ? 800 : 700,
+        background: primary ? 'var(--accent-fill)' : 'var(--surface)',
         color: primary ? 'var(--accent-ink)' : 'var(--text)',
       }}
     >
@@ -506,31 +594,12 @@ const mobilePage: CSSProperties = {
   padding: '54px 18px 16px',
 }
 
+// Padding lives on the inner wrapper so the cover banner bleeds edge to edge.
 const desktopPage: CSSProperties = {
   position: 'absolute',
   inset: 0,
   bottom: 'var(--nav-h, 74px)',
   overflowY: 'auto',
-  padding: '30px 8px 34px',
-}
-
-const summaryCol: CSSProperties = {
-  width: 336,
-  flexShrink: 0,
-  position: 'sticky',
-  top: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
-}
-
-const summaryCard: CSSProperties = {
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  boxShadow: 'var(--cardsh)',
-  borderRadius: 22,
-  padding: '24px 20px',
-  textAlign: 'center',
 }
 
 const contentHeader: CSSProperties = {
@@ -553,7 +622,7 @@ const newRecipeBtn: CSSProperties = {
   fontFamily: 'inherit',
   fontSize: 13,
   fontWeight: 800,
-  background: 'var(--accent)',
+  background: 'var(--accent-fill)',
   color: 'var(--accent-ink)',
 }
 
@@ -570,12 +639,12 @@ const levelBadge: CSSProperties = {
   bottom: -4,
   right: -4,
   background: 'var(--accent-grad)',
-  color: '#1a1207',
+  color: '#2a2410',
   fontSize: 11,
   fontWeight: 800,
   borderRadius: 999,
   padding: '3px 9px',
-  border: '2px solid var(--surface)',
+  border: '2px solid var(--bg)',
 }
 
 const rankCard: CSSProperties = {
@@ -591,7 +660,7 @@ const rankGlyph: CSSProperties = {
   height: 40,
   borderRadius: 12,
   background: 'var(--accent-grad)',
-  color: '#1a1207',
+  color: '#2a2410',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',

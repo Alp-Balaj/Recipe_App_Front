@@ -124,11 +124,12 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
                   padding: '11px 13px',
                   fontFamily: 'inherit',
                   fontSize: 14.5,
-                  fontWeight: 600,
+                  // Design 4a/4b: the active rail item is a solid olive pill.
+                  fontWeight: active ? 800 : 600,
                   textAlign: 'left',
                   transition: 'background 0.2s, color 0.2s',
-                  background: active ? 'var(--accent-soft)' : 'transparent',
-                  color: active ? 'var(--accent)' : 'var(--muted)',
+                  background: active ? 'var(--accent-fill)' : 'transparent',
+                  color: active ? 'var(--accent-ink)' : 'var(--muted)',
                 }}
               >
                 <item.icon size={19} />

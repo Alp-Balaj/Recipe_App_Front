@@ -35,9 +35,9 @@ export default function RecipeDetailPage() {
   const { toggleLike, toggleSave } = useSocialMutations()
 
   const close = () => {
-    // Back to wherever we came from; deep links with no in-app history → library.
+    // Back to wherever we came from; deep links with no in-app history → Discover.
     if (window.history.state?.idx > 0) navigate(-1)
-    else navigate('/library', { replace: true })
+    else navigate('/discover', { replace: true })
   }
 
   if (isLoading) {
@@ -50,7 +50,7 @@ export default function RecipeDetailPage() {
         variant="page"
         title="Recipe not found"
         body="This recipe doesn't exist, was removed, or isn't shared with you."
-        action={{ label: 'Back to library', onClick: () => navigate('/library', { replace: true }) }}
+        action={{ label: 'Back to Discover', onClick: () => navigate('/discover', { replace: true }) }}
       />
     )
   }
@@ -108,7 +108,7 @@ export default function RecipeDetailPage() {
               padding: '0 12px',
               gap: 6,
               borderRadius: 999,
-              color: envelope.likedByMe ? 'var(--accent)' : '#fff',
+              color: envelope.likedByMe ? '#da0909' : '#fff',
             }}
           >
             {envelope.likedByMe ? '♥' : '♡'}
@@ -124,7 +124,7 @@ export default function RecipeDetailPage() {
               ...roundIconBtn(16),
               right: 18,
               left: 'auto',
-              color: envelope.savedByMe ? 'var(--accent)' : '#fff',
+              color: envelope.savedByMe ? '#fd9424' : '#fff',
             }}
           >
             {envelope.savedByMe ? '⚑' : '⚐'}

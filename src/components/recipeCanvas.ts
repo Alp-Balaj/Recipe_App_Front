@@ -10,11 +10,11 @@ import { useLocation, useNavigate } from 'react-router-dom'
  * `state.backdrop` (react-router's "background location" pattern), so it
  * survives refreshes and back/forward. `AppShell` renders it in the
  * conversation pane and the nav rails derive their active tab from it, instead
- * of both falling back to the library the way they used to. A deep link or an
- * external entry point carries no backdrop → the library, as before.
+ * of both falling back to Discover the way they used to. A deep link or an
+ * external entry point carries no backdrop → Discover, as before.
  */
 
-const DEFAULT_BACKDROP = '/library'
+const DEFAULT_BACKDROP = '/discover'
 
 interface BackdropState {
   backdrop?: string
@@ -45,7 +45,7 @@ export function useBackdropPath(): string {
 /**
  * Open a recipe without losing the page behind it. Use this everywhere a card,
  * tile or suggestion opens a recipe — a bare `navigate('/recipes/' + id)` drops
- * the backdrop and lands the reader back in the library.
+ * the backdrop and lands the reader back in Discover.
  */
 export function useOpenRecipe(): (recipeId: string) => void {
   const navigate = useNavigate()

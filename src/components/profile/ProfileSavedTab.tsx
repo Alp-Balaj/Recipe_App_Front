@@ -50,7 +50,7 @@ export default function ProfileSavedTab() {
       <StateBlock
         title="Nothing saved yet"
         body="Tap the flag on any recipe to keep it here for later."
-        action={{ label: 'Browse recipes', onClick: () => navigate('/library') }}
+        action={{ label: 'Browse recipes', onClick: () => navigate('/discover') }}
       />
     )
   }

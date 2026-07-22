@@ -73,7 +73,7 @@ describe('isRecipeDetailPath', () => {
     expect(isRecipeDetailPath('/recipes/r1')).toBe(true)
     expect(isRecipeDetailPath('/recipes/new')).toBe(false)
     expect(isRecipeDetailPath('/recipes/mine')).toBe(false)
-    expect(isRecipeDetailPath('/library')).toBe(false)
+    expect(isRecipeDetailPath('/discover')).toBe(false)
   })
 })
 
@@ -92,17 +92,17 @@ describe('recipe canvas backdrop (desktop)', () => {
 
     // The canvas shows the recipe...
     expect(await screen.findByText('Miso butter noodles')).toBeInTheDocument()
-    // ...over the FEED, not the library: the feed's empty state, and the Feed
-    // tab (not Library) still reads as the current page.
+    // ...over the FEED, not the browse backdrop: the feed's empty state, and
+    // the Feed tab (not Discover) still reads as the current page.
     expect(await screen.findByText('Nothing cooking yet')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Feed' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('button', { name: 'Library' })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('button', { name: 'Discover' })).not.toHaveAttribute('aria-current')
   })
 
   it('falls back to the library for a deep link that carries no backdrop', async () => {
     renderAt('/recipes/r1')
 
     expect(await screen.findByText('Miso butter noodles')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Discover' })).toHaveAttribute('aria-current', 'page')
   })
 })

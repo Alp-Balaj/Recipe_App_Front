@@ -126,7 +126,7 @@ describe('ProfilePage — Saved tab', () => {
     await userEvent.click(await screen.findByRole('button', { name: '⚑ Saved' }))
     expect(await screen.findByText('Nothing saved yet')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Browse recipes' }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/library'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/discover'))
   })
 
   it('unsaves from the Saved tab: card drops out optimistically and DELETE fires', async () => {

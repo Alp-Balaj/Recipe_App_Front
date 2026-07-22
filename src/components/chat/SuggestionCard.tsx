@@ -9,7 +9,7 @@ import { useOpenRecipe } from '@/components/recipeCanvas'
  * palette + raw-minutes formatting; it now reuses the one card.)
  *
  * Opens through useOpenRecipe so the chat thread stays behind the canvas — a
- * plain navigate() would swap the pane to the library mid-conversation.
+ * plain navigate() would swap the pane to Discover mid-conversation.
  */
 export default function SuggestionCard({ recipe }: { recipe: RecipeResponse }) {
   const openRecipe = useOpenRecipe()

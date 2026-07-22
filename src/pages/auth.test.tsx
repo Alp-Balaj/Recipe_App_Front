@@ -16,7 +16,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
     expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/library')
+    expect(router.state.location.pathname).toBe('/discover')
     expect(localStorage.getItem('recipe_app_auth')).toContain('alice')
   })
 
@@ -70,7 +70,7 @@ describe('RegisterPage', () => {
     await user.click(screen.getByRole('button', { name: /create account/i }))
 
     expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/library')
+    expect(router.state.location.pathname).toBe('/discover')
     // The whole point: register returns a token, so login is never called.
     expect(loginSpy).not.toHaveBeenCalled()
   })

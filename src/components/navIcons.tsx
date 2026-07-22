@@ -55,8 +55,8 @@ export function ChatIcon(props: IconProps) {
   )
 }
 
-/** Library — an open recipe book. */
-export function LibraryIcon(props: IconProps) {
+/** Discover — an open recipe book. */
+export function DiscoverIcon(props: IconProps) {
   return (
     <Svg {...props}>
       <path d="M12 6.6C10.6 5.1 8.6 4.5 5 4.5v13c3.6 0 5.6.6 7 2.1 1.4-1.5 3.4-2.1 7-2.1v-13c-3.6 0-5.6.6-7 2.1z" />

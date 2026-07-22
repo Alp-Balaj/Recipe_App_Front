@@ -180,42 +180,49 @@ body { margin: 0; }
 }
 
 /* ────────────────────────────────────────────────────────────────
-   Recipe App Redesign — warm cream/paper with a golden accent
-   (imported design "Recipe App Redesign").
-   Light is the design's native palette (cream surfaces, charcoal ink
-   #37352b, gold #8a6d1f interactive, #ecde87→#c6a24c gradient). Dark is
-   a coherent warm-charcoal counterpart in the same gold family so the
-   theme toggle stays consistent (the design ships no dark mockup).
-   Shared accent gradient + idle-nav tokens are theme-agnostic values
-   the sidebar / bottom-nav / CTAs read.
+   Recipe App Redesign — golden-yellow paper with an olive-green accent
+   (imported design "Library & Profile — golden-yellow & olive-green").
+   Light is the design's native palette: cream page #fbf9ef, near-white
+   surfaces #fffef9, golden-yellow fills #f1e7b6 / #f6efc9, ink #2a261d,
+   olive interactive #7f9a3f. Dark stays in the previous gold family
+   (the design ships no dark mockup) — the toggle keeps working.
+
+   Two olive tokens, because the design uses two:
+     --accent       #5e7a2b  the deeper olive it uses for TEXT on cream
+                             ("View ›", "4 of 6", Filters, visibility chip)
+     --accent-fill  #7f9a3f  the brighter olive it uses for SOLID FILLS
+                             (active pill, Settings, tab underline, nav)
+   Splitting them keeps olive-on-cream label text above 4.5:1 — a single
+   #7f9a3f would land at ~3.1:1 everywhere --accent is used as a colour.
    ──────────────────────────────────────────────────────────────── */
 
-/* ── Light theme (design native — warm cream / gold) ── */
+/* ── Light theme (design native — golden yellow / olive green) ── */
 [data-mode="light"] {
-  --bg: #f3f0e8;
-  --surface: #ffffff;
-  --surface2: #f4ecc9;
-  --border: #e4dcc4;
-  --text: #37352b;
-  --muted: #9a8f6a;
-  --accent: #8a6d1f;
-  --accent-ink: #fdf9ec;
-  --accent-grad: linear-gradient(135deg, #ecde87, #c6a24c);
-  --accent-soft: rgba(198, 162, 76, 0.18);
-  /* Olive CTA — the "New recipe" action only; everything else stays gold. */
-  --olive: #6b7f3a;
-  --olive-ink: #fbfdf4;
-  --navidle: #a89a6f;
-  --cardsh: 0 4px 16px -8px rgba(55, 53, 43, 0.22);
-  --inputbg: #ffffff;
-  --navbg: #fbf6ea;
-  --tagbg: #f4ecc9;
+  --bg: #fbf9ef;
+  --surface: #fffef9;
+  --surface2: #f1e7b6;
+  --border: #e9dfb2;
+  --text: #2a261d;
+  --muted: #8b7e4d;
+  --accent: #5e7a2b;
+  --accent-fill: #7f9a3f;
+  --accent-ink: #f8fbef;
+  --accent-grad: linear-gradient(135deg, #cdd98a, #9bb14f);
+  --accent-soft: rgba(127, 154, 63, 0.18);
+  /* The "New recipe" CTA now sits in the same olive family as the accent. */
+  --olive: #7f9a3f;
+  --olive-ink: #f8fbef;
+  --navidle: #b3a878;
+  --cardsh: 0 4px 16px -8px rgba(60, 54, 20, 0.18);
+  --inputbg: #fffef9;
+  --navbg: #f6efc9;
+  --tagbg: #f1e7b6;
   --tagborder: transparent;
-  --tagcol: #8a6d1f;
-  --hair: #ece3d0;
-  --chipbg: rgba(198, 162, 76, 0.16);
-  --chipcol: #8a6d1f;
-  --backdrop: #e9e5da;
+  --tagcol: #7c6b2b;
+  --hair: #efe7c6;
+  --chipbg: rgba(127, 154, 63, 0.15);
+  --chipcol: #5e7a2b;
+  --backdrop: #e7e4dc;
 }
 
 /* ── Dark theme (warm-charcoal counterpart in the gold family) ── */
@@ -227,6 +234,8 @@ body { margin: 0; }
   --text: #f3ede0;
   --muted: #a99c80;
   --accent: #d9b45c;
+  /* Dark is untouched by the olive import — fills reuse the gold accent. */
+  --accent-fill: #d9b45c;
   --accent-ink: #251d0b;
   --accent-grad: linear-gradient(135deg, #ecde87, #c6a24c);
   --accent-soft: rgba(217, 180, 92, 0.16);

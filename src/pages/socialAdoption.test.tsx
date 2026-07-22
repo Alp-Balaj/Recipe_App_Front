@@ -150,7 +150,7 @@ describe('BrowsePage social adoption', () => {
         return new HttpResponse(null, { status: 204 })
       }),
     )
-    renderRoute('/library')
+    renderRoute('/discover')
 
     expect(await screen.findByText('Browsable bao')).toBeInTheDocument()
     // Unknown envelope → no count shown, affordance reads "not yet liked".
@@ -174,7 +174,7 @@ describe('BrowsePage social adoption', () => {
         return new HttpResponse(null, { status: 204 })
       }),
     )
-    renderRoute('/library')
+    renderRoute('/discover')
 
     expect(await screen.findByText('Savable satay')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Save recipe' }))

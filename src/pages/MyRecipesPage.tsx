@@ -227,7 +227,7 @@ export default function MyRecipesPage() {
           >
             <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 6 }}>Delete this recipe?</div>
             <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 16 }}>
-              “{confirmDelete.title}” will be removed from your library and browse. This can't be undone here.
+              “{confirmDelete.title}” will be removed from your recipes and Discover. This can't be undone here.
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
