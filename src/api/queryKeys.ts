@@ -57,8 +57,14 @@ export const queryKeys = {
   feed: {
     /** Everything feed-related — the optimistic social mutations patch under this. */
     all: ['feed'] as const,
-    /** The one keyset-paged GET /feed list (cp05, useInfiniteQuery). */
-    list: () => ['feed', 'list'] as const,
+    /**
+     * One keyset-paged GET /feed list (cp05, useInfiniteQuery). Feed-tabs
+     * addition (2026-07-22, sanctioned additive edit): an optional scope
+     * ('forYou' | 'following') keys the two tabs separately; both stay under
+     * `all`, so the optimistic social patches land on every tab's cache.
+     */
+    list: (scope?: 'forYou' | 'following') =>
+      scope ? (['feed', 'list', scope] as const) : (['feed', 'list'] as const),
   },
 
   // social-feed cp06 — SANCTIONED ADDITIVE EDIT to this frozen module (same

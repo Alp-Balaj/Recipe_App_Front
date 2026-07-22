@@ -1,11 +1,11 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import SocialRecipeCard from '@/components/SocialRecipeCard'
 import StateBlock from '@/components/ui/StateBlock'
 import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useRecipeList, type BrowseFilters } from '@/hooks/useRecipeList'
 import type { Difficulty, RecipeResponse } from '@/api/types'
-import { formatMinutes, gradientFor } from './recipeVisuals'
 
 const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
 
@@ -13,6 +13,7 @@ export default function BrowsePage() {
   // BrowsePage also renders as the canvas BACKDROP, where `useLocation()` is a
   // /recipes/:id URL — useOpenRecipe carries the real backdrop through.
   const openRecipe = useOpenRecipe()
+  const navigate = useNavigate()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   // Committed filter state — each change produces a new query key, which resets
@@ -104,7 +105,14 @@ export default function BrowsePage() {
   ) : (
     <>
       {isDesktop ? (
-        <DesktopResults recipes={visible} onOpen={openRecipe} />
+        // Design 4a: a plain auto-fill card grid. minmax(260px) lands on three
+        // columns at the design's content width and degrades to two/one when
+        // the recipe canvas pane is open.
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 20 }}>
+          {visible.map((r) => (
+            <SocialRecipeCard key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />
+          ))}
+        </div>
       ) : (
         visible.map((r) => (
           <SocialRecipeCard key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />
@@ -129,105 +137,149 @@ export default function BrowsePage() {
     </>
   )
 
+  // Search field + Filters toggle + difficulty pills, shared by both layouts —
+  // the design sizes them differently per breakpoint but the wiring is one set.
+  const searchField = (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: isDesktop ? 10 : 9,
+        flex: 1,
+        minWidth: isDesktop ? 280 : 0,
+        background: isDesktop ? 'var(--surface)' : 'var(--surface2)',
+        border: '1px solid var(--border)',
+        borderRadius: 13,
+        padding: isDesktop ? '12px 16px' : '10px 14px',
+      }}
+    >
+      <span aria-hidden style={{ color: 'var(--muted)', fontSize: isDesktop ? 16 : 15 }}>⌕</span>
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={isDesktop ? 'Search recipes, ingredients, cuisines…' : 'Search recipes, ingredients…'}
+        aria-label="Search recipes"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          border: 'none',
+          outline: 'none',
+          background: 'transparent',
+          color: 'var(--text)',
+          fontFamily: 'inherit',
+          fontSize: isDesktop ? 14 : 13.5,
+        }}
+      />
+    </div>
+  )
+
+  const filtersToggle = (
+    <button
+      onClick={() => setShowFilters((s) => !s)}
+      aria-expanded={showFilters}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+        flexShrink: 0,
+        background: isDesktop ? 'var(--surface)' : 'var(--surface2)',
+        border: '1px solid var(--border)',
+        color: 'var(--accent)',
+        fontWeight: 700,
+        fontSize: 13.5,
+        fontFamily: 'inherit',
+        borderRadius: isDesktop ? 11 : 13,
+        padding: isDesktop ? '11px 17px' : '10px 15px',
+        cursor: 'pointer',
+      }}
+    >
+      <span aria-hidden>⚙</span> Filters
+    </button>
+  )
+
+  const difficultyPills = (
+    <>
+      <Pill active={!difficulty} desktop={isDesktop} onClick={() => setDifficulty(undefined)}>
+        All levels
+      </Pill>
+      {DIFFICULTIES.map((d) => (
+        <Pill
+          key={d}
+          active={difficulty === d}
+          desktop={isDesktop}
+          onClick={() => setDifficulty(difficulty === d ? undefined : d)}
+        >
+          {d}
+        </Pill>
+      ))}
+    </>
+  )
+
   return (
     <div className="scroll" style={pageStyle}>
-      {/* Header — title + subtitle, with search + Filters toggle. */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: isDesktop ? 'center' : 'flex-start',
-          gap: 14,
-          flexWrap: 'wrap',
-          marginBottom: 18,
-        }}
-      >
-        <div style={{ flex: 1, minWidth: isDesktop ? 200 : '100%' }}>
-          <div style={{ fontSize: isDesktop ? 26 : 24, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>
-            Explore recipes
-          </div>
-          <div style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: 3 }}>
-            Public recipes from the community and your own.
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: isDesktop ? '0 0 auto' : '1 1 100%' }}>
+      {isDesktop ? (
+        <>
+          {/* Design 4a: title block on the left, the New-recipe CTA opposite. */}
           <div
             style={{
               display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              flex: 1,
-              minWidth: 0,
-              background: 'var(--surface2)',
-              border: '1px solid var(--border)',
-              borderRadius: 13,
-              padding: '10px 14px',
-              width: isDesktop ? 280 : undefined,
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              gap: 20,
+              flexWrap: 'wrap',
+              marginBottom: 22,
             }}
           >
-            <span aria-hidden style={{ color: 'var(--muted)', fontSize: 15 }}>⌕</span>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search recipes, ingredients…"
-              aria-label="Search recipes"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                border: 'none',
-                outline: 'none',
-                background: 'transparent',
-                color: 'var(--text)',
-                fontFamily: 'inherit',
-                fontSize: 13.5,
-              }}
-            />
+            <div>
+              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>
+                Explore recipes
+              </div>
+              <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4 }}>
+                Public recipes from the community and your own.
+              </div>
+            </div>
+            <button onClick={() => navigate('/recipes/new')} style={newRecipeBtn}>
+              <span aria-hidden>＋</span> New recipe
+            </button>
           </div>
-          <button
-            onClick={() => setShowFilters((s) => !s)}
-            aria-expanded={showFilters}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              flexShrink: 0,
-              background: 'var(--surface2)',
-              border: '1px solid var(--border)',
-              color: 'var(--accent)',
-              fontWeight: 700,
-              fontSize: 13.5,
-              fontFamily: 'inherit',
-              borderRadius: 13,
-              padding: '10px 15px',
-              cursor: 'pointer',
-            }}
-          >
-            <span aria-hidden>⚙</span> Filters
-          </button>
-        </div>
-      </div>
 
-      {/* Difficulty pills — the primary quick filter (design pill row). */}
-      <div
-        className="scroll"
-        style={{
-          display: 'flex',
-          gap: 9,
-          overflowX: 'auto',
-          margin: isDesktop ? '0 0 8px' : '0 -18px 8px',
-          padding: isDesktop ? '0 0 2px' : '0 18px 2px',
-          flexWrap: isDesktop ? 'wrap' : 'nowrap',
-        }}
-      >
-        <Pill active={!difficulty} onClick={() => setDifficulty(undefined)}>
-          All levels
-        </Pill>
-        {DIFFICULTIES.map((d) => (
-          <Pill key={d} active={difficulty === d} onClick={() => setDifficulty(difficulty === d ? undefined : d)}>
-            {d}
-          </Pill>
-        ))}
-      </div>
+          {/* One row: search, then the difficulty pills inline beside it. */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
+            {searchField}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {difficultyPills}
+              {filtersToggle}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Design 3a: stacked header, then search + Filters, then a
+              full-bleed scrollable pill row. */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
+            <div style={{ flex: 1, minWidth: '100%' }}>
+              <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>
+                Explore recipes
+              </div>
+              <div style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: 3 }}>
+                Public recipes from the community and your own.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: '1 1 100%' }}>
+              {searchField}
+              {filtersToggle}
+            </div>
+          </div>
+
+          <div
+            className="scroll"
+            style={{ display: 'flex', gap: 9, overflowX: 'auto', margin: '0 -18px 8px', padding: '0 18px 2px' }}
+          >
+            {difficultyPills}
+          </div>
+        </>
+      )}
 
       {/* Advanced filters — cuisine + tag inputs (toggle via the Filters button). */}
       {showFilters && (
@@ -248,128 +300,12 @@ export default function BrowsePage() {
 
       {/* Section heading (matches the design's "Trending now"). */}
       {!isLoading && !isError && recipes.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: '14px 0 14px' }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>Trending now</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: isDesktop ? '0 0 16px' : '14px 0 14px' }}>
+          <div style={{ fontSize: isDesktop ? 19 : 17, fontWeight: 800, color: 'var(--text)' }}>Trending now</div>
         </div>
       )}
 
       {body}
-    </div>
-  )
-}
-
-// ── Desktop results: card grid + a Chef's-pick rail ──────────────────────────
-
-function DesktopResults({ recipes, onOpen }: { recipes: RecipeResponse[]; onOpen: (id: string) => void }) {
-  const pick = recipes[0]
-  const grid = recipes.length > 1 ? recipes.slice(1) : recipes
-
-  return (
-    <div style={{ display: 'flex', gap: 26, alignItems: 'flex-start' }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: 18,
-          }}
-        >
-          {grid.map((r) => (
-            <SocialRecipeCard key={r.id} recipe={r} onOpen={() => onOpen(r.id)} />
-          ))}
-        </div>
-      </div>
-
-      {pick && (
-        <div style={{ width: 320, flexShrink: 0 }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)', marginBottom: 14 }}>Chef's pick</div>
-          <ChefPick recipe={pick} onOpen={() => onOpen(pick.id)} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ChefPick({ recipe, onOpen }: { recipe: RecipeResponse; onOpen: () => void }) {
-  return (
-    <div
-      role="link"
-      tabIndex={0}
-      aria-label={recipe.title}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onOpen()
-        }
-      }}
-      style={{
-        position: 'relative',
-        height: 320,
-        borderRadius: 22,
-        overflow: 'hidden',
-        cursor: 'pointer',
-        background: gradientFor(recipe.id || recipe.title),
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: 12,
-          left: 12,
-          background: 'rgba(0,0,0,.45)',
-          backdropFilter: 'blur(6px)',
-          color: '#fff',
-          fontSize: 11,
-          fontWeight: 700,
-          padding: '5px 11px',
-          borderRadius: 999,
-        }}
-      >
-        ◷ {formatMinutes(recipe.totalTimeMinutes)} · {recipe.difficulty}
-      </div>
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: '48px 18px 18px',
-          background: 'linear-gradient(to top, rgba(10,7,4,.94), transparent)',
-        }}
-      >
-        <div style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>{recipe.title}</div>
-        <div
-          style={{
-            fontSize: 13,
-            color: 'rgba(255,255,255,.75)',
-            marginTop: 4,
-            lineHeight: 1.45,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {recipe.description}
-        </div>
-        <span
-          style={{
-            marginTop: 13,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 7,
-            background: 'var(--accent)',
-            color: '#1a1207',
-            fontSize: 13,
-            fontWeight: 800,
-            padding: '9px 16px',
-            borderRadius: 999,
-          }}
-        >
-          View recipe ›
-        </span>
-      </div>
     </div>
   )
 }
@@ -447,19 +383,31 @@ function AdvancedFilters({
   )
 }
 
-function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+/** Difficulty filter pill. The design draws it as a rounded capsule on mobile
+ *  and a squarer, roomier button in the desktop filter row. */
+function Pill({
+  active,
+  desktop,
+  onClick,
+  children,
+}: {
+  active: boolean
+  desktop?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
         flexShrink: 0,
-        fontSize: 13,
+        fontSize: desktop ? 13.5 : 13,
         fontWeight: 600,
-        padding: '8px 16px',
-        borderRadius: 999,
-        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-        background: active ? 'var(--accent)' : 'var(--inputbg)',
+        padding: desktop ? '11px 17px' : '8px 16px',
+        borderRadius: desktop ? 11 : 999,
+        border: `1px solid ${active ? 'var(--accent-fill)' : 'var(--border)'}`,
+        background: active ? 'var(--accent-fill)' : 'var(--inputbg)',
         color: active ? 'var(--accent-ink)' : 'var(--muted)',
         cursor: 'pointer',
         userSelect: 'none',
@@ -507,6 +455,22 @@ const clearBtn: CSSProperties = {
   cursor: 'pointer',
   padding: '8px 0 0',
   fontFamily: 'inherit',
+}
+
+const newRecipeBtn: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexShrink: 0,
+  cursor: 'pointer',
+  border: 'none',
+  borderRadius: 13,
+  padding: '12px 20px',
+  fontFamily: 'inherit',
+  fontSize: 14,
+  fontWeight: 800,
+  background: 'var(--accent-fill)',
+  color: 'var(--accent-ink)',
 }
 
 const loadMoreBtn: CSSProperties = {

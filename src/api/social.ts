@@ -8,6 +8,9 @@
 //
 // Wire contract (backend cp01–03, verified 2026-07-18):
 //   GET    /feed                  → 200 FeedListResponse {items, nextCursor, source}
+//     feed-tabs addition (2026-07-22): ?scope=forYou|following selects the mode
+//     (forYou = everyone-feed, following = followed-only with NO discover
+//     fallback); omitted keeps the original following-with-fallback behavior.
 //   POST   /recipes/{id}/likes    → 204 | 404   (idempotent toggle-on)
 //   DELETE /recipes/{id}/likes    → 204 | 404   (idempotent toggle-off)
 //   POST   /recipes/{id}/saves    → 204 | 404
@@ -51,8 +54,15 @@ export interface FeedItemResponse {
   savedByMe: boolean
 }
 
-/** "following" = posts from followed authors; "discover" = cold-start fallback. */
-export type FeedSource = 'following' | 'discover'
+/**
+ * "following" = posts from followed authors; "discover" = cold-start fallback
+ * (legacy no-scope requests only); "forYou" = the explicit ?scope=forYou
+ * everyone-feed (feed-tabs addition, 2026-07-22).
+ */
+export type FeedSource = 'following' | 'discover' | 'forYou'
+
+/** The caller-requested feed mode — the page's two tabs map 1:1 onto ?scope=. */
+export type FeedScope = 'forYou' | 'following'
 
 /** GET /feed → 200 body. nextCursor is null on the last page. */
 export interface FeedListResponse {
@@ -63,12 +73,13 @@ export interface FeedListResponse {
 
 /** GET /feed — one keyset page (cursor passed back verbatim from nextCursor). */
 export function getFeedPage(params: {
+  scope?: FeedScope
   cursor?: string
   limit?: number
   signal?: AbortSignal
 }): Promise<FeedListResponse> {
-  const { cursor, limit, signal } = params
-  return apiFetch<FeedListResponse>('/feed', { query: { cursor, limit }, signal })
+  const { scope, cursor, limit, signal } = params
+  return apiFetch<FeedListResponse>('/feed', { query: { scope, cursor, limit }, signal })
 }
 
 /** POST /recipes/{id}/likes → 204 (idempotent). */

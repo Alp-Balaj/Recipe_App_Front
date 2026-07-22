@@ -39,17 +39,17 @@ page files they own:
 | /login | `LoginPage.tsx` | checkpoint 02 |
 | /register | `RegisterPage.tsx` | checkpoint 02 |
 | /chat | `ChatPage.tsx` | lane C (07/08) |
-| /library | `BrowsePage.tsx` | lane A (04) |
+| /discover | `BrowsePage.tsx` | lane A (04) |
 | /profile | `ProfilePage.tsx` | checkpoint 02 (real username/logout) |
 | /recipes/new | `RecipeFormPage.tsx` | lane B (05) |
 | /recipes/mine | `MyRecipesPage.tsx` | lane B (06) |
 | /recipes/:id | `RecipeDetailPage.tsx` | lane A (03) |
-| / and unknown | redirect → /library | — |
+| / and unknown | redirect → /discover | — |
 
 Shell internals (also frozen): `ThemeRoot.tsx` (theme + outlet context),
 `AppShell.tsx` (sidebar/bottom-nav chrome; renders `/recipes/:id` in the
 desktop canvas pane with `BrowsePage` as the backdrop), `navItems.ts` (tab
-list + URL→active-tab mapping; `/recipes/*` highlights the Library tab).
+list + URL→active-tab mapping; `/recipes/*` highlights the Discover tab).
 
 ## API layer + auth (frozen at checkpoint 02 — import, never reshape)
 

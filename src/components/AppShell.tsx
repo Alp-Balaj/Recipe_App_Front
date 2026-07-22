@@ -45,7 +45,7 @@ export default function AppShell() {
   // the reader opened the recipe FROM (see recipeCanvas.ts) — a chat thread, the
   // feed, a profile — matched here as descendant routes so those pages still get
   // their :params and the theme outlet context. Anything not listed (or a deep
-  // link carrying no backdrop) falls back to the library, the old behaviour.
+  // link carrying no backdrop) falls back to Discover, the old behaviour.
   const backdropPath = useBackdropPath()
   const backdropRoutes = useMemo<RouteObject[]>(
     () => [
@@ -66,15 +66,15 @@ export default function AppShell() {
   )
   const backdrop = useRoutes(backdropRoutes, backdropPath)
 
-  // The redesigned Library + Feed + Profile use a wide, multi-column desktop
+  // The redesigned Discover + Feed + Profile use a wide, multi-column desktop
   // canvas (design 2a/2b/4a), so their conversation-inner column breaks out of
   // the narrow chat-column width. Chat / authoring stay in the readable ~720px
-  // column. Detail keeps the library backdrop wide behind the canvas.
+  // column. Detail keeps the Discover backdrop wide behind the canvas.
   // On a detail URL the pane shows the backdrop, so it's the BACKDROP's width
   // that matters (a chat behind the canvas stays a readable column).
   const panePath = isDetail ? backdropPath : location.pathname
   const isWidePage =
-    panePath.startsWith('/library') ||
+    panePath.startsWith('/discover') ||
     panePath.startsWith('/feed') ||
     panePath.startsWith('/users') ||
     panePath.startsWith('/profile')

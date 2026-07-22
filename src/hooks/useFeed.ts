@@ -9,16 +9,21 @@
 
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
-import { getFeedPage } from '@/api/social'
+import { getFeedPage, type FeedScope } from '@/api/social'
 
 /** Rows per feed page. Backend default is 20, clamped to 50. */
 export const FEED_PAGE_SIZE = 10
 
-export function useFeed() {
+/**
+ * One feed tab's list. Each scope ('forYou' | 'following') gets its own query
+ * key + pagination; both live under queryKeys.feed.all so the optimistic
+ * social mutations patch them together.
+ */
+export function useFeed(scope?: FeedScope) {
   return useInfiniteQuery({
-    queryKey: queryKeys.feed.list(),
+    queryKey: queryKeys.feed.list(scope),
     queryFn: ({ pageParam, signal }) =>
-      getFeedPage({ cursor: pageParam, limit: FEED_PAGE_SIZE, signal }),
+      getFeedPage({ scope, cursor: pageParam, limit: FEED_PAGE_SIZE, signal }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   })

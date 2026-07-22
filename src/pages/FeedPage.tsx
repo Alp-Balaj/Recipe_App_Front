@@ -1,33 +1,41 @@
 // ─────────────────────────────────────────────────────────────────────────
 // /feed — the social feed (social-feed cp05; Recipe App Redesign).
 //
-// Keyset-paged GET /feed via useFeed (useInfiniteQuery). Two presentations of
-// the same data + social wiring:
+// Keyset-paged GET /feed via useFeed (useInfiniteQuery), split into two tabs
+// (feed-tabs addition, 2026-07-22) that map onto the backend's ?scope= modes:
+//   • For You — every public recipe by others (scope=forYou), TikTok-FYP-style.
+//   • Following — followed authors only, no fallback (scope=following); empty
+//     renders a follow prompt.
+// Two presentations of the same data + social wiring:
 //   • Desktop (design 2b): a centered column of FeedPostCards plus a discovery
-//     right rail (suggested cooks + trending tags, both derived from the feed).
+//     right rail (cooks + trending tags, both derived from the feed; For You
+//     suggests only not-yet-followed cooks, Following lists "Cooks you follow").
 //   • Mobile (design 1e): an immersive, full-bleed scroll-snap feed
-//     (ImmersiveFeedCard).
+//     (ImmersiveFeedCard) with the tab switcher floated on top.
 // Both share the optimistic like/save through useSocialMutations and the same
 // comment affordance (page tracks which card's comments are open). Empty /
-// error / loading use the shared StateBlock; the discover cold-start is labeled.
+// error / loading use the shared StateBlock.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import FeedPostCard from '@/components/FeedPostCard'
 import ImmersiveFeedCard from '@/components/ImmersiveFeedCard'
 import Avatar from '@/components/Avatar'
 import StateBlock from '@/components/ui/StateBlock'
 import { useOpenRecipe } from '@/components/recipeCanvas'
+import { useAuth } from '@/auth/AuthContext'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useFeed } from '@/hooks/useFeed'
+import { useFollowList } from '@/hooks/useFollowList'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
-import type { FeedItemResponse, UserSummaryResponse } from '@/api/social'
+import type { FeedItemResponse, FeedScope, UserSummaryResponse } from '@/api/social'
 
 export default function FeedPage() {
   const navigate = useNavigate()
   const openRecipe = useOpenRecipe()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
+  const [tab, setTab] = useState<FeedScope>('forYou')
   const {
     data,
     isLoading,
@@ -37,9 +45,15 @@ export default function FeedPage() {
     hasNextPage,
     isFetchingNextPage,
     isFetching,
-  } = useFeed()
+  } = useFeed(tab)
   const { toggleLike, toggleSave } = useSocialMutations()
   const [openCommentsId, setOpenCommentsId] = useState<string | null>(null)
+
+  const selectTab = (next: FeedScope) => {
+    if (next === tab) return
+    setTab(next)
+    setOpenCommentsId(null)
+  }
 
   // Flatten pages, de-duping by recipe id (defensive against cursor-edge overlap).
   const items = useMemo(() => {
@@ -55,9 +69,6 @@ export default function FeedPage() {
     }
     return out
   }, [data])
-
-  const source = data?.pages[0]?.source
-  const isDiscover = source === 'discover'
 
   const cardProps = (item: FeedItemResponse) => ({
     // The feed stays behind the canvas — see recipeCanvas.ts.
@@ -88,29 +99,6 @@ export default function FeedPage() {
     </div>
   )
 
-  const discoverBanner = isDiscover && items.length > 0 && (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 9,
-        padding: '10px 13px',
-        marginBottom: 14,
-        borderRadius: 14,
-        background: 'var(--chipbg)',
-        color: 'var(--chipcol)',
-        fontSize: 13,
-        lineHeight: 1.45,
-      }}
-    >
-      <span aria-hidden style={{ fontSize: 15, flexShrink: 0 }}>✦</span>
-      <span>
-        <strong style={{ fontWeight: 800 }}>Discover</strong> — you're not following anyone yet, so
-        here's a taste of the whole kitchen.
-      </span>
-    </div>
-  )
-
   const stateBlock = isLoading ? (
     <StateBlock title="Loading your feed…" body="Checking what the kitchen has been up to." />
   ) : isError ? (
@@ -120,11 +108,19 @@ export default function FeedPage() {
       action={{ label: 'Try again', onClick: () => refetch() }}
     />
   ) : items.length === 0 ? (
-    <StateBlock
-      title="Nothing cooking yet"
-      body="No posts to show. Browse the library and follow some cooks — their new recipes will land here."
-      action={{ label: 'Browse recipes', onClick: () => navigate('/library') }}
-    />
+    tab === 'following' ? (
+      <StateBlock
+        title="Nothing cooking yet"
+        body="Recipes from cooks you follow land here. Browse Discover and follow some cooks to fill this feed."
+        action={{ label: 'Browse recipes', onClick: () => navigate('/discover') }}
+      />
+    ) : (
+      <StateBlock
+        title="Nothing cooking yet"
+        body="No public recipes to show yet — be the first to share one from your kitchen."
+        action={{ label: 'New recipe', onClick: () => navigate('/recipes/new') }}
+      />
+    )
   ) : null
 
   // ── Mobile: immersive full-bleed scroll-snap feed (design 1e) ──────────────
@@ -132,14 +128,22 @@ export default function FeedPage() {
     if (stateBlock) {
       return (
         <div className="scroll" style={{ ...mobilePad, overflowY: 'auto' }}>
-          <FeedHeading />
+          <FeedHeading tab={tab} />
+          <div style={{ marginBottom: 18 }}>
+            <FeedTabs tab={tab} onSelect={selectTab} />
+          </div>
           {stateBlock}
         </div>
       )
     }
     return (
       <div style={{ position: 'absolute', inset: 0, bottom: 'var(--nav-h, 74px)', display: 'flex', flexDirection: 'column', background: '#000' }}>
-        {discoverBanner && <div style={{ padding: '10px 14px 0' }}>{discoverBanner}</div>}
+        {/* TikTok-style floating switcher, centered over the immersive cards. */}
+        <div style={{ position: 'absolute', top: 10, left: 0, right: 0, zIndex: 5, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{ pointerEvents: 'auto' }}>
+            <FeedTabs tab={tab} onSelect={selectTab} immersive />
+          </div>
+        </div>
         <div
           className="scroll"
           style={{
@@ -168,11 +172,7 @@ export default function FeedPage() {
     <div className="scroll" style={{ position: 'absolute', inset: 0, bottom: 'var(--nav-h, 74px)', overflowY: 'auto', padding: '28px 30px 40px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 18 }}>
         <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>Feed</div>
-        <div style={{ display: 'flex', gap: 20, fontSize: 14.5, fontWeight: 700 }}>
-          <span style={{ color: 'var(--text)', borderBottom: '2px solid var(--accent)', paddingBottom: 4 }}>
-            {isDiscover ? 'Discovering' : 'Following'}
-          </span>
-        </div>
+        <FeedTabs tab={tab} onSelect={selectTab} />
       </div>
 
       {stateBlock ? (
@@ -180,40 +180,127 @@ export default function FeedPage() {
       ) : (
         <div style={{ display: 'flex', gap: 30, alignItems: 'flex-start' }}>
           <div style={{ flex: 1, minWidth: 0, maxWidth: 620, margin: '0 auto' }}>
-            {discoverBanner}
             {items.map((item) => (
               <FeedPostCard key={item.recipe.id} item={item} {...cardProps(item)} />
             ))}
             {loadMore}
           </div>
-          <DiscoveryRail items={items} onOpenAuthor={(id) => navigate(`/users/${id}`)} />
+          <DiscoveryRail items={items} tab={tab} onOpenAuthor={(id) => navigate(`/users/${id}`)} />
         </div>
       )}
     </div>
   )
 }
 
-// ── Mobile heading (only shown over the non-immersive state screens) ─────────
+// ── The For You / Following switcher (both layouts) ──────────────────────────
 
-function FeedHeading() {
+const FEED_TABS: { scope: FeedScope; label: string }[] = [
+  { scope: 'forYou', label: 'For You' },
+  { scope: 'following', label: 'Following' },
+]
+
+/** `immersive` restyles for the mobile full-bleed feed: white over the media. */
+function FeedTabs({
+  tab,
+  onSelect,
+  immersive,
+}: {
+  tab: FeedScope
+  onSelect: (scope: FeedScope) => void
+  immersive?: boolean
+}) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>Feed</div>
-      <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 3 }}>Fresh recipes from the cooks you follow.</div>
+    <div role="tablist" aria-label="Feed" style={{ display: 'flex', gap: immersive ? 18 : 20 }}>
+      {FEED_TABS.map(({ scope, label }) => {
+        const active = scope === tab
+        return (
+          <button
+            key={scope}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(scope)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: 14.5,
+              fontWeight: active ? 800 : 700,
+              padding: '4px 2px 6px',
+              color: immersive
+                ? active
+                  ? '#fff'
+                  : 'rgba(255,255,255,0.62)'
+                : active
+                  ? 'var(--text)'
+                  : 'var(--muted)',
+              borderBottom: active
+                ? `2px solid ${immersive ? '#fff' : 'var(--accent)'}`
+                : '2px solid transparent',
+              textShadow: immersive ? '0 1px 10px rgba(0,0,0,0.55)' : undefined,
+            }}
+          >
+            {label}
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-// ── Desktop discovery rail — suggested cooks + trending tags, both derived ───
+// ── Mobile heading (only shown over the non-immersive state screens) ─────────
 
-function DiscoveryRail({ items, onOpenAuthor }: { items: FeedItemResponse[]; onOpenAuthor: (id: string) => void }) {
+function FeedHeading({ tab }: { tab: FeedScope }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>Feed</div>
+      <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 3 }}>
+        {tab === 'following'
+          ? 'Fresh recipes from the cooks you follow.'
+          : 'Fresh recipes from all over the kitchen.'}
+      </div>
+    </div>
+  )
+}
+
+// ── Desktop discovery rail — cooks + trending tags, both derived from the ────
+// feed. Per-tab framing: For You suggests cooks the caller does NOT already
+// follow; Following relabels to the cooks whose posts fill that tab.
+
+function DiscoveryRail({
+  items,
+  tab,
+  onOpenAuthor,
+}: {
+  items: FeedItemResponse[]
+  tab: FeedScope
+  onOpenAuthor: (id: string) => void
+}) {
+  const { user } = useAuth()
+  // The caller's follow list, only needed to filter For You suggestions —
+  // Following-tab authors are followed by definition.
+  const followList = useFollowList(user?.userId, 'following', tab === 'forYou')
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = followList
+  useEffect(() => {
+    if (tab === 'forYou' && hasNextPage && !isFetchingNextPage) fetchNextPage()
+  }, [tab, hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  const followedIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const page of followList.data?.pages ?? []) {
+      for (const u of page.items) ids.add(u.id)
+    }
+    return ids
+  }, [followList.data])
+
   const cooks = useMemo(() => {
     const seen = new Map<string, UserSummaryResponse>()
     for (const item of items) {
+      if (tab === 'forYou' && followedIds.has(item.author.id)) continue
       if (!seen.has(item.author.id)) seen.set(item.author.id, item.author)
     }
     return Array.from(seen.values()).slice(0, 5)
-  }, [items])
+  }, [items, tab, followedIds])
 
   const tags = useMemo(() => {
     const counts = new Map<string, number>()
@@ -232,7 +319,9 @@ function DiscoveryRail({ items, onOpenAuthor }: { items: FeedItemResponse[]; onO
     <aside style={{ width: 300, flexShrink: 0 }}>
       {cooks.length > 0 && (
         <>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 14 }}>Suggested cooks</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 14 }}>
+            {tab === 'following' ? 'Cooks you follow' : 'Suggested cooks'}
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
             {cooks.map((c) => (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>

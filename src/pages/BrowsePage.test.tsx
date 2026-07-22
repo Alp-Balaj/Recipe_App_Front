@@ -44,7 +44,7 @@ describe('BrowsePage', () => {
         HttpResponse.json({ items: [makeRecipe({ title: 'Miso ramen' }), makeRecipe({ title: 'Lentil soup' })], nextCursor: null }),
       ),
     )
-    renderRoute('/library')
+    renderRoute('/discover')
     expect(await screen.findByText('Miso ramen')).toBeInTheDocument()
     expect(screen.getByText('Lentil soup')).toBeInTheDocument()
     expect(screen.getByText("That's everything.")).toBeInTheDocument()
@@ -60,7 +60,7 @@ describe('BrowsePage', () => {
         return HttpResponse.json({ items: [makeRecipe({ id: 'b', title: 'Page two recipe' })], nextCursor: null })
       }),
     )
-    renderRoute('/library')
+    renderRoute('/discover')
     expect(await screen.findByText('Page one recipe')).toBeInTheDocument()
 
     await userEvent.click(screen.getByText('Load more'))
@@ -78,7 +78,7 @@ describe('BrowsePage', () => {
         return HttpResponse.json({ items: [makeRecipe({ title: 'Filtered recipe' })], nextCursor: null })
       }),
     )
-    renderRoute('/library')
+    renderRoute('/discover')
     expect(await screen.findByText('Filtered recipe')).toBeInTheDocument()
 
     // Difficulty chip → difficulty param.
@@ -96,20 +96,20 @@ describe('BrowsePage', () => {
 
   it('shows the empty state when no recipes match', async () => {
     server.use(listHandler(() => HttpResponse.json({ items: [], nextCursor: null })))
-    renderRoute('/library')
+    renderRoute('/discover')
     expect(await screen.findByText('No recipes found')).toBeInTheDocument()
   })
 
   it('shows an error state with retry on failure', async () => {
     server.use(listHandler(() => new HttpResponse(null, { status: 500 })))
-    renderRoute('/library')
+    renderRoute('/discover')
     expect(await screen.findByText("Couldn't load recipes", undefined, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.getByText('Try again')).toBeInTheDocument()
   })
 
   it('navigates to the detail route when a card is tapped', async () => {
     server.use(listHandler(() => HttpResponse.json({ items: [makeRecipe({ id: 'go-here', title: 'Tap me' })], nextCursor: null })))
-    const router = renderRoute('/library')
+    const router = renderRoute('/discover')
     await userEvent.click(await screen.findByText('Tap me'))
     await waitFor(() => expect(router.state.location.pathname).toBe('/recipes/go-here'))
   })
@@ -118,7 +118,7 @@ describe('BrowsePage', () => {
 
   it('activates a focused recipe card with the Enter key', async () => {
     server.use(listHandler(() => HttpResponse.json({ items: [makeRecipe({ id: 'kbd-enter', title: 'Enter recipe' })], nextCursor: null })))
-    const router = renderRoute('/library')
+    const router = renderRoute('/discover')
     const card = await screen.findByRole('link', { name: 'Enter recipe' })
     card.focus()
     await userEvent.keyboard('{Enter}')
@@ -127,7 +127,7 @@ describe('BrowsePage', () => {
 
   it('activates a focused recipe card with the Space key', async () => {
     server.use(listHandler(() => HttpResponse.json({ items: [makeRecipe({ id: 'kbd-space', title: 'Space recipe' })], nextCursor: null })))
-    const router = renderRoute('/library')
+    const router = renderRoute('/discover')
     const card = await screen.findByRole('link', { name: 'Space recipe' })
     card.focus()
     await userEvent.keyboard(' ')
@@ -142,7 +142,7 @@ describe('BrowsePage', () => {
         return HttpResponse.json({ items: [makeRecipe({ title: 'Kbd filtered' })], nextCursor: null })
       }),
     )
-    renderRoute('/library')
+    renderRoute('/discover')
     expect(await screen.findByText('Kbd filtered')).toBeInTheDocument()
 
     const chip = screen.getByRole('button', { name: 'Medium' })

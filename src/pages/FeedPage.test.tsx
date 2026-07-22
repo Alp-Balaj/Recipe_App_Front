@@ -51,7 +51,7 @@ function feedHandler(handler: (url: URL) => Response) {
 }
 
 function feedPage(items: FeedItemResponse[], over: Partial<FeedListResponse> = {}): FeedListResponse {
-  return { items, nextCursor: null, source: 'following', ...over }
+  return { items, nextCursor: null, source: 'forYou', ...over }
 }
 
 afterEach(() => {
@@ -59,13 +59,15 @@ afterEach(() => {
 })
 
 describe('FeedPage', () => {
-  it('renders post cards with author, counts, and no discover label in following mode', async () => {
+  it('renders post cards with author and counts, defaulting to the For You scope', async () => {
+    const scopes: (string | null)[] = []
     server.use(
-      feedHandler(() =>
-        HttpResponse.json(
+      feedHandler((url) => {
+        scopes.push(url.searchParams.get('scope'))
+        return HttpResponse.json(
           feedPage([makeItem({}, { title: 'Miso ramen' }), makeItem({ author: { id: 'a2', username: 'sam_cooks', profileImageUrl: null } }, { title: 'Lentil soup' })]),
-        ),
-      ),
+        )
+      }),
     )
     renderRoute('/feed')
 
@@ -76,9 +78,32 @@ describe('FeedPage', () => {
     // Envelope counts on the action row.
     expect(screen.getAllByRole('button', { name: 'Like' })[0]).toHaveTextContent('5')
     expect(screen.getAllByLabelText('3 comments')[0]).toHaveTextContent('3')
-    // Following mode → no cold-start label.
-    expect(screen.queryByText(/Discover/)).not.toBeInTheDocument()
+    // The For You tab is the default and drives the request scope.
+    expect(scopes).toEqual(['forYou'])
+    expect(screen.getByRole('tab', { name: 'For You' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Following' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByText("You're all caught up.")).toBeInTheDocument()
+  })
+
+  it('switches tabs, requesting scope=following and swapping the list', async () => {
+    server.use(
+      feedHandler((url) =>
+        url.searchParams.get('scope') === 'following'
+          ? HttpResponse.json(feedPage([makeItem({}, { id: 'fol-1', title: 'Followed frittata' })], { source: 'following' }))
+          : HttpResponse.json(feedPage([makeItem({}, { id: 'fy-1', title: 'For-you focaccia' })])),
+      ),
+    )
+    renderRoute('/feed')
+    expect(await screen.findByText('For-you focaccia')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Following' }))
+    expect(await screen.findByText('Followed frittata')).toBeInTheDocument()
+    expect(screen.queryByText('For-you focaccia')).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Following' })).toHaveAttribute('aria-selected', 'true')
+
+    await userEvent.click(screen.getByRole('tab', { name: 'For You' }))
+    expect(await screen.findByText('For-you focaccia')).toBeInTheDocument()
+    expect(screen.queryByText('Followed frittata')).not.toBeInTheDocument()
   })
 
   it('walks keyset pages via Load more, passing nextCursor back verbatim, without duplicates', async () => {
@@ -103,21 +128,14 @@ describe('FeedPage', () => {
     expect(screen.getByText("You're all caught up.")).toBeInTheDocument()
   })
 
-  it('labels the discover cold-start state', async () => {
-    server.use(
-      feedHandler(() => HttpResponse.json(feedPage([makeItem({}, { title: 'Stranger danger stew' })], { source: 'discover' }))),
-    )
-    renderRoute('/feed')
-
-    expect(await screen.findByText('Stranger danger stew')).toBeInTheDocument()
-    expect(screen.getByText('Discover')).toBeInTheDocument()
-    expect(screen.getByText(/not following anyone/)).toBeInTheDocument()
-  })
-
-  it('shows the empty state with a browse escape hatch', async () => {
-    // Default handler already returns an empty discover feed.
+  it('shows per-tab empty states: create prompt on For You, follow prompt on Following', async () => {
+    // Default handler already returns an empty feed for either scope.
     renderRoute('/feed')
     expect(await screen.findByText('Nothing cooking yet')).toBeInTheDocument()
+    expect(screen.getByText('New recipe')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Following' }))
+    expect(await screen.findByText(/follow some cooks/)).toBeInTheDocument()
     expect(screen.getByText('Browse recipes')).toBeInTheDocument()
   })
 

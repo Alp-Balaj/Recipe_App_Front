@@ -174,28 +174,30 @@ export default function ChatPage() {
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, gap: 10 }}
         >
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
-            <button
-              className="chat-conversations-toggle"
-              onClick={() => setDrawerOpen(true)}
-              aria-label="Open conversations"
-              style={{
-                cursor: 'pointer',
-                flexShrink: 0,
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                background: 'var(--surface2)',
-                border: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 16,
-                color: 'var(--text)',
-                fontFamily: 'inherit',
-              }}
-            >
-              ☰
-            </button>
+            {!isDesktop && (
+              <button
+                className="chat-conversations-toggle"
+                onClick={() => setDrawerOpen(true)}
+                aria-label="Open conversations"
+                style={{
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  background: 'var(--surface2)',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 16,
+                  color: 'var(--text)',
+                  fontFamily: 'inherit',
+                }}
+              >
+                ☰
+              </button>
+            )}
             <div style={{ minWidth: 0 }}>
               <div
                 style={{

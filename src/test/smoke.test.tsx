@@ -6,16 +6,16 @@ import { makeAuthValue, renderRoute } from './utils'
 import { server } from './msw/server'
 
 describe('router shell (authenticated)', () => {
-  it('redirects / to /library', async () => {
+  it('redirects / to /discover', async () => {
     const router = renderRoute('/')
     expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/library')
+    expect(router.state.location.pathname).toBe('/discover')
   })
 
-  it('redirects unknown URLs to /library instead of crashing', async () => {
+  it('redirects unknown URLs to /discover instead of crashing', async () => {
     const router = renderRoute('/definitely/not/a/route')
     expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/library')
+    expect(router.state.location.pathname).toBe('/discover')
   })
 
   it('renders the chat teaser at /chat', async () => {
@@ -73,9 +73,9 @@ describe('router shell (authenticated)', () => {
   })
 
   it('marks the tab matching the URL as the active one', async () => {
-    renderRoute('/library')
+    renderRoute('/discover')
     const active = await screen.findByRole('button', { current: 'page' })
-    expect(active).toHaveTextContent('Library')
+    expect(active).toHaveTextContent('Discover')
   })
 
   it('flips data-mode when the profile theme toggle is used', async () => {
@@ -107,7 +107,7 @@ describe('router shell (auth pages render outside the guard)', () => {
 
 describe('route protection', () => {
   it('bounces an unauthenticated user from a protected route to /login', async () => {
-    const router = renderRoute('/library', {
+    const router = renderRoute('/discover', {
       auth: makeAuthValue({ user: null, status: 'unauthenticated' }),
     })
     expect(await screen.findByText('Welcome back')).toBeInTheDocument()
@@ -115,7 +115,7 @@ describe('route protection', () => {
   })
 
   it('holds a loading placeholder while the session is being validated', async () => {
-    renderRoute('/library', { auth: makeAuthValue({ user: null, status: 'loading' }) })
+    renderRoute('/discover', { auth: makeAuthValue({ user: null, status: 'loading' }) })
     expect(await screen.findByText('Loading…')).toBeInTheDocument()
   })
 })

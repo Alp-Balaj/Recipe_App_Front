@@ -22,7 +22,7 @@ export default function LoginPage() {
   const location = useLocation()
   const [banner, setBanner] = useState<string | null>(null)
 
-  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/library'
+  const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/discover'
 
   const {
     register,

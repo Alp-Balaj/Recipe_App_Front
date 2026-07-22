@@ -64,7 +64,7 @@ export const handlers = [
     })
   }),
 
-  // Default browse list: empty. Keeps any test that lands on /library (the
+  // Default browse list: empty. Keeps any test that lands on /discover (the
   // BrowsePage, checkpoint 04) from hitting the real network; browse-specific
   // tests override this with `server.use(...)`. Matches the exact `/recipes`
   // path only — the detail `/recipes/:id` handler is separate.
@@ -72,12 +72,18 @@ export const handlers = [
     HttpResponse.json({ items: [], nextCursor: null } satisfies RecipeListResponse),
   ),
 
-  // Default feed: empty discover. Keeps any test that lands on /feed (the
-  // FeedPage, social-feed cp05) off the real network; feed-specific tests
-  // override with `server.use(...)`.
-  http.get('*/feed', () =>
-    HttpResponse.json({ items: [], nextCursor: null, source: 'discover' } satisfies FeedListResponse),
-  ),
+  // Default feed: empty, echoing the requested ?scope= back as the source
+  // (feed-tabs addition — the page always sends one). Keeps any test that
+  // lands on /feed (the FeedPage, social-feed cp05) off the real network;
+  // feed-specific tests override with `server.use(...)`.
+  http.get('*/feed', ({ request }) => {
+    const scope = new URL(request.url).searchParams.get('scope')
+    return HttpResponse.json({
+      items: [],
+      nextCursor: null,
+      source: scope === 'following' ? 'following' : 'forYou',
+    } satisfies FeedListResponse)
+  }),
 
   // ── social-feed cp06 defaults — same rationale as the /recipes + /feed
   // fallbacks above; cp06-specific tests override with `server.use(...)`. ──
