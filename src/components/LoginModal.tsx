@@ -1,9 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────
 // The login modal (guest-access plan §4.3, decision D6): the dismissible
-// prompt every gated interaction opens for a guest. Built on the shared
-// ui/Modal primitive; embeds the same login form shape as LoginPage. On
-// success it just closes (D4 — no auto-resume of the pending action); the
-// "Create an account" link routes out to the existing /register page.
+// prompt every gated interaction opens for a guest. Frosted-glass treatment:
+// the page behind stays visible through a blurred, theme-tinted backdrop
+// (Modal's additive `frosted` prop) and the card itself is deliberately
+// small — title, the two fields, submit, one footer line. On success it just
+// closes (D4 — no auto-resume); "Create an account" routes out to /register.
+// Dismissal: the ✕, a backdrop click, or Escape.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
@@ -53,22 +55,43 @@ export default function LoginModal() {
   })
 
   return (
-    <Modal onClose={closePrompt} label="Sign in" variant="center">
+    <Modal onClose={closePrompt} label="Sign in" variant="center" frosted>
       <div
         style={{
+          maxWidth: 330,
+          margin: '0 auto',
           background: 'var(--surface)',
           border: '1px solid var(--border)',
-          boxShadow: 'var(--cardsh)',
+          boxShadow: '0 24px 60px -28px rgba(0, 0, 0, 0.45)',
           borderRadius: 22,
-          padding: '26px 22px',
+          padding: '20px 20px 18px',
         }}
       >
-        <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
-          Sign in to continue
-        </h2>
-        <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5, margin: '6px 0 18px' }}>
-          You can browse as a guest — signing in lets you like, save, comment, follow and cook
-          with the chat.
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <h2 style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
+            Sign in
+          </h2>
+          <button
+            onClick={closePrompt}
+            aria-label="Close sign-in"
+            style={{
+              flexShrink: 0,
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              border: 'none',
+              background: 'var(--surface2)',
+              color: 'var(--text)',
+              fontSize: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            ✕
+          </button>
         </div>
 
         {banner && (
@@ -80,8 +103,8 @@ export default function LoginModal() {
               background: 'rgba(217, 83, 79, 0.10)',
               border: '1px solid rgba(217, 83, 79, 0.35)',
               borderRadius: 12,
-              padding: '10px 12px',
-              marginBottom: 16,
+              padding: '9px 12px',
+              marginBottom: 12,
             }}
           >
             {banner}
@@ -108,7 +131,7 @@ export default function LoginModal() {
           </SubmitButton>
         </form>
 
-        <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 18, textAlign: 'center' }}>
+        <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 14, textAlign: 'center' }}>
           New here?{' '}
           <Link
             to="/register"
@@ -118,25 +141,6 @@ export default function LoginModal() {
             Create an account
           </Link>
         </div>
-
-        <button
-          onClick={closePrompt}
-          style={{
-            width: '100%',
-            marginTop: 10,
-            padding: '10px 14px',
-            borderRadius: 13,
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--muted)',
-            fontSize: 13.5,
-            fontWeight: 600,
-            fontFamily: 'inherit',
-            cursor: 'pointer',
-          }}
-        >
-          Keep browsing
-        </button>
       </div>
     </Modal>
   )

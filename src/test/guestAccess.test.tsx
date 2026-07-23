@@ -209,14 +209,14 @@ describe('guest CTA + modal dismissal', () => {
     expect(await screen.findByRole('dialog', { name: 'Sign in' })).toBeInTheDocument()
   })
 
-  it('the login modal is dismissible ("Keep browsing" closes it)', async () => {
+  it('the login modal is dismissible (the ✕ closes it)', async () => {
     const user = userEvent.setup()
     renderGuestRoute('/discover')
     await screen.findByText('Explore recipes')
 
     await user.click(screen.getByRole('button', { name: 'Log in / Sign up' }))
     await screen.findByRole('dialog', { name: 'Sign in' })
-    await user.click(screen.getByRole('button', { name: 'Keep browsing' }))
+    await user.click(screen.getByRole('button', { name: 'Close sign-in' }))
 
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Sign in' })).not.toBeInTheDocument(),

@@ -223,6 +223,10 @@ body { margin: 0; }
   --chipbg: rgba(127, 154, 63, 0.15);
   --chipcol: #5e7a2b;
   --backdrop: #e7e4dc;
+  /* Frosted-glass backdrop (guest login modal): the theme bg at ~55% alpha,
+     layered under a backdrop-filter blur so the page stays visible behind
+     the glass. Falls back to a plain translucent tint without filter support. */
+  --backdrop-frost: rgba(251, 249, 239, 0.55);
 }
 
 /* ── Dark theme (warm-charcoal counterpart in the gold family) ── */
@@ -253,4 +257,5 @@ body { margin: 0; }
   --chipbg: rgba(217, 180, 92, 0.16);
   --chipcol: #e2c069;
   --backdrop: #0b0906;
+  --backdrop-frost: rgba(23, 19, 12, 0.6);
 }

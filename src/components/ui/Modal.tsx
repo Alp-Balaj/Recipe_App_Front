@@ -27,13 +27,19 @@ interface ModalProps {
   /** Accessible name for the dialog (used when there's no visible titled element). */
   label: string
   variant?: ModalVariant
+  /**
+   * ADDITIVE (guest access): frosted-glass backdrop — a translucent theme
+   * tint + backdrop blur, so the page behind stays visible through the glass
+   * instead of the opaque var(--backdrop) wall. Dimmed variants only.
+   */
+  frosted?: boolean
   children: ReactNode
 }
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-export default function Modal({ onClose, label, variant = 'center', children }: ModalProps) {
+export default function Modal({ onClose, label, variant = 'center', frosted = false, children }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Move focus into the dialog on open; restore it to the trigger on close.
@@ -88,7 +94,7 @@ export default function Modal({ onClose, label, variant = 'center', children }: 
   }
 
   return (
-    <div style={backdropStyle(variant)} onClick={onBackdropClick} onKeyDown={onKeyDown}>
+    <div style={backdropStyle(variant, frosted)} onClick={onBackdropClick} onKeyDown={onKeyDown}>
       <div
         ref={panelRef}
         role="dialog"
@@ -104,13 +110,22 @@ export default function Modal({ onClose, label, variant = 'center', children }: 
   )
 }
 
-function backdropStyle(variant: ModalVariant): CSSProperties {
+function backdropStyle(variant: ModalVariant, frosted: boolean): CSSProperties {
   const base: CSSProperties = { position: 'absolute', inset: 0, zIndex: variant === 'full' ? 20 : 10 }
   if (variant === 'full') return base
+  // Frosted: translucent tint + blur (the tint alone still dims legibly in
+  // browsers without backdrop-filter). Default: the opaque --backdrop wall.
+  const dim: CSSProperties = frosted
+    ? {
+        background: 'var(--backdrop-frost)',
+        backdropFilter: 'blur(14px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(14px) saturate(1.2)',
+      }
+    : { background: 'var(--backdrop)' }
   if (variant === 'bottom') {
     return {
       ...base,
-      background: 'var(--backdrop)',
+      ...dim,
       display: 'flex',
       alignItems: 'flex-end',
       justifyContent: 'center',
@@ -118,7 +133,7 @@ function backdropStyle(variant: ModalVariant): CSSProperties {
   }
   return {
     ...base,
-    background: 'var(--backdrop)',
+    ...dim,
     display: 'flex',
     alignItems: variant === 'center' ? 'center' : 'flex-start',
     justifyContent: 'center',
