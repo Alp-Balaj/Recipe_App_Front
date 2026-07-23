@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
+import { requiresAuth, useAuthGate } from '@/auth/AuthGateContext'
 import Avatar from '@/components/Avatar'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { cookingRankMeta } from '@/lib/cookingRank'
@@ -25,12 +26,20 @@ interface Props {
 export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { isGuest, promptLogin, requireAuth } = useAuthGate()
   const { data: profile } = useUserProfile(user?.userId)
   // The open recipe is a canvas over a page, not a destination: the tab that
   // stays lit is the one for the page behind it.
   const current = activeTab(useBackdropPath())
   const username = user?.username ?? 'You'
   const rank = cookingRankMeta(profile?.cookingRank ?? 0)
+
+  // Guest access (D5): every nav item stays visible; tapping an account-only
+  // destination opens the login prompt instead of navigating.
+  const go = (to: string) => {
+    if (requiresAuth(to) && !requireAuth()) return
+    navigate(to)
+  }
 
   return (
     <aside className="sidebar">
@@ -79,7 +88,7 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
 
       {/* New-recipe CTA — gradient pill (design). */}
       <button
-        onClick={() => navigate('/recipes/new')}
+        onClick={() => go('/recipes/new')}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -111,7 +120,7 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
             return (
               <button
                 key={item.id}
-                onClick={() => navigate(item.to)}
+                onClick={() => go(item.to)}
                 aria-current={active ? 'page' : undefined}
                 style={{
                   display: 'flex',
@@ -143,7 +152,40 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
         <SidebarSections />
       </div>
 
-      {/* Footer — cooking-rank card + profile row (with theme toggle). */}
+      {/* Footer — guest: the persistent sign-in CTA (guest access, D8);
+          signed in: cooking-rank card + profile row (with theme toggle). */}
+      {isGuest ? (
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 12 }}>
+          <button
+            onClick={promptLogin}
+            style={{
+              width: '100%',
+              cursor: 'pointer',
+              border: 'none',
+              borderRadius: 14,
+              padding: 12,
+              fontFamily: 'inherit',
+              fontSize: 14,
+              fontWeight: 800,
+              background: 'var(--accent)',
+              color: 'var(--accent-ink)',
+            }}
+          >
+            Log in / Sign up
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 6px' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Browsing as guest</span>
+            <button
+              onClick={onToggleMode}
+              title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              style={{ flexShrink: 0, display: 'flex', background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit', padding: 4 }}
+            >
+              {mode === 'dark' ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+            </button>
+          </div>
+        </div>
+      ) : (
       <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 12 }}>
         <div
           style={{
@@ -170,7 +212,7 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 6px' }}>
           <button
-            onClick={() => navigate('/profile')}
+            onClick={() => go('/profile')}
             aria-label="View profile"
             style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
           >
@@ -192,6 +234,7 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
           </button>
         </div>
       </div>
+      )}
     </aside>
   )
 }

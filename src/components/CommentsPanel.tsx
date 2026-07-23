@@ -15,6 +15,7 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import { ApiError, ApiValidationError } from '@/api/client'
 import { COMMENT_MAX_LENGTH, type CommentResponse } from '@/api/social'
 import { useAuth } from '@/auth/AuthContext'
+import { useAuthGate } from '@/auth/AuthGateContext'
 import Avatar from '@/components/Avatar'
 import Modal from '@/components/ui/Modal'
 import { useComments } from '@/hooks/useComments'
@@ -44,6 +45,7 @@ function commentErrorMessage(error: unknown): string {
 
 export function CommentsPanel({ recipeId, recipeAuthorId }: CommentsPanelProps) {
   const { user } = useAuth()
+  const { requireAuth } = useAuthGate()
   const myId = user?.userId
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useComments(recipeId)
@@ -70,6 +72,9 @@ export function CommentsPanel({ recipeId, recipeAuthorId }: CommentsPanelProps) 
   }, [data])
 
   const post = () => {
+    // Guest access (D7): the list reads for guests; POSTING is gated. The gate
+    // fires before .mutate so no optimistic/cache work runs for a guest.
+    if (!requireAuth()) return
     const content = draft.trim()
     if (!content || addComment.isPending) return
     setError(null)

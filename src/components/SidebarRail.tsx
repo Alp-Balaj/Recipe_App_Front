@@ -2,8 +2,9 @@ import { useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import appIcon from '@/assets/app-icon.png'
 import { useAuth } from '@/auth/AuthContext'
+import { requiresAuth, useAuthGate } from '@/auth/AuthGateContext'
 import Avatar from '@/components/Avatar'
-import { MoonIcon, PlusIcon, SunIcon } from './navIcons'
+import { MoonIcon, PlusIcon, ProfileIcon, SunIcon } from './navIcons'
 import { DESKTOP_NAV_ITEMS, activeTab } from './navItems'
 import { useBackdropPath } from './recipeCanvas'
 import type { Mode } from './ThemeRoot'
@@ -75,10 +76,17 @@ function tileStyle(active: boolean): CSSProperties {
 export default function SidebarRail({ mode, onToggleMode, onExpand }: Props) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { isGuest, promptLogin, requireAuth } = useAuthGate()
   const [brandHover, setBrandHover] = useState(false)
   // Same as Sidebar: an open recipe canvas keeps the underlying page's tab lit.
   const current = activeTab(useBackdropPath())
   const username = user?.username ?? 'You'
+
+  // Guest access (D5): identical rail; account-only destinations gate on tap.
+  const go = (to: string) => {
+    if (requiresAuth(to) && !requireAuth()) return
+    navigate(to)
+  }
 
   return (
     <aside className="sidebar-rail">
@@ -110,7 +118,7 @@ export default function SidebarRail({ mode, onToggleMode, onExpand }: Props) {
 
       {/* Primary actions — new recipe, then the nav tabs. */}
       <button
-        onClick={() => navigate('/recipes/new')}
+        onClick={() => go('/recipes/new')}
         title="New recipe"
         aria-label="New recipe"
         style={railButtonStyle}
@@ -126,7 +134,7 @@ export default function SidebarRail({ mode, onToggleMode, onExpand }: Props) {
           return (
             <button
               key={item.id}
-              onClick={() => navigate(item.to)}
+              onClick={() => go(item.to)}
               className="rail-btn"
               title={item.label}
               aria-label={item.label}
@@ -154,17 +162,32 @@ export default function SidebarRail({ mode, onToggleMode, onExpand }: Props) {
             {mode === 'dark' ? <SunIcon size={ICON} /> : <MoonIcon size={ICON} />}
           </span>
         </button>
-        <button
-          onClick={() => navigate('/profile')}
-          className="rail-btn"
-          title="View profile"
-          aria-label="View profile"
-          style={railButtonStyle}
-        >
-          <span className="rail-tile" style={tileStyle(false)}>
-            <Avatar username={username} seed={user?.userId ?? username} size={TILE - 4} />
-          </span>
-        </button>
+        {isGuest ? (
+          // Guest access (D8): the avatar slot becomes the sign-in CTA.
+          <button
+            onClick={promptLogin}
+            className="rail-btn"
+            title="Log in / Sign up"
+            aria-label="Log in / Sign up"
+            style={railButtonStyle}
+          >
+            <span className="rail-tile" style={{ ...tileStyle(false), background: 'var(--accent)', color: 'var(--accent-ink)' }}>
+              <ProfileIcon size={ICON} />
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={() => go('/profile')}
+            className="rail-btn"
+            title="View profile"
+            aria-label="View profile"
+            style={railButtonStyle}
+          >
+            <span className="rail-tile" style={tileStyle(false)}>
+              <Avatar username={username} seed={user?.userId ?? username} size={TILE - 4} />
+            </span>
+          </button>
+        )}
       </div>
     </aside>
   )

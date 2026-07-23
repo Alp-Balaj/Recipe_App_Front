@@ -29,6 +29,19 @@ export function makeAuthValue(overrides: Partial<AuthContextValue> = {}): AuthCo
   }
 }
 
+/** A signed-out ("guest") auth context value (guest access, §4.8). */
+export function guestAuthValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
+  return makeAuthValue({ user: null, status: 'unauthenticated', ...overrides })
+}
+
+/**
+ * Render the real route tree as a signed-out guest — the browsable
+ * `unauthenticated` state (guest access). MSW serves the anonymous reads.
+ */
+export function renderGuestRoute(path: string) {
+  return renderRoute(path, { auth: guestAuthValue() })
+}
+
 /**
  * Render the real route tree with a FAKE auth context — for shell/router tests
  * that shouldn't exercise the network. Authenticated by default.

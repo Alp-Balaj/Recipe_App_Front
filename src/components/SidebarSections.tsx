@@ -2,6 +2,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useNavigate, useMatch } from 'react-router-dom'
 import { queryKeys } from '@/api/queryKeys'
 import { useAuth } from '@/auth/AuthContext'
+import { useAuthGate } from '@/auth/AuthGateContext'
 import { useBackdropPath, useOpenRecipe } from '@/components/recipeCanvas'
 import { useInfiniteRecipes } from '@/hooks/useInfiniteRecipes'
 import { useLocalPref } from '@/hooks/useLocalPref'
@@ -27,14 +28,32 @@ const RECIPE_PAGE_SIZE = 50
 export default function SidebarSections() {
   const [recipesOpen, setRecipesOpen] = useLocalPref('sidebar.recipes', false)
   const [chatsOpen, setChatsOpen] = useLocalPref('sidebar.chats', false)
+  const { isGuest, requireAuth } = useAuthGate()
 
+  // Guest access (D5): both sections list ACCOUNT data (own recipes, own
+  // chats) — the headers stay visible but expanding is gated on tap, and a
+  // persisted open state never mounts a body (whose queries would 401).
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 14 }}>
-      <SectionHeader title="Recipes" open={recipesOpen} onToggle={() => setRecipesOpen(!recipesOpen)} />
-      {recipesOpen && <RecipesBody />}
+      <SectionHeader
+        title="Recipes"
+        open={!isGuest && recipesOpen}
+        onToggle={() => {
+          if (!requireAuth()) return
+          setRecipesOpen(!recipesOpen)
+        }}
+      />
+      {!isGuest && recipesOpen && <RecipesBody />}
 
-      <SectionHeader title="Chats" open={chatsOpen} onToggle={() => setChatsOpen(!chatsOpen)} />
-      {chatsOpen && <ChatsBody />}
+      <SectionHeader
+        title="Chats"
+        open={!isGuest && chatsOpen}
+        onToggle={() => {
+          if (!requireAuth()) return
+          setChatsOpen(!chatsOpen)
+        }}
+      />
+      {!isGuest && chatsOpen && <ChatsBody />}
     </div>
   )
 }

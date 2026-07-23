@@ -14,6 +14,7 @@ import { useMemo, type CSSProperties, type KeyboardEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { RecipeResponse } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { useAuthGate } from '@/auth/AuthGateContext'
 import Avatar from '@/components/Avatar'
 import StateBlock from '@/components/ui/StateBlock'
 import { useOpenRecipe } from '@/components/recipeCanvas'
@@ -48,6 +49,7 @@ export default function UserProfilePage() {
     isFetchingNextPage,
   } = useUserRecipes(id)
   const { toggleFollow } = useSocialMutations()
+  const { requireAuth } = useAuthGate()
 
   const recipes = useMemo(() => {
     const seen = new Set<string>()
@@ -150,7 +152,11 @@ export default function UserProfilePage() {
         </button>
       ) : (
         <button
-          onClick={() => toggleFollow.mutate({ userId: profile.id, next: !profile.followedByMe })}
+          onClick={() => {
+            // Guest access (§4.4): gate before .mutate — no optimistic patch for guests.
+            if (!requireAuth()) return
+            toggleFollow.mutate({ userId: profile.id, next: !profile.followedByMe })
+          }}
           aria-pressed={profile.followedByMe}
           style={profile.followedByMe ? followingBtn : followBtn}
         >

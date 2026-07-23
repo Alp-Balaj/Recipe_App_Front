@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
+import { useAuthGate } from '@/auth/AuthGateContext'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useRecipe, isNotFound } from '@/hooks/useRecipe'
@@ -33,6 +34,7 @@ export default function RecipeDetailPage() {
   // the old hidden-counts rendering.
   const envelope = useSocialEnvelope(id ?? '', undefined, { fetchFallback: true })
   const { toggleLike, toggleSave } = useSocialMutations()
+  const { requireAuth } = useAuthGate()
 
   const close = () => {
     // Back to wherever we came from; deep links with no in-app history → Discover.
@@ -96,7 +98,11 @@ export default function RecipeDetailPage() {
           {/* cp06: the header hearts go live — like + save through the shared
               social hook (state from the envelope seam; counts show when known). */}
           <button
-            onClick={() => toggleLike.mutate({ recipeId: recipe.id, next: !envelope.likedByMe })}
+            onClick={() => {
+              // Guest access (§4.4): gate before .mutate — no optimistic patch for guests.
+              if (!requireAuth()) return
+              toggleLike.mutate({ recipeId: recipe.id, next: !envelope.likedByMe })
+            }}
             aria-pressed={envelope.likedByMe === true}
             aria-label={envelope.likedByMe ? 'Unlike' : 'Like'}
             style={{
@@ -117,7 +123,10 @@ export default function RecipeDetailPage() {
             )}
           </button>
           <button
-            onClick={() => toggleSave.mutate({ recipeId: recipe.id, next: !envelope.savedByMe })}
+            onClick={() => {
+              if (!requireAuth()) return
+              toggleSave.mutate({ recipeId: recipe.id, next: !envelope.savedByMe })
+            }}
             aria-pressed={envelope.savedByMe === true}
             aria-label={envelope.savedByMe ? 'Remove from saved' : 'Save recipe'}
             style={{

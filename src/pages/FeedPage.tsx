@@ -25,6 +25,7 @@ import Avatar from '@/components/Avatar'
 import StateBlock from '@/components/ui/StateBlock'
 import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useAuth } from '@/auth/AuthContext'
+import { useAuthGate } from '@/auth/AuthGateContext'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useFeed } from '@/hooks/useFeed'
 import { useFollowList } from '@/hooks/useFollowList'
@@ -47,10 +48,14 @@ export default function FeedPage() {
     isFetching,
   } = useFeed(tab)
   const { toggleLike, toggleSave } = useSocialMutations()
+  const { requireAuth } = useAuthGate()
   const [openCommentsId, setOpenCommentsId] = useState<string | null>(null)
 
   const selectTab = (next: FeedScope) => {
     if (next === tab) return
+    // Guest access (D3): the Following tab stays visible but is account-only —
+    // a guest tap opens the login prompt and stays on For You.
+    if (next === 'following' && !requireAuth()) return
     setTab(next)
     setOpenCommentsId(null)
   }
@@ -74,8 +79,16 @@ export default function FeedPage() {
     // The feed stays behind the canvas — see recipeCanvas.ts.
     onOpen: () => openRecipe(item.recipe.id),
     onOpenAuthor: () => navigate(`/users/${item.author.id}`),
-    onToggleLike: (next: boolean) => toggleLike.mutate({ recipeId: item.recipe.id, next }),
-    onToggleSave: (next: boolean) => toggleSave.mutate({ recipeId: item.recipe.id, next }),
+    // Guest access (§4.4): the gate short-circuits BEFORE .mutate, so the
+    // optimistic cache patches never run for a guest.
+    onToggleLike: (next: boolean) => {
+      if (!requireAuth()) return
+      toggleLike.mutate({ recipeId: item.recipe.id, next })
+    },
+    onToggleSave: (next: boolean) => {
+      if (!requireAuth()) return
+      toggleSave.mutate({ recipeId: item.recipe.id, next })
+    },
     commentsOpen: openCommentsId === item.recipe.id,
     onToggleComments: () =>
       setOpenCommentsId((cur) => (cur === item.recipe.id ? null : item.recipe.id)),

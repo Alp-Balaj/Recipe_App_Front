@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { RecipeResponse } from '@/api/types'
+import { useAuthGate } from '@/auth/AuthGateContext'
 import RecipeCard from '@/components/RecipeCard'
 import { useSocialEnvelope, type SocialEnvelope } from '@/hooks/useSocialEnvelope'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
@@ -26,6 +27,7 @@ interface SocialRecipeCardProps {
 export default function SocialRecipeCard({ recipe, onOpen, seed }: SocialRecipeCardProps) {
   const envelope = useSocialEnvelope(recipe.id, seed)
   const { toggleLike, toggleSave } = useSocialMutations()
+  const { requireAuth } = useAuthGate()
 
   return (
     <RecipeCard
@@ -36,8 +38,15 @@ export default function SocialRecipeCard({ recipe, onOpen, seed }: SocialRecipeC
         likeCount: envelope.likeCount,
         likedByMe: envelope.likedByMe,
         savedByMe: envelope.savedByMe,
-        onToggleLike: (next) => toggleLike.mutate({ recipeId: recipe.id, next }),
-        onToggleSave: (next) => toggleSave.mutate({ recipeId: recipe.id, next }),
+        // Guest access (§4.4): gate before .mutate — no optimistic patch for guests.
+        onToggleLike: (next) => {
+          if (!requireAuth()) return
+          toggleLike.mutate({ recipeId: recipe.id, next })
+        },
+        onToggleSave: (next) => {
+          if (!requireAuth()) return
+          toggleSave.mutate({ recipeId: recipe.id, next })
+        },
       }}
     />
   )
