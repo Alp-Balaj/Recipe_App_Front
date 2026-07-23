@@ -7,7 +7,7 @@ import { cookingRankMeta } from '@/lib/cookingRank'
 import { MoonIcon, PlusIcon, SunIcon } from './navIcons'
 import { DESKTOP_NAV_ITEMS, activeTab } from './navItems'
 import { useBackdropPath } from './recipeCanvas'
-import { PanelIcon } from './SidebarRail'
+import { BrandLogo, PanelIcon } from './SidebarRail'
 import SidebarSections from './SidebarSections'
 import type { Mode } from './ThemeRoot'
 
@@ -45,20 +45,17 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
     <aside className="sidebar">
       {/* Brand + collapse control */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px', marginBottom: 24 }}>
-        {/* <span
+        <span
           aria-hidden
           style={{
             flexShrink: 0,
-            width: 32,
-            height: 32,
-            borderRadius: 10,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <BrandLogo />
-        </span> */}
+          <BrandLogo size={26} />
+        </span>
         <div style={{ flex: 1, minWidth: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.15 }}>
           Cooked!
         </div>

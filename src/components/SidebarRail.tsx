@@ -194,13 +194,11 @@ export default function SidebarRail({ mode, onToggleMode, onExpand }: Props) {
 }
 
 /**
- * The app mark (assets/app-icon.png, re-exported to src/assets cropped to its
- * ink). It's black line-art on transparency, so it sits directly on the amber
- * brand tile in both themes. The default runs a few px larger than the nav
- * icons because the art is wide and short — it only inks the middle band of
- * its square, so at 20px it would read smaller than everything around it.
+ * The app mark (assets/app-icon.png): the orange salad-bowl glyph, keyed to
+ * transparency and cropped square, so it sits directly on any surface in both
+ * themes. Slightly larger than the 20px nav icons so it reads as the brand.
  */
-export function BrandLogo({ size = 25 }: { size?: number }) {
+export function BrandLogo({ size = 24 }: { size?: number }) {
   return (
     <img
       src={appIcon}
