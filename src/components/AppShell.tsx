@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  Navigate,
   Outlet,
   useLocation,
   useMatch,
@@ -10,9 +9,11 @@ import {
 } from 'react-router-dom'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useAuth } from '@/auth/AuthContext'
+import { AuthGateProvider, requiresAuth, useAuthGate } from '@/auth/AuthGateContext'
 import Sidebar from './Sidebar'
 import SidebarRail from './SidebarRail'
 import BottomNav from './BottomNav'
+import LoginModal from './LoginModal'
 import { useBackdropPath } from './recipeCanvas'
 import BrowsePage from '@/pages/BrowsePage'
 import ChatPage from '@/pages/ChatPage'
@@ -26,10 +27,26 @@ import type { ThemeContextValue } from './ThemeRoot'
  * Tabbed shell layout route: sidebar + conversation pane (+ recipe canvas) on
  * desktop, bottom tab bar on mobile/tablet. The active tab derives from the
  * URL (see navItems.ts); this component holds no navigation state of its own.
+ *
+ * Guest access (guest-access plan §4.2, frozen-module amendment D9): the shell
+ * no longer bounces signed-out visitors to /login. `unauthenticated` is the
+ * browsable guest state; only the account-only routes (requiresAuth) are gated,
+ * by rendering Discover with the login modal open instead of the route's page.
+ * AuthGateProvider mounts here so every surface under the shell can gate its
+ * interactions via useAuthGate().
  */
 export default function AppShell() {
+  return (
+    <AuthGateProvider>
+      <AppShellContent />
+    </AuthGateProvider>
+  )
+}
+
+function AppShellContent() {
   const theme = useOutletContext<ThemeContextValue>()
   const { status } = useAuth()
+  const { promptOpen, promptLogin } = useAuthGate()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -79,11 +96,17 @@ export default function AppShell() {
     panePath.startsWith('/users') ||
     panePath.startsWith('/profile')
 
-  // ── Auth guard ──────────────────────────────────────────────────────────
-  // Every route under AppShell is protected; /login and /register render
-  // outside it (under ThemeRoot). While the boot-time /auth/me check runs we
-  // hold a themed placeholder; a signed-out user is bounced to /login, with
-  // the attempted URL preserved so login can send them back.
+  // ── Auth gate (guest access, D9 amendment) ──────────────────────────────
+  // A guest landing on an account-only route by direct URL gets Discover with
+  // the login modal open (decision: no /login redirect) — the page behind the
+  // prompt stays usable. Public routes render for guests as-is.
+  const isGuest = status === 'unauthenticated'
+  const isGatedRoute = isGuest && requiresAuth(location.pathname)
+  useEffect(() => {
+    if (isGatedRoute) promptLogin()
+  }, [isGatedRoute, location.pathname, promptLogin])
+
+  // While the boot-time /auth/me check runs we hold a themed placeholder.
   if (status === 'loading') {
     return (
       <div
@@ -101,9 +124,11 @@ export default function AppShell() {
       </div>
     )
   }
-  if (status === 'unauthenticated') {
-    return <Navigate to="/login" replace state={{ from: location }} />
-  }
+
+  // The routed page — or, for a guest on a gated route, Discover as the page
+  // behind the login prompt. Rendered as a direct child (not through the
+  // outlet), BrowsePage still reads the theme from ThemeRoot's outlet context.
+  const page = isGatedRoute ? <BrowsePage /> : <Outlet context={theme} />
 
   // ── Desktop (>=1024px): sidebar + conversation pane + recipe canvas ──
   if (isDesktop) {
@@ -128,7 +153,7 @@ export default function AppShell() {
             <div className="conversation-inner" style={isWidePage ? { maxWidth: 1240 } : undefined}>
               {/* On a detail URL the outlet renders in the canvas pane instead,
                   and the page the recipe was opened from backs this pane. */}
-              {isDetail ? backdrop : <Outlet context={theme} />}
+              {isDetail ? backdrop : page}
             </div>
           </section>
 
@@ -139,6 +164,8 @@ export default function AppShell() {
             </section>
           )}
         </div>
+
+        {promptOpen && <LoginModal />}
       </div>
     )
   }
@@ -150,8 +177,9 @@ export default function AppShell() {
           Stays position:relative so the absolutely-positioned pages / nav /
           detail overlay keep working unchanged. */}
       <div className="app-frame">
-        <Outlet context={theme} />
+        {page}
         <BottomNav />
+        {promptOpen && <LoginModal />}
       </div>
 
       <div className="app-hint">

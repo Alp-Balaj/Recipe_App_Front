@@ -105,13 +105,25 @@ describe('router shell (auth pages render outside the guard)', () => {
   })
 })
 
-describe('route protection', () => {
-  it('bounces an unauthenticated user from a protected route to /login', async () => {
+describe('route protection (guest access)', () => {
+  // Guest access: `unauthenticated` is a browsable state — public routes render
+  // for guests instead of bouncing to /login.
+  it('renders Discover for a signed-out guest', async () => {
     const router = renderRoute('/discover', {
       auth: makeAuthValue({ user: null, status: 'unauthenticated' }),
     })
-    expect(await screen.findByText('Welcome back')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/login')
+    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/discover')
+  })
+
+  it('renders Discover behind the login modal when a guest deep-links a gated route', async () => {
+    const router = renderRoute('/chat', {
+      auth: makeAuthValue({ user: null, status: 'unauthenticated' }),
+    })
+    expect(await screen.findByRole('dialog', { name: 'Sign in' })).toBeInTheDocument()
+    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
+    // No redirect: the URL stays put so signing in can land where the guest aimed.
+    expect(router.state.location.pathname).toBe('/chat')
   })
 
   it('holds a loading placeholder while the session is being validated', async () => {

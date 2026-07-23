@@ -10,8 +10,12 @@
 //  - treat ANY 2xx as success (POST /recipes answers 201, not 200)
 //  - translate error responses into typed errors:
 //      400 → ApiValidationError (carries the PascalCase-keyed errors dict)
-//      401 → ApiUnauthorizedError; clears the session + redirects, EXCEPT for
-//            /auth/login (a 401 there means bad credentials, not expiry)
+//      401 → ApiUnauthorizedError; clears the session + redirects ONLY when a
+//            session token was attached to the request (an expired/invalid
+//            REAL session). A guest 401 (no token — guest access, D9 frozen-
+//            module amendment) surfaces as a normal error instead, so a
+//            browsing guest is never "logged out" by a stray 401. /auth/login
+//            is likewise exempt (a 401 there means bad credentials).
 //      409 → ApiConflictError (carries the {error} message)
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -137,6 +141,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`
 
+  // Captured at request time: whether a session token rode along. A 401 only
+  // clears the session when this was a REAL session's request (guest access).
+  const hadToken = authToken !== null
+
   const res = await fetch(`${API_PREFIX}${path}${buildQueryString(query)}`, {
     method,
     headers,
@@ -146,10 +154,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   if (res.ok) return parseBody<T>(res)
 
-  return handleErrorResponse(res, path)
+  return handleErrorResponse(res, path, hadToken)
 }
 
-async function handleErrorResponse(res: Response, path: string): Promise<never> {
+async function handleErrorResponse(res: Response, path: string, hadToken: boolean): Promise<never> {
   const isLoginAttempt = path === '/auth/login'
 
   if (res.status === 400) {
@@ -162,8 +170,11 @@ async function handleErrorResponse(res: Response, path: string): Promise<never> 
 
   if (res.status === 401) {
     // A 401 from login is "wrong credentials", not an expired session — do NOT
-    // clear the store or redirect. Every other 401 means the token is no good.
-    if (!isLoginAttempt) unauthorizedHandler?.()
+    // clear the store or redirect. A 401 with NO token attached is a guest
+    // hitting a gated endpoint (defense-in-depth) — nothing to clear, surface
+    // the typed error and let the call site's gate handle it. Only a 401 on a
+    // request that carried a real session token means the token is no good.
+    if (!isLoginAttempt && hadToken) unauthorizedHandler?.()
     throw new ApiUnauthorizedError()
   }
 
