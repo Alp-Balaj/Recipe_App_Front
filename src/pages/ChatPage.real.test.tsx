@@ -102,7 +102,10 @@ describe('ChatPage (real client bridge)', () => {
     await user.type(screen.getByLabelText('Message the assistant'), 'something warm')
     await user.click(screen.getByLabelText('Send message'))
 
-    expect(await screen.findByText('Here is a first idea for you.')).toBeInTheDocument()
+    // waitFor + getByText (not findByText): the send deep-links /chat → /chat/:id,
+    // which REMOUNTS ChatPage — a node caught mid-transition can be detached by
+    // assertion time. Re-querying each attempt pins the settled DOM instead.
+    await waitFor(() => expect(screen.getByText('Here is a first idea for you.')).toBeInTheDocument())
     expect(screen.getByText('something warm')).toBeInTheDocument()
     expect(startBody).toEqual({ content: 'something warm' })
     await waitFor(() => expect(router.state.location.pathname).toBe(`/chat/${CONVERSATION_ID}`))
