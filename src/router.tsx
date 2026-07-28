@@ -11,6 +11,8 @@ import RecipeFormPage from './pages/RecipeFormPage'
 import MyRecipesPage from './pages/MyRecipesPage'
 import RecipeDetailPage from './pages/RecipeDetailPage'
 import UserProfilePage from './pages/UserProfilePage'
+import MealPlanPage from './pages/MealPlanPage'
+import ShoppingListPage from './pages/ShoppingListPage'
 
 /**
  * The ONE route-registration file (frozen after checkpoint 01).
@@ -40,6 +42,11 @@ export const routes: RouteObject[] = [
           { path: '/chat', element: <ChatPage /> },
           { path: '/chat/:conversationId', element: <ChatPage /> },
           { path: '/discover', element: <BrowsePage /> },
+          // meal-planning-ui plan — SANCTIONED ADDITIVE route registration, same
+          // discipline as the social-feed and chat-ai additive routes above.
+          // Deliberately NOT in navItems.ts until the surface is complete.
+          { path: '/plan', element: <MealPlanPage /> },
+          { path: '/shopping-list', element: <ShoppingListPage /> },
           { path: '/profile', element: <ProfilePage /> },
           { path: '/recipes/new', element: <RecipeFormPage /> },
           { path: '/recipes/mine', element: <MyRecipesPage /> },
