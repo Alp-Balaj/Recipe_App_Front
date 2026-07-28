@@ -99,4 +99,24 @@ export const queryKeys = {
     /** One recipe's cached SocialEnvelope (seeded from feed hits; patched by mutations). */
     envelope: (recipeId: string) => ['social', 'envelope', recipeId] as const,
   },
+
+  // meal-planning-ui plan — SANCTIONED ADDITIVE EDIT to this frozen module (the
+  // factory is the one place keys may live, per its own header). Nothing above
+  // this comment changed.
+  mealPlans: {
+    /** Everything plan-related. */
+    all: ['mealPlans'] as const,
+    /** The keyset-paged list of the caller's weeks (useInfiniteQuery). */
+    list: () => ['mealPlans', 'list'] as const,
+    /** The plan-id lookup for one exact week (ISO UTC-midnight Monday). */
+    week: (weekStart: string) => ['mealPlans', 'week', weekStart] as const,
+    /** One plan's full week view. */
+    detail: (planId: string) => ['mealPlans', 'detail', planId] as const,
+  },
+  shoppingList: {
+    /** Everything shopping-list-related — generate invalidates this whole subtree. */
+    all: ['shoppingList'] as const,
+    /** The single per-user keyset-paged list (useInfiniteQuery). */
+    list: () => ['shoppingList', 'list'] as const,
+  },
 } as const
