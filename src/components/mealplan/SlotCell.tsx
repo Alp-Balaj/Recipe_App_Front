@@ -7,9 +7,10 @@
 // grid), the inner content carries `data-testid="slot-<Day>-<Meal>"` (address
 // one slot) — an element can only carry one data-testid, hence the two levels.
 //
-// `onClick` / `onRemove` are declared now and wired by Task 6: this task
-// renders the surface read-only, so the page passes neither and the cell is
-// inert. Declaring them here means Task 6 changes no prop signature.
+// `onClick` / `onRemove` were declared by Task 5 and are wired by Task 6,
+// which additionally adds the move affordance: `onMove` (start a move from
+// this filled slot) and `isMoving` (this slot's entry is the one in flight).
+// No drag-and-drop library may be added, so a move is select-then-place.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CSSProperties, KeyboardEvent } from 'react'
@@ -22,15 +23,23 @@ interface Props {
   entry?: MealPlanEntry
   onClick?: () => void
   onRemove?: () => void
+  /** Start a move from this (filled) slot — renders the "Move" affordance. */
+  onMove?: () => void
+  /** This slot's entry is the one currently being moved. */
+  isMoving?: boolean
 }
 
-export default function SlotCell({ day, meal, entry, onClick, onRemove }: Props) {
+export default function SlotCell({ day, meal, entry, onClick, onRemove, onMove, isMoving = false }: Props) {
   const interactive = Boolean(onClick)
 
   return (
     <div
       data-testid="slot-cell"
-      style={{ ...cell, cursor: interactive ? 'pointer' : 'default' }}
+      style={{
+        ...cell,
+        cursor: interactive ? 'pointer' : 'default',
+        ...(isMoving ? { borderColor: 'var(--accent)', boxShadow: 'none' } : {}),
+      }}
       {...(interactive
         ? {
             role: 'button',
@@ -60,6 +69,19 @@ export default function SlotCell({ day, meal, entry, onClick, onRemove }: Props)
               />
             ) : null}
             <div style={title}>{entry.recipe.title}</div>
+            {onMove ? (
+              <button
+                type="button"
+                aria-label={`Move ${entry.recipe.title}`}
+                style={moveButton}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onMove()
+                }}
+              >
+                {isMoving ? 'Moving…' : 'Move'}
+              </button>
+            ) : null}
             {onRemove ? (
               <button
                 type="button"
@@ -126,6 +148,19 @@ const plus: CSSProperties = {
   fontWeight: 700,
   color: 'var(--muted)',
   opacity: 0.7,
+}
+
+const moveButton: CSSProperties = {
+  flexShrink: 0,
+  cursor: 'pointer',
+  border: '1px solid var(--border)',
+  borderRadius: 10,
+  padding: '4px 9px',
+  fontFamily: 'inherit',
+  fontSize: 11,
+  fontWeight: 700,
+  color: 'var(--muted)',
+  background: 'var(--surface2)',
 }
 
 const removeButton: CSSProperties = {

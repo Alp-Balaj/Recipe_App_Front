@@ -8,7 +8,10 @@
 // sections, each listing its three labelled slots — the same responsive split
 // every other surface uses (useMediaQuery, not user-agent sniffing).
 //
-// `onSlotClick` / `onRemove` are declared now and wired by Task 6.
+// `onSlotClick` / `onRemove` were declared by Task 5 and are wired by Task 6,
+// which adds `onMove` + `movingEntryId` for select-then-place moves (no
+// drag-and-drop library may be added). Still presentational: every decision
+// about what a tap means belongs to the page.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useMemo, type CSSProperties } from 'react'
@@ -26,9 +29,13 @@ interface Props {
   entries: MealPlanEntry[]
   onSlotClick?: (day: DayName, meal: MealTypeName) => void
   onRemove?: (entryId: string) => void
+  /** Start a move from a filled slot; the page then places it on the next tap. */
+  onMove?: (entry: MealPlanEntry) => void
+  /** The entry currently awaiting a destination, if any. */
+  movingEntryId?: string | null
 }
 
-export default function WeekGrid({ entries, onSlotClick, onRemove }: Props) {
+export default function WeekGrid({ entries, onSlotClick, onRemove, onMove, movingEntryId = null }: Props) {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   // One pass over the entries, indexed by slot — the grid then reads 21 keys.
@@ -48,6 +55,8 @@ export default function WeekGrid({ entries, onSlotClick, onRemove }: Props) {
         entry={entry}
         onClick={onSlotClick ? () => onSlotClick(day, meal) : undefined}
         onRemove={entry && onRemove ? () => onRemove(entry.id) : undefined}
+        onMove={entry && onMove ? () => onMove(entry) : undefined}
+        isMoving={Boolean(entry && movingEntryId === entry.id)}
       />
     )
   }
