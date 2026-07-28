@@ -62,33 +62,41 @@ export default function WeekGrid({ entries, onSlotClick, onRemove, onMove, movin
   }
 
   if (isDesktop) {
+    // Three meal columns can't squash indefinitely (a slot holds a thumb, a
+    // title and two buttons), so the grid keeps a floor width and the wrapper
+    // — not the page — takes the horizontal scroll on a narrow canvas.
     return (
-      <div style={desktopGrid}>
-        <div />
-        {MEAL_ORDER.map((meal) => (
-          <div key={meal} style={columnHeader}>
-            {meal}
-          </div>
-        ))}
+      <div style={scrollFrame}>
+        <div style={desktopGrid}>
+          <div />
+          {MEAL_ORDER.map((meal) => (
+            <div key={meal} style={columnHeader}>
+              {meal}
+            </div>
+          ))}
 
-        {DAY_ORDER.map((day) => (
-          <div key={day} style={{ display: 'contents' }}>
-            <div style={dayLabel}>{day}</div>
-            {MEAL_ORDER.map((meal) => cellFor(day, meal))}
-          </div>
-        ))}
+          {DAY_ORDER.map((day) => (
+            <div key={day} style={{ display: 'contents' }}>
+              <div style={dayLabel}>{day}</div>
+              {MEAL_ORDER.map((meal) => cellFor(day, meal))}
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
 
+  // Mobile / tablet: one column of days. Every track is `minmax(0, 1fr)` or a
+  // fixed label, so the rows shrink to the viewport instead of pushing it wide
+  // — nothing here ever needs a horizontal scroll, even at 375px.
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div style={{ display: 'grid', gap: 16, maxWidth: '100%' }}>
       {DAY_ORDER.map((day) => (
-        <section key={day}>
+        <section key={day} style={{ minWidth: 0 }}>
           <div style={{ ...dayLabel, marginBottom: 8 }}>{day}</div>
           <div style={{ display: 'grid', gap: 8 }}>
             {MEAL_ORDER.map((meal) => (
-              <div key={meal} style={{ display: 'grid', gridTemplateColumns: '78px 1fr', alignItems: 'center', gap: 10 }}>
+              <div key={meal} style={mobileRow}>
                 <div style={mealLabel}>{meal}</div>
                 {cellFor(day, meal)}
               </div>
@@ -100,11 +108,27 @@ export default function WeekGrid({ entries, onSlotClick, onRemove, onMove, movin
   )
 }
 
+/** Owns any overflow the grid produces, so the page itself never scrolls sideways. */
+const scrollFrame: CSSProperties = {
+  maxWidth: '100%',
+  overflowX: 'auto',
+  paddingBottom: 4,
+}
+
 const desktopGrid: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '110px repeat(3, minmax(0, 1fr))',
+  gridTemplateColumns: '110px repeat(3, minmax(150px, 1fr))',
   alignItems: 'center',
   gap: 10,
+  minWidth: 620,
+}
+
+const mobileRow: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '72px minmax(0, 1fr)',
+  alignItems: 'center',
+  gap: 10,
+  minWidth: 0,
 }
 
 const columnHeader: CSSProperties = {

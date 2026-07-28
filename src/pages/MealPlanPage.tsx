@@ -36,6 +36,9 @@ const pageStyle: React.CSSProperties = {
   inset: 0,
   bottom: 'var(--nav-h, 74px)',
   overflowY: 'auto',
+  // Task 9 responsive parity: the page never scrolls sideways at any width —
+  // the week grid owns its own horizontal scroll (see WeekGrid's scrollFrame).
+  overflowX: 'hidden',
   padding: '54px 18px 24px',
 }
 
@@ -183,7 +186,7 @@ function PlanWeek({ planId, entries }: { planId: string; entries: MealPlanEntry[
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
         <button
           type="button"
           style={{ ...generateButton, opacity: entries.length === 0 || generate.isPending ? 0.5 : 1 }}
@@ -284,6 +287,7 @@ const movingBanner: React.CSSProperties = {
   padding: '10px 12px',
   fontSize: 13,
   marginBottom: 12,
+  overflowWrap: 'anywhere',
 }
 
 const messageBanner: React.CSSProperties = {
