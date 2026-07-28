@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Weekly meal-plan surface (/plan) — meal-planning-ui plan, Task 4 shell.
 //
-// This task ships the route dark: header, resolved week label, and either the
-// "Start this week" call to action (the week has no plan yet) or a placeholder
-// where Task 5's read-only WeekGrid lands. No nav entry links here until Task 9.
+// Header, resolved week label, and either the "Start this week" call to action
+// (the week has no plan yet) or Task 5's read-only WeekGrid for the resolved
+// plan. No nav entry links here until Task 9.
 //
 // `weekStart` is held in state deliberately: Task 6 adds prev/next week
 // navigation by moving this value, with no restructuring of the page.
@@ -11,8 +11,9 @@
 
 import { useState } from 'react'
 import { weekStartOf } from '@/api/mealPlans'
-import { useCurrentWeekPlan, useEnsureWeekPlan } from '@/hooks/useMealPlan'
+import { useCurrentWeekPlan, useEnsureWeekPlan, useMealPlanDetail } from '@/hooks/useMealPlan'
 import StateBlock from '@/components/ui/StateBlock'
+import WeekGrid from '@/components/mealplan/WeekGrid'
 
 const pageStyle: React.CSSProperties = {
   position: 'absolute',
@@ -61,6 +62,7 @@ export default function MealPlanPage() {
   const [weekStart] = useState(() => weekStartOf(new Date()))
   const { planId, isLoading, error } = useCurrentWeekPlan(weekStart)
   const ensure = useEnsureWeekPlan()
+  const detail = useMealPlanDetail(planId)
 
   return (
     <div className="scroll" style={pageStyle}>
@@ -91,10 +93,13 @@ export default function MealPlanPage() {
       )}
 
       {!isLoading && !error && planId !== null && (
-        // Task 5 replaces this placeholder with the read-only WeekGrid.
-        <div style={{ ...cardStyle, color: 'var(--muted)', fontSize: 13.5 }}>
-          Your week is ready. The grid lands here.
-        </div>
+        <>
+          {detail.isLoading && <StateBlock title="Loading your week…" />}
+          {!detail.isLoading && detail.error && (
+            <StateBlock title="Couldn't load this week" body="Check your connection and try again." />
+          )}
+          {!detail.isLoading && !detail.error && <WeekGrid entries={detail.data?.entries ?? []} />}
+        </>
       )}
     </div>
   )
