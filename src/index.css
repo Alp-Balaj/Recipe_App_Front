@@ -112,6 +112,7 @@ body { margin: 0; }
     background: var(--navbg);
     border-right: 1px solid var(--border);
     padding: 24px 16px 18px;
+    max-width: 252px;
   }
 
   .desktop-main {
