@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
-import { ChatIcon, DiscoverIcon, FeedIcon, ProfileIcon, type IconProps } from './navIcons'
+import { ChatIcon, DiscoverIcon, FeedIcon, PlanIcon, ProfileIcon, type IconProps } from './navIcons'
 
-export type TabId = 'feed' | 'chat' | 'discover' | 'profile'
+export type TabId = 'feed' | 'chat' | 'discover' | 'plan' | 'profile'
 
 // social-feed cp05 — sanctioned additive edit: the Feed tab (kickoff: "Feed
 // tab added to Sidebar/BottomNav"). Both nav surfaces render NAV_ITEMS, so
@@ -13,6 +13,9 @@ export const NAV_ITEMS: { id: TabId; to: string; icon: ComponentType<IconProps>;
   { id: 'feed', to: '/feed', icon: FeedIcon, label: 'Feed' },
   { id: 'chat', to: '/chat', icon: ChatIcon, label: 'Chat' },
   { id: 'discover', to: '/discover', icon: DiscoverIcon, label: 'Discover' },
+  // meal-planning-ui cp09 — the reveal: /plan and /shopping-list have existed
+  // since Task 4 but were unreachable from the chrome until now.
+  { id: 'plan', to: '/plan', icon: PlanIcon, label: 'Plan' },
   { id: 'profile', to: '/profile', icon: ProfileIcon, label: 'Profile' },
 ]
 
@@ -27,10 +30,14 @@ export const DESKTOP_NAV_ITEMS = NAV_ITEMS.filter((item) => item.id !== 'profile
  * The recipe surfaces (/recipes/*) live under the Discover tab. Callers pass the
  * BACKDROP path (see recipeCanvas.ts), not the raw URL, so a recipe opened from
  * chat or the feed keeps that tab lit instead of jumping the highlight here.
+ *
+ * The two meal-planning surfaces (/plan and /shopping-list) share the Plan tab:
+ * the list is generated from the week, so they read as one destination.
  */
 export function activeTab(pathname: string): TabId {
   if (pathname.startsWith('/feed')) return 'feed'
   if (pathname.startsWith('/chat')) return 'chat'
+  if (pathname.startsWith('/plan') || pathname.startsWith('/shopping-list')) return 'plan'
   if (pathname.startsWith('/profile')) return 'profile'
   return 'discover'
 }

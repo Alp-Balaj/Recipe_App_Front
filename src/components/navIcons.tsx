@@ -65,6 +65,16 @@ export function DiscoverIcon(props: IconProps) {
   )
 }
 
+/** Plan — a week calendar. */
+export function PlanIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="3.2" />
+      <path d="M3.5 10h17M8.5 3.5v3M15.5 3.5v3" />
+    </Svg>
+  )
+}
+
 /** Profile — a person bust. */
 export function ProfileIcon(props: IconProps) {
   return (
