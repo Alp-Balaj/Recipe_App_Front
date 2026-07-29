@@ -119,4 +119,22 @@ export const queryKeys = {
     /** The single per-user keyset-paged list (useInfiniteQuery). */
     list: () => ['shoppingList', 'list'] as const,
   },
+
+  // meal-plan redesign — SANCTIONED ADDITIVE EDIT to this frozen module, same
+  // rationale as the blocks above. Nothing already here changed.
+  //
+  // The picker needs WHOLE bounded lists rather than one page, so it can search
+  // them in memory (GET /recipes has no text-search parameter). These keys are
+  // deliberately distinct from saved.list() / recipes.mine(), which are the
+  // page-at-a-time infinite queries the profile and my-recipes surfaces use.
+  picker: {
+    /** Everything the recipe picker prefetches. */
+    all: ['picker'] as const,
+    /** Every page of GET /users/me/saved-recipes, up to a cap. */
+    saved: () => ['picker', 'saved'] as const,
+    /** The caller's own recipes, scanned out of GET /recipes up to a cap. */
+    mine: (userId: string) => ['picker', 'mine', userId] as const,
+    /** Recipes drawn from recent meal plans, most recently planned first. */
+    history: () => ['picker', 'history'] as const,
+  },
 } as const

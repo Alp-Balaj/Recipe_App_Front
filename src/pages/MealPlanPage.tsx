@@ -18,14 +18,16 @@
 // before anything is called, and success invalidates the shopping-list subtree.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiConflictError } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 import { generateShoppingList, weekStartOf, type DayName, type MealPlanEntry, type MealTypeName } from '@/api/mealPlans'
 import { useCurrentWeekPlan, useEnsureWeekPlan, useMealPlanDetail } from '@/hooks/useMealPlan'
 import { useMealPlanMutations } from '@/hooks/useMealPlanMutations'
+import { shortDayLabel } from '@/hooks/usePickerCorpus'
+import { addDays, parsePlanDate, planWeekPath, todayPlanDate } from '@/lib/planDates'
 import StateBlock from '@/components/ui/StateBlock'
 import Modal from '@/components/ui/Modal'
 import WeekGrid from '@/components/mealplan/WeekGrid'
@@ -78,14 +80,36 @@ export function weekRangeLabel(weekStartIso: string): string {
 }
 
 export default function MealPlanPage() {
-  const [weekStart] = useState(() => weekStartOf(new Date()))
+  // The week now comes from the URL (/plan/week/:start), which is what finally
+  // makes this surface able to show a week other than the current one. Any day
+  // in the week is accepted and normalised to its Monday; a missing or
+  // malformed segment falls back to this week rather than erroring.
+  const { start } = useParams<{ start?: string }>()
+  const weekStart = weekStartOf(parsePlanDate(start) ?? todayPlanDate())
+
   const { planId, isLoading, error } = useCurrentWeekPlan(weekStart)
   const ensure = useEnsureWeekPlan()
   const detail = useMealPlanDetail(planId)
 
+  const previous = addDays(new Date(weekStart), -7)
+  const next = addDays(new Date(weekStart), 7)
+
   return (
     <div className="scroll" style={pageStyle}>
-      <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>Meal plan</h1>
+      <Link to="/plan" style={backLink}>
+        ‹ Month
+      </Link>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>Meal plan</h1>
+        <nav style={{ display: 'flex', gap: 6, marginLeft: 'auto' }} aria-label="Nearby weeks">
+          <Link to={planWeekPath(previous)} style={stepLink}>
+            ‹ Prev
+          </Link>
+          <Link to={planWeekPath(next)} style={stepLink}>
+            Next ›
+          </Link>
+        </nav>
+      </div>
       <div style={{ fontSize: 13, color: 'var(--muted)', margin: '6px 0 18px' }}>{weekRangeLabel(weekStart)}</div>
 
       {isLoading && <StateBlock title="Loading your week…" />}
@@ -118,7 +142,7 @@ export default function MealPlanPage() {
             <StateBlock title="Couldn't load this week" body="Check your connection and try again." />
           )}
           {!detail.isLoading && !detail.error && (
-            <PlanWeek planId={planId} entries={detail.data?.entries ?? []} />
+            <PlanWeek planId={planId} entries={detail.data?.entries ?? []} weekStart={weekStart} />
           )}
         </>
       )}
@@ -130,7 +154,15 @@ export default function MealPlanPage() {
  * The writable week. Split out because the mutation hook needs a real plan id —
  * the parent only has one once the week has resolved.
  */
-function PlanWeek({ planId, entries }: { planId: string; entries: MealPlanEntry[] }) {
+function PlanWeek({
+  planId,
+  entries,
+  weekStart,
+}: {
+  planId: string
+  entries: MealPlanEntry[]
+  weekStart: string
+}) {
   const { addEntry, removeEntry, moveEntry } = useMealPlanMutations(planId)
   const [pickerSlot, setPickerSlot] = useState<{ day: DayName; meal: MealTypeName } | null>(null)
   const [moving, setMoving] = useState<MealPlanEntry | null>(null)
@@ -153,6 +185,18 @@ function PlanWeek({ planId, entries }: { planId: string; entries: MealPlanEntry[
 
   const entryAt = (day: DayName, meal: MealTypeName) =>
     entries.find((e) => e.dayOfWeek === day && e.mealType === meal)
+
+  /** recipeId → the days it already sits on, so the picker can warn about repeats. */
+  const plannedDays = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const entry of entries) {
+      const label = shortDayLabel(entry.dayOfWeek)
+      const seen = map.get(entry.recipe.id)
+      if (!seen) map.set(entry.recipe.id, label)
+      else if (!seen.split(', ').includes(label)) map.set(entry.recipe.id, `${seen}, ${label}`)
+    }
+    return map
+  }, [entries])
 
   const report = (fallback: string) => (err: unknown) =>
     setMessage(err instanceof ApiConflictError ? err.message : fallback)
@@ -222,6 +266,7 @@ function PlanWeek({ planId, entries }: { planId: string; entries: MealPlanEntry[
 
       <WeekGrid
         entries={entries}
+        weekStart={weekStart}
         onSlotClick={onSlotClick}
         onRemove={(entryId) => {
           setMessage(null)
@@ -237,6 +282,8 @@ function PlanWeek({ planId, entries }: { planId: string; entries: MealPlanEntry[
 
       <RecipePickerModal
         open={pickerSlot !== null}
+        question={pickerSlot ? `What's for ${pickerSlot.meal.toLowerCase()} on ${pickerSlot.day}?` : 'Choose a recipe'}
+        plannedDays={plannedDays}
         onClose={() => setPickerSlot(null)}
         onPick={(recipeId) => {
           const slot = pickerSlot
@@ -311,6 +358,26 @@ const generateButton: React.CSSProperties = {
   fontWeight: 700,
   background: 'var(--accent)',
   color: 'var(--accent-ink)',
+}
+
+const backLink: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: 'var(--accent)',
+  textDecoration: 'none',
+}
+
+const stepLink: React.CSSProperties = {
+  border: '1px solid var(--border)',
+  borderRadius: 10,
+  padding: '5px 10px',
+  fontSize: 12,
+  fontWeight: 700,
+  color: 'var(--muted)',
+  background: 'var(--surface)',
+  textDecoration: 'none',
 }
 
 const listLink: React.CSSProperties = {

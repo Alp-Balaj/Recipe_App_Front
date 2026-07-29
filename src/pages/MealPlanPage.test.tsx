@@ -13,12 +13,35 @@ function renderAt(path: string) {
 describe('meal-planning routes', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('/plan renders the plan surface', async () => {
-    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(null)
+  // /plan is the month calendar now; the 7×3 board moved to /plan/week/:start.
+  it('/plan renders the month surface', async () => {
+    vi.spyOn(api, 'getMealPlans').mockResolvedValue({ items: [], nextCursor: null })
 
     renderAt('/plan')
 
+    await waitFor(() =>
+      expect(screen.getByText(/pick a day to plan its meals/i)).toBeInTheDocument(),
+    )
+  })
+
+  it('/plan/week/:start renders the board for the week that segment names', async () => {
+    const lookup = vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(null)
+
+    renderAt('/plan/week/2026-07-29')
+
     await waitFor(() => expect(screen.getByRole('heading', { name: /meal plan/i })).toBeInTheDocument())
+    // Wednesday 29 July 2026 resolves to the Monday of its week — the board can
+    // finally show a week other than the current one.
+    expect(lookup).toHaveBeenCalledWith('2026-07-27T00:00:00.000Z', expect.anything())
+  })
+
+  it('falls back to this week when the segment is malformed', async () => {
+    const lookup = vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(null)
+
+    renderAt('/plan/week/nonsense')
+
+    await waitFor(() => expect(lookup).toHaveBeenCalled())
+    expect(screen.getByRole('heading', { name: /meal plan/i })).toBeInTheDocument()
   })
 
   it('/shopping-list renders the shopping-list surface', async () => {
@@ -29,10 +52,10 @@ describe('meal-planning routes', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: /shopping list/i })).toBeInTheDocument())
   })
 
-  it('offers to start a plan when the week has none', async () => {
+  it('offers to start a plan when that week has none', async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(null)
 
-    renderAt('/plan')
+    renderAt('/plan/week/2026-07-29')
 
     await waitFor(() => expect(screen.getByRole('button', { name: /start this week/i })).toBeInTheDocument())
   })

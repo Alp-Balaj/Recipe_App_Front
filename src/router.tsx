@@ -12,6 +12,8 @@ import MyRecipesPage from './pages/MyRecipesPage'
 import RecipeDetailPage from './pages/RecipeDetailPage'
 import UserProfilePage from './pages/UserProfilePage'
 import MealPlanPage from './pages/MealPlanPage'
+import MealPlanMonthPage from './pages/MealPlanMonthPage'
+import MealPlanDayPage from './pages/MealPlanDayPage'
 import ShoppingListPage from './pages/ShoppingListPage'
 
 /**
@@ -45,7 +47,14 @@ export const routes: RouteObject[] = [
           // meal-planning-ui plan — SANCTIONED ADDITIVE route registration, same
           // discipline as the social-feed and chat-ai additive routes above.
           // Deliberately NOT in navItems.ts until the surface is complete.
-          { path: '/plan', element: <MealPlanPage /> },
+          // meal-plan redesign — the plan's three zooms. /plan is the month
+          // calendar (the front door), /plan/:date one day, /plan/week/:start
+          // the 7×3 board that used to own /plan. The board keeps working and
+          // can now show ANY week, which is the bug this rehoming fixes.
+          // Segment counts differ, so none of these three can shadow another.
+          { path: '/plan', element: <MealPlanMonthPage /> },
+          { path: '/plan/week/:start', element: <MealPlanPage /> },
+          { path: '/plan/:date', element: <MealPlanDayPage /> },
           { path: '/shopping-list', element: <ShoppingListPage /> },
           { path: '/profile', element: <ProfilePage /> },
           { path: '/recipes/new', element: <RecipeFormPage /> },

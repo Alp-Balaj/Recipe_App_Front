@@ -228,6 +228,23 @@ body { margin: 0; }
      layered under a backdrop-filter blur so the page stays visible behind
      the glass. Falls back to a plain translucent tint without filter support. */
   --backdrop-frost: rgba(251, 249, 239, 0.55);
+
+  /* ── Meal temperature (meal-plan redesign, day page) ──────────────────
+     Breakfast → lunch → dinner reads as morning light falling toward
+     evening: pale gold, neutral cream, olive-shadowed. The tint is a
+     surface fill; the -ink pair is the solid the band and label text use,
+     each kept above 4.5:1 on its own tint. */
+  --meal-b: #f7edc6;
+  --meal-l: #fbf6e4;
+  --meal-d: #e8ecd1;
+  --meal-b-ink: #8a6d1c;
+  --meal-l-ink: #7a6f42;
+  --meal-d-ink: #5e7a2b;
+
+  /* Semantic, and deliberately NOT the accent: olive means "interactive",
+     clay means "this will cost you something" — an over-repeated dish, a tick
+     you are about to lose. Mixing the two vocabularies would empty both. */
+  --clay: #9d4e2c;
 }
 
 /* ── Dark theme (warm-charcoal counterpart in the gold family) ── */
@@ -259,4 +276,17 @@ body { margin: 0; }
   --chipcol: #e2c069;
   --backdrop: #0b0906;
   --backdrop-frost: rgba(23, 19, 12, 0.6);
+
+  /* Meal temperature — warm-charcoal counterparts. The tints sit a step off
+     --surface so the three bands stay separable on near-black, and the -ink
+     pair lifts to stay legible on them. */
+  --meal-b: #2a2315;
+  --meal-l: #241e14;
+  --meal-d: #20241a;
+  --meal-b-ink: #d8b869;
+  --meal-l-ink: #bcaf87;
+  --meal-d-ink: #9cb35e;
+
+  /* Clay, lifted to stay legible on near-black. */
+  --clay: #d5875d;
 }

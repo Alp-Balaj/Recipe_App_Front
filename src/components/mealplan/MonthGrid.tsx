@@ -1,0 +1,363 @@
+// ─────────────────────────────────────────────────────────────────────────
+// The month calendar (meal-plan redesign, month PR) — the plan's front door.
+//
+// Two renderings of one idea, because a month cell is ~130px on a desktop and
+// ~38px on a phone. Above 1024px a cell carries up to three MEAL CHIPS with
+// real dish names, tinted by meal temperature. Below that the chips are
+// unreadable, so it degrades to three dots in meal order — filled or hollow,
+// position carrying which meal is missing. Pretending dish names fit at 38px
+// would be the mistake in either direction.
+//
+// The week rail is the piece that earns the month view its keep: every row of
+// a month grid ALREADY is a week, so the row's coverage and repeat warning sit
+// at its end for free. That is the balance-checking the 7×3 board did, minus
+// the board.
+//
+// Presentational: it takes resolved week summaries and renders them. No
+// fetching, no mutations.
+// ─────────────────────────────────────────────────────────────────────────
+
+import type { CSSProperties } from 'react'
+import { Link } from 'react-router-dom'
+import { MEAL_ORDER, type MealTypeName } from '@/api/mealPlans'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
+import type { WeekSummary } from '@/hooks/useMonthPlans'
+import {
+  dayNameOf,
+  formatPlanDate,
+  isPast,
+  isSameMonth,
+  planDayPath,
+  planWeekPath,
+} from '@/lib/planDates'
+import { mealTokens } from './MealCard'
+
+const SLOTS_PER_WEEK = 21
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+interface Props {
+  monthStart: Date
+  weeks: Date[][]
+  byWeek: Map<string, WeekSummary>
+  today: Date
+}
+
+export default function MonthGrid({ monthStart, weeks, byWeek, today }: Props) {
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
+  const todayKey = formatPlanDate(today)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={isDesktop ? headerRowDesktop : headerRowMobile}>
+        {WEEKDAY_LABELS.map((label) => (
+          <div key={label} style={weekdayLabel}>
+            {isDesktop ? label : label.charAt(0)}
+          </div>
+        ))}
+        {isDesktop && <div style={{ ...weekdayLabel, textAlign: 'right' }}>Week</div>}
+      </div>
+
+      {weeks.map((week) => {
+        const weekKey = formatPlanDate(week[0])
+        const summary = byWeek.get(weekKey)
+        const weekIsPast = isPast(week[6])
+
+        return (
+          <div key={weekKey} style={isDesktop ? headerRowDesktop : headerRowMobile}>
+            {week.map((date) => {
+              const key = formatPlanDate(date)
+              const outside = !isSameMonth(date, monthStart)
+              return isDesktop ? (
+                <DesktopCell
+                  key={key}
+                  date={date}
+                  outside={outside}
+                  isToday={key === todayKey}
+                  summary={summary}
+                />
+              ) : (
+                <MobileCell
+                  key={key}
+                  date={date}
+                  outside={outside}
+                  isToday={key === todayKey}
+                  summary={summary}
+                />
+              )
+            })}
+            {isDesktop && <WeekRail week={week} summary={summary} dim={weekIsPast} />}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** The entry planned for one (day, meal), if any. */
+function entryAt(summary: WeekSummary | undefined, date: Date, meal: MealTypeName) {
+  if (!summary) return undefined
+  const day = dayNameOf(date)
+  return summary.entries.find((entry) => entry.dayOfWeek === day && entry.mealType === meal)
+}
+
+function DesktopCell({
+  date,
+  outside,
+  isToday,
+  summary,
+}: {
+  date: Date
+  outside: boolean
+  isToday: boolean
+  summary?: WeekSummary
+}) {
+  const past = isPast(date)
+  const filled = MEAL_ORDER.map((meal) => ({ meal, entry: entryAt(summary, date, meal) }))
+  const open = filled.filter((slot) => !slot.entry)
+  // One invitation per day, never three: only the next open slot is offered.
+  const nextOpen = past ? undefined : open[0]?.meal
+
+  return (
+    <Link
+      to={planDayPath(date)}
+      aria-label={`Plan ${formatPlanDate(date)}`}
+      style={{
+        ...cellBase,
+        ...(outside ? cellOutside : {}),
+        ...(past && !outside ? cellPast : {}),
+        ...(isToday ? cellToday : {}),
+      }}
+    >
+      <span style={{ ...dateRow, ...(isToday ? { color: 'var(--accent)' } : {}) }}>
+        <span>{date.getUTCDate()}</span>
+        {!past && !outside && open.length > 0 && <span style={freeCount}>{open.length} free</span>}
+      </span>
+
+      {filled.map(({ meal, entry }) =>
+        entry ? (
+          <span key={meal} style={{ ...chip, ...chipTint(meal) }}>
+            {entry.recipe.title}
+          </span>
+        ) : meal === nextOpen ? (
+          <span key={meal} style={{ ...chip, ...chipHollow }}>
+            + {meal.toLowerCase()}
+          </span>
+        ) : null,
+      )}
+    </Link>
+  )
+}
+
+function MobileCell({
+  date,
+  outside,
+  isToday,
+  summary,
+}: {
+  date: Date
+  outside: boolean
+  isToday: boolean
+  summary?: WeekSummary
+}) {
+  const past = isPast(date)
+
+  return (
+    <Link
+      to={planDayPath(date)}
+      aria-label={`Plan ${formatPlanDate(date)}`}
+      style={{
+        ...mobileCell,
+        ...(outside ? cellOutside : {}),
+        ...(past && !outside ? cellPast : {}),
+        ...(isToday ? cellToday : {}),
+      }}
+    >
+      <span style={{ fontSize: 12, fontWeight: 700, ...(isToday ? { color: 'var(--accent)' } : {}) }}>
+        {date.getUTCDate()}
+      </span>
+      <span style={{ display: 'flex', gap: 2 }} aria-hidden="true">
+        {MEAL_ORDER.map((meal) => {
+          const entry = entryAt(summary, date, meal)
+          return (
+            <span
+              key={meal}
+              style={{
+                ...dot,
+                background: entry ? mealTokens(meal).ink : 'var(--border)',
+              }}
+            />
+          )
+        })}
+      </span>
+    </Link>
+  )
+}
+
+/** Coverage and repeats for one row — the row already being a week. */
+function WeekRail({ week, summary, dim }: { week: Date[]; summary?: WeekSummary; dim: boolean }) {
+  const count = summary?.entryCount ?? 0
+  const repeat = summary?.repeats[0]
+
+  return (
+    <Link
+      to={planWeekPath(week[0])}
+      aria-label={`Week of ${formatPlanDate(week[0])}`}
+      style={{ ...railStyle, ...(dim ? { opacity: 0.45 } : {}) }}
+    >
+      <span style={railCount}>
+        {count}/{SLOTS_PER_WEEK}
+      </span>
+      {repeat && (
+        <span style={railRepeat}>
+          {repeat.title.split(' ')[0].toLowerCase()} ×{repeat.count}
+        </span>
+      )}
+    </Link>
+  )
+}
+
+function chipTint(meal: MealTypeName): CSSProperties {
+  const { tint, ink } = mealTokens(meal)
+  return { background: tint, color: ink }
+}
+
+const headerRowDesktop: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(7, minmax(0, 1fr)) 76px',
+  gap: 5,
+}
+
+const headerRowMobile: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+  gap: 4,
+}
+
+const weekdayLabel: CSSProperties = {
+  fontSize: 10.5,
+  fontWeight: 800,
+  letterSpacing: '0.1em',
+  textTransform: 'uppercase',
+  color: 'var(--muted)',
+  paddingBottom: 2,
+}
+
+const cellBase: CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 12,
+  minHeight: 84,
+  padding: '6px 5px 5px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 3,
+  minWidth: 0,
+  textDecoration: 'none',
+  color: 'var(--text)',
+}
+
+const cellOutside: CSSProperties = {
+  background: 'transparent',
+  borderColor: 'transparent',
+  opacity: 0.35,
+}
+
+const cellPast: CSSProperties = {
+  opacity: 0.5,
+}
+
+const cellToday: CSSProperties = {
+  borderColor: 'var(--accent-fill)',
+  borderWidth: 2,
+  background: 'var(--chipbg)',
+  opacity: 1,
+}
+
+const dateRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  justifyContent: 'space-between',
+  gap: 4,
+  fontSize: 12,
+  fontWeight: 800,
+  fontVariantNumeric: 'tabular-nums',
+  lineHeight: 1,
+}
+
+const freeCount: CSSProperties = {
+  fontSize: 9.5,
+  fontWeight: 600,
+  color: 'var(--muted)',
+  letterSpacing: '0.03em',
+}
+
+const chip: CSSProperties = {
+  fontSize: 9.5,
+  lineHeight: 1.25,
+  fontWeight: 700,
+  borderRadius: 5,
+  padding: '2.5px 4px',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
+
+const chipHollow: CSSProperties = {
+  background: 'transparent',
+  border: '1px solid var(--border)',
+  color: 'var(--muted)',
+  fontWeight: 500,
+  textAlign: 'center',
+}
+
+const mobileCell: CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 9,
+  aspectRatio: '1 / 1.12',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 4,
+  minWidth: 0,
+  textDecoration: 'none',
+  color: 'var(--text)',
+}
+
+const dot: CSSProperties = {
+  width: 4,
+  height: 4,
+  borderRadius: 1,
+}
+
+const railStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  alignItems: 'flex-end',
+  gap: 2,
+  paddingLeft: 8,
+  borderLeft: '1px solid var(--border)',
+  textDecoration: 'none',
+  minWidth: 0,
+}
+
+const railCount: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  color: 'var(--accent)',
+  fontVariantNumeric: 'tabular-nums',
+  letterSpacing: '-0.02em',
+}
+
+const railRepeat: CSSProperties = {
+  fontSize: 9,
+  fontWeight: 700,
+  color: 'var(--clay)',
+  letterSpacing: '0.02em',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  maxWidth: '100%',
+}
