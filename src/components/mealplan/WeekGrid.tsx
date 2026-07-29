@@ -14,7 +14,8 @@
 // about what a tap means belongs to the page.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useMemo, type CSSProperties } from 'react'
+import { useMemo, type CSSProperties, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import {
   DAY_ORDER,
   MEAL_ORDER,
@@ -23,6 +24,7 @@ import {
   type MealTypeName,
 } from '@/api/mealPlans'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { addDays, planDayPath } from '@/lib/planDates'
 import SlotCell from './SlotCell'
 
 interface Props {
@@ -33,10 +35,36 @@ interface Props {
   onMove?: (entry: MealPlanEntry) => void
   /** The entry currently awaiting a destination, if any. */
   movingEntryId?: string | null
+  /**
+   * The week's UTC-midnight Monday. Supplied, each day label becomes a link to
+   * that day's page; omitted, the labels stay plain text — which is what keeps
+   * this component renderable without a Router (see WeekGrid.test.tsx).
+   */
+  weekStart?: string
 }
 
-export default function WeekGrid({ entries, onSlotClick, onRemove, onMove, movingEntryId = null }: Props) {
+export default function WeekGrid({
+  entries,
+  onSlotClick,
+  onRemove,
+  onMove,
+  movingEntryId = null,
+  weekStart,
+}: Props) {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
+
+  /** The day label — a link into /plan/:date only when the week's date is known. */
+  const dayLabelNode = (day: DayName, style: CSSProperties): ReactNode => {
+    if (!weekStart) return <div style={style}>{day}</div>
+    const date = addDays(new Date(weekStart), DAY_ORDER.indexOf(day))
+    return (
+      <div style={style}>
+        <Link to={planDayPath(date)} style={dayLink}>
+          {day}
+        </Link>
+      </div>
+    )
+  }
 
   // One pass over the entries, indexed by slot — the grid then reads 21 keys.
   const bySlot = useMemo(() => {
@@ -77,7 +105,7 @@ export default function WeekGrid({ entries, onSlotClick, onRemove, onMove, movin
 
           {DAY_ORDER.map((day) => (
             <div key={day} style={{ display: 'contents' }}>
-              <div style={dayLabel}>{day}</div>
+              {dayLabelNode(day, dayLabel)}
               {MEAL_ORDER.map((meal) => cellFor(day, meal))}
             </div>
           ))}
@@ -93,7 +121,7 @@ export default function WeekGrid({ entries, onSlotClick, onRemove, onMove, movin
     <div style={{ display: 'grid', gap: 16, maxWidth: '100%' }}>
       {DAY_ORDER.map((day) => (
         <section key={day} style={{ minWidth: 0 }}>
-          <div style={{ ...dayLabel, marginBottom: 8 }}>{day}</div>
+          {dayLabelNode(day, { ...dayLabel, marginBottom: 8 })}
           <div style={{ display: 'grid', gap: 8 }}>
             {MEAL_ORDER.map((meal) => (
               <div key={meal} style={mobileRow}>
@@ -143,6 +171,11 @@ const columnHeader: CSSProperties = {
 const dayLabel: CSSProperties = {
   fontSize: 13.5,
   fontWeight: 800,
+}
+
+const dayLink: CSSProperties = {
+  color: 'inherit',
+  textDecoration: 'none',
 }
 
 const mealLabel: CSSProperties = {

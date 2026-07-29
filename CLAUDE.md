@@ -21,6 +21,14 @@ prefix** (`/auth/*`, `/recipes/*` at the root). The Vite dev proxy bridges both:
 
 ## Visual/styling idiom (keep it — no redesign)
 
+> **Scoped exception — the meal-plan surfaces.** `/plan` and `/plan/:date` are
+> being deliberately recomposed (month calendar + day page + reworked recipe
+> picker). That work stays *inside* the vocabulary below — same tokens, same
+> card idiom, same inline-style approach — it changes composition, not look.
+> The only palette addition is the meal-temperature set (`--meal-b/-l/-d` and
+> their `-ink` pairs) in `src/index.css`. Everywhere else, the no-redesign rule
+> still holds.
+
 - **Inline styles over CSS variables** — `var(--surface)`, `var(--surface2)`, `var(--accent)`, `var(--accent-ink)`, `var(--muted)`, `var(--border)`, `var(--cardsh)`, `var(--tagbg)`, `var(--chipbg)`, … defined per theme in `src/index.css`.
 - **Theming**: `data-mode="light|dark"` on the `.app-shell` root (owned by `src/components/ThemeRoot.tsx`); pages read `{ mode, setMode, toggleMode }` via `useOutletContext<ThemeContextValue>()`.
 - **Cards**: `background: var(--surface)`, `border: 1px solid var(--border)`, `boxShadow: var(--cardsh)`, borderRadius 18–22.
@@ -32,7 +40,13 @@ prefix** (`/auth/*`, `/recipes/*` at the root). The Vite dev proxy bridges both:
 
 `src/router.tsx` is the ONE route-registration file — **no later checkpoint
 edits it**. Every route points at a page in `src/pages/`; checkpoints fill in
-page files they own:
+page files they own.
+
+**Additive routes are the one sanctioned edit.** A plan may register a NEW path
+pointing at a NEW page, with a comment naming the plan — nothing existing may be
+changed or reordered. `/feed`, `/users/:id`, `/chat/:conversationId`, `/plan`,
+`/shopping-list` and `/plan/:date` all landed this way. Anything else in this
+file still stops and goes through an explicit reviewed commit.
 
 | Route | Page file | Filled by |
 |---|---|---|
@@ -44,6 +58,10 @@ page files they own:
 | /recipes/new | `RecipeFormPage.tsx` | lane B (05) |
 | /recipes/mine | `MyRecipesPage.tsx` | lane B (06) |
 | /recipes/:id | `RecipeDetailPage.tsx` | lane A (03) |
+| /plan | `MealPlanMonthPage.tsx` | meal-plan redesign (month — the front door) |
+| /plan/week/:start | `MealPlanPage.tsx` | meal-planning-ui, rehomed by the redesign |
+| /plan/:date | `MealPlanDayPage.tsx` | meal-plan redesign (one day) |
+| /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui |
 | / and unknown | redirect → /discover | — |
 
 Shell internals (also frozen): `ThemeRoot.tsx` (theme + outlet context),
