@@ -17,6 +17,7 @@ import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import type { MealPlanEntry, MealTypeName } from '@/api/mealPlans'
 import type { RecipeResponse } from '@/api/types'
+import { useBackdropPath } from '@/components/recipeCanvas'
 import { resolveImageUrl } from '@/lib/images'
 import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 
@@ -63,6 +64,10 @@ export default function MealCard({
   isPast = false,
 }: Props) {
   const { tint, ink } = mealTokens(meal)
+  // "Recipe" opens the canvas beside the day, not instead of it: the backdrop
+  // travels with the navigation (recipeCanvas.ts), so the day page stays in the
+  // pane. A bare <Link> drops it and the reader lands in Discover.
+  const backdrop = useBackdropPath()
 
   if (!entry) {
     const label = isPast ? `No ${meal.toLowerCase()} recorded` : `Add ${meal.toLowerCase()}`
@@ -113,7 +118,7 @@ export default function MealCard({
         <span style={metaLine}>{meta}</span>
       </span>
       <span style={actions}>
-        <Link to={`/recipes/${entry.recipe.id}`} style={actionButton}>
+        <Link to={`/recipes/${entry.recipe.id}`} state={{ backdrop }} style={actionButton}>
           Recipe
         </Link>
         {onSwap && (

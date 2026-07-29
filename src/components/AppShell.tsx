@@ -18,6 +18,7 @@ import { useBackdropPath } from './recipeCanvas'
 import BrowsePage from '@/pages/BrowsePage'
 import ChatPage from '@/pages/ChatPage'
 import FeedPage from '@/pages/FeedPage'
+import MealPlanDayPage from '@/pages/MealPlanDayPage'
 import MyRecipesPage from '@/pages/MyRecipesPage'
 import ProfilePage from '@/pages/ProfilePage'
 import UserProfilePage from '@/pages/UserProfilePage'
@@ -77,6 +78,10 @@ function AppShellContent() {
           { path: '/chat/:conversationId', element: <ChatPage /> },
           { path: '/users/:id', element: <UserProfilePage /> },
           { path: '/profile', element: <ProfilePage /> },
+          // A meal's "Recipe" button opens the canvas from the day page, so the
+          // day has to be renderable behind it — otherwise the '*' fallback
+          // below swaps the reader's day for Discover mid-plan.
+          { path: '/plan/:date', element: <MealPlanDayPage /> },
           { path: '/recipes/mine', element: <MyRecipesPage /> },
           { path: '*', element: <BrowsePage /> },
         ],
