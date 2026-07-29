@@ -139,6 +139,20 @@ describe('the month view', () => {
       expect(document.querySelector('.conversation-inner')).toHaveStyle({ maxWidth: '1240px' })
     })
 
+    // The month stops short of the pane's own 1240px ceiling: past ~1080 a
+    // wider row of seven cells is just longer to scan. The cap lives on the
+    // page so the pane (and every other wide page) is left alone.
+    it('caps the calendar at 1080px inside that column', async () => {
+      stubMonth()
+      renderRoute('/plan?m=2026-07')
+
+      await screen.findByRole('link', { name: /plan 2026-07-29/i })
+      expect(screen.getByTestId('month-canvas')).toHaveStyle({
+        maxWidth: '1080px',
+        margin: '0px auto',
+      })
+    })
+
     it('lays the month out Monday-first, with a column for the week', async () => {
       stubMonth()
       renderRoute('/plan?m=2026-07')

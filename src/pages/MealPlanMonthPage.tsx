@@ -52,47 +52,49 @@ export default function MealPlanMonthPage() {
 
   return (
     <div className="scroll" style={pageStyle}>
-      <header style={headerStyle}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
-            {monthLabelOf(monthStart)}
-          </h1>
-          <nav style={{ display: 'flex', gap: 6 }} aria-label="Nearby months">
-            <button type="button" style={stepButton} onClick={() => goToMonth(addMonths(monthStart, -1))}>
-              ‹ {shortMonthOf(addMonths(monthStart, -1))}
-            </button>
-            <button type="button" style={stepButton} onClick={() => goToMonth(addMonths(monthStart, 1))}>
-              {shortMonthOf(addMonths(monthStart, 1))} ›
-            </button>
-          </nav>
-          <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', alignItems: 'baseline' }}>
-            <span style={coverage}>
-              {planned} of {total} slots planned
-            </span>
-            <Link to={planDayPath(today)} style={todayLink}>
-              Today
-            </Link>
-          </div>
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 6 }}>
-          Pick a day to plan its meals and see what you'll need.
-        </div>
-      </header>
-
-      {isError && (
-        <StateBlock title="Couldn't load your plans" body="Check your connection and try again." />
-      )}
-
-      {!isError && (
-        <>
-          <MonthGrid monthStart={monthStart} weeks={weeks} byWeek={byWeek} today={today} />
-          {isLoading && (
-            <div role="status" style={loadingNote}>
-              Loading your plans…
+      <div data-testid="month-canvas" style={canvasStyle}>
+        <header style={headerStyle}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
+              {monthLabelOf(monthStart)}
+            </h1>
+            <nav style={{ display: 'flex', gap: 6 }} aria-label="Nearby months">
+              <button type="button" style={stepButton} onClick={() => goToMonth(addMonths(monthStart, -1))}>
+                ‹ {shortMonthOf(addMonths(monthStart, -1))}
+              </button>
+              <button type="button" style={stepButton} onClick={() => goToMonth(addMonths(monthStart, 1))}>
+                {shortMonthOf(addMonths(monthStart, 1))} ›
+              </button>
+            </nav>
+            <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', alignItems: 'baseline' }}>
+              <span style={coverage}>
+                {planned} of {total} slots planned
+              </span>
+              <Link to={planDayPath(today)} style={todayLink}>
+                Today
+              </Link>
             </div>
-          )}
-        </>
-      )}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 6 }}>
+            Pick a day to plan its meals and see what you'll need.
+          </div>
+        </header>
+
+        {isError && (
+          <StateBlock title="Couldn't load your plans" body="Check your connection and try again." />
+        )}
+
+        {!isError && (
+          <>
+            <MonthGrid monthStart={monthStart} weeks={weeks} byWeek={byWeek} today={today} />
+            {isLoading && (
+              <div role="status" style={loadingNote}>
+                Loading your plans…
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -104,6 +106,18 @@ const pageStyle: CSSProperties = {
   overflowY: 'auto',
   overflowX: 'hidden',
   padding: '54px 18px 24px',
+}
+
+// The month's own ceiling, inside the shell's wide column. The pane can run to
+// 1240px, but seven day cells past ~1080 stop gaining anything a planner reads
+// — the chips are already legible and the row just gets longer to scan. Capped
+// here rather than on .conversation-inner so the scrollbar stays at the pane
+// edge and no other wide page is affected.
+const MONTH_MAX_WIDTH = 1080
+
+const canvasStyle: CSSProperties = {
+  maxWidth: MONTH_MAX_WIDTH,
+  margin: '0 auto',
 }
 
 const headerStyle: CSSProperties = {
