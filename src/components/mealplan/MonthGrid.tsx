@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 // The month calendar (meal-plan redesign, month PR) — the plan's front door.
 //
-// Two renderings of one idea, because a month cell is ~130px on a desktop and
-// ~38px on a phone. Above 1024px a cell carries up to three MEAL CHIPS with
-// real dish names, tinted by meal temperature. Below that the chips are
+// Two renderings of one idea, because a month cell is ~155px in the wide
+// desktop column and ~38px on a phone. Above 1024px a cell carries up to three
+// MEAL CHIPS with real dish names, tinted by meal temperature. Below that the chips are
 // unreadable, so it degrades to three dots in meal order — filled or hollow,
 // position carrying which meal is missing. Pretending dish names fit at 38px
 // would be the mistake in either direction.
@@ -258,11 +258,14 @@ const weekdayLabel: CSSProperties = {
   paddingBottom: 2,
 }
 
+// Desktop only (MobileCell keeps its own square-ish aspectRatio). The height
+// tracks the width the wide column gives a cell — at ~155px across, 84px tall
+// read as a letterbox with the three chips crowded into its top half.
 const cellBase: CSSProperties = {
   background: 'var(--surface)',
   border: '1px solid var(--border)',
   borderRadius: 12,
-  minHeight: 84,
+  minHeight: 120,
   padding: '6px 5px 5px',
   display: 'flex',
   flexDirection: 'column',

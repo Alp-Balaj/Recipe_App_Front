@@ -28,6 +28,12 @@ import type { ThemeContextValue } from './ThemeRoot'
 const DAY_PLAN_PATH = /^\/plan\/\d{4}-\d{2}-\d{2}$/
 
 /**
+ * /plan and /plan?m=2026-08 — the month calendar, but not the week board.
+ * The query has to be tolerated: a backdrop path carries its search string.
+ */
+const MONTH_PLAN_PATH = /^\/plan(\?|$)/
+
+/**
  * Tabbed shell layout route: sidebar + conversation pane (+ recipe canvas) on
  * desktop, bottom tab bar on mobile/tablet. The active tab derives from the
  * URL (see navItems.ts); this component holds no navigation state of its own.
@@ -105,9 +111,12 @@ function AppShellContent() {
     panePath.startsWith('/profile') ||
     // The day page docks the recipe picker beside the meals; in the readable
     // column the two share 720px and adding a meal is cramped to the point of
-    // unusable. The month (/plan) and week board (/plan/week/:start) keep the
-    // narrow column — only the split layout needs the room.
-    DAY_PLAN_PATH.test(panePath)
+    // unusable. The month calendar wants the room for a different reason: at
+    // 720px its seven columns are ~82px each, too narrow for a dish name to
+    // survive as a chip. The week board (/plan/week/:start) keeps the narrow
+    // column for now.
+    DAY_PLAN_PATH.test(panePath) ||
+    MONTH_PLAN_PATH.test(panePath)
 
   // ── Auth gate (guest access, D9 amendment) ──────────────────────────────
   // A guest landing on an account-only route by direct URL gets Discover with
