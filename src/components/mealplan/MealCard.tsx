@@ -49,6 +49,12 @@ interface Props {
    */
   onSwap?: () => void
   onRemove?: () => void
+  /**
+   * Put this same dish on tomorrow's plate in the same slot — the leftovers
+   * gesture, kept deliberately dumb. It asks no questions about servings or
+   * household size; you cooked a lot of it, you're having it again.
+   */
+  onRepeatTomorrow?: () => void
   /** Past days are a record of what you ate, so they don't invite additions. */
   isPast?: boolean
 }
@@ -61,6 +67,7 @@ export default function MealCard({
   onAdd,
   onSwap,
   onRemove,
+  onRepeatTomorrow,
   isPast = false,
 }: Props) {
   const { tint, ink } = mealTokens(meal)
@@ -129,6 +136,16 @@ export default function MealCard({
             onClick={onSwap}
           >
             Swap
+          </button>
+        )}
+        {onRepeatTomorrow && (
+          <button
+            type="button"
+            aria-label={`Repeat ${entry.recipe.title} tomorrow`}
+            style={{ ...actionButton, cursor: 'pointer' }}
+            onClick={onRepeatTomorrow}
+          >
+            Repeat tomorrow
           </button>
         )}
         {onRemove && (
@@ -222,10 +239,16 @@ const emptyPrompt: CSSProperties = {
   fontWeight: 700,
 }
 
+// Four actions is one more than this row was built for, so it wraps rather
+// than squeezing the dish name — "Repeat tomorrow" drops to its own line on a
+// narrow card instead of pushing the title into an ellipsis.
 const actions: CSSProperties = {
   display: 'flex',
   gap: 6,
   flexShrink: 0,
+  flexWrap: 'wrap',
+  justifyContent: 'flex-end',
+  maxWidth: '52%',
 }
 
 const actionButton: CSSProperties = {

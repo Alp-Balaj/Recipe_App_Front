@@ -22,6 +22,7 @@ import { Link } from 'react-router-dom'
 import { MEAL_ORDER, type MealTypeName } from '@/api/mealPlans'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import type { WeekSummary } from '@/hooks/useMonthPlans'
+import type { DayLoad } from '@/lib/planInsights'
 import {
   dayNameOf,
   formatPlanDate,
@@ -40,9 +41,27 @@ interface Props {
   weeks: Date[][]
   byWeek: Map<string, WeekSummary>
   today: Date
+  /**
+   * "2026-08-06|recipe-id" for every dish also planned the day before, from
+   * repeatedFromYesterday. The mark rides on the CHIP rather than on the cell
+   * border: a cell edge cannot join Sunday to Monday (opposite ends of two
+   * rows), and the border is already carrying today and past.
+   */
+  repeats?: Set<string>
+  /** Per-day cook load and calories, keyed "2026-08-06" — T1 reads the minutes. */
+  loads?: Map<string, DayLoad>
 }
 
-export default function MonthGrid({ monthStart, weeks, byWeek, today }: Props) {
+/**
+ * The bar's full width, in minutes. A FIXED reference rather than the month's
+ * own maximum, so a light month doesn't render like a heavy one — the bars mean
+ * the same thing in August as in September. Past it, the bar simply pins full.
+ */
+const FULL_LOAD_MINUTES = 180
+/** Where a day stops being a normal cook and starts being a project. */
+const HEAVY_LOAD_MINUTES = 150
+
+export default function MonthGrid({ monthStart, weeks, byWeek, today, repeats, loads }: Props) {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const todayKey = formatPlanDate(today)
 
@@ -74,6 +93,8 @@ export default function MonthGrid({ monthStart, weeks, byWeek, today }: Props) {
                   outside={outside}
                   isToday={key === todayKey}
                   summary={summary}
+                  repeats={repeats}
+                  load={loads?.get(key)}
                 />
               ) : (
                 <MobileCell
@@ -82,6 +103,8 @@ export default function MonthGrid({ monthStart, weeks, byWeek, today }: Props) {
                   outside={outside}
                   isToday={key === todayKey}
                   summary={summary}
+                  repeats={repeats}
+                  load={loads?.get(key)}
                 />
               )
             })}
@@ -105,13 +128,18 @@ function DesktopCell({
   outside,
   isToday,
   summary,
+  repeats,
+  load,
 }: {
   date: Date
   outside: boolean
   isToday: boolean
   summary?: WeekSummary
+  repeats?: Set<string>
+  load?: DayLoad
 }) {
   const past = isPast(date)
+  const dateKey = formatPlanDate(date)
   const filled = MEAL_ORDER.map((meal) => ({ meal, entry: entryAt(summary, date, meal) }))
   const open = filled.filter((slot) => !slot.entry)
   // One invitation per day, never three: only the next open slot is offered.
@@ -135,7 +163,19 @@ function DesktopCell({
 
       {filled.map(({ meal, entry }) =>
         entry ? (
-          <span key={meal} style={{ ...chip, ...chipTint(meal) }}>
+          <span
+            key={meal}
+            style={{
+              ...chip,
+              ...chipTint(meal),
+              ...(repeats?.has(`${dateKey}|${entry.recipe.id}`) ? chipRepeat : {}),
+            }}
+            title={
+              repeats?.has(`${dateKey}|${entry.recipe.id}`)
+                ? `${entry.recipe.title} — also the day before`
+                : undefined
+            }
+          >
             {entry.recipe.title}
           </span>
         ) : meal === nextOpen ? (
@@ -143,6 +183,21 @@ function DesktopCell({
             + {meal.toLowerCase()}
           </span>
         ) : null,
+      )}
+
+      {/* T1 — a bar rather than a figure, because the only useful reading is
+          against the neighbouring days, and 31 numbers do not get compared. */}
+      {load && load.minutes > 0 && (
+        <span style={loadTrack} title={`${formatCookTime(load.minutes)} in the kitchen`}>
+          <span
+            style={{
+              ...loadFill,
+              width: `${Math.min(100, (load.minutes / FULL_LOAD_MINUTES) * 100)}%`,
+              background:
+                load.minutes >= HEAVY_LOAD_MINUTES ? 'var(--clay)' : 'var(--accent-fill)',
+            }}
+          />
+        </span>
       )}
     </Link>
   )
@@ -153,13 +208,18 @@ function MobileCell({
   outside,
   isToday,
   summary,
+  repeats,
+  load,
 }: {
   date: Date
   outside: boolean
   isToday: boolean
   summary?: WeekSummary
+  repeats?: Set<string>
+  load?: DayLoad
 }) {
   const past = isPast(date)
+  const dateKey = formatPlanDate(date)
 
   return (
     <Link
@@ -178,17 +238,36 @@ function MobileCell({
       <span style={{ display: 'flex', gap: 2 }} aria-hidden="true">
         {MEAL_ORDER.map((meal) => {
           const entry = entryAt(summary, date, meal)
+          // The chip's clay edge has no room to exist at 38px, so the repeat
+          // mark becomes the dot's own colour — same signal, same meaning.
+          const repeated = entry ? repeats?.has(`${dateKey}|${entry.recipe.id}`) : false
           return (
             <span
               key={meal}
               style={{
                 ...dot,
-                background: entry ? mealTokens(meal).ink : 'var(--border)',
+                background: entry
+                  ? repeated
+                    ? 'var(--clay)'
+                    : mealTokens(meal).ink
+                  : 'var(--border)',
               }}
             />
           )
         })}
       </span>
+      {/* T1 on a phone: no room for a track, so the fill IS the mark — a short
+          underline against a long one, comparable by length alone. */}
+      {load && load.minutes > 0 && (
+        <span
+          aria-hidden="true"
+          style={{
+            ...mobileLoad,
+            width: `${Math.max(18, Math.min(100, (load.minutes / FULL_LOAD_MINUTES) * 100) * 0.6)}%`,
+            background: load.minutes >= HEAVY_LOAD_MINUTES ? 'var(--clay)' : 'var(--accent-fill)',
+          }}
+        />
+      )}
     </Link>
   )
 }
@@ -205,11 +284,11 @@ export function formatCookTime(minutes: number): string {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
 }
 
-/** Coverage, cook load and repeats for one row — the row already being a week. */
+/** Coverage, cook load and variety for one row — the row already being a week. */
 function WeekRail({ week, summary, dim }: { week: Date[]; summary?: WeekSummary; dim: boolean }) {
   const count = summary?.entryCount ?? 0
   const minutes = summary?.totalMinutes ?? 0
-  const repeat = summary?.repeats[0]
+  const dishes = summary?.distinctDishes ?? 0
 
   return (
     <Link
@@ -223,9 +302,11 @@ function WeekRail({ week, summary, dim }: { week: Date[]; summary?: WeekSummary;
       {/* Suppressed at zero rather than shown as "0m": an empty week's rail should
           read as empty, not as a week that somehow costs no time to cook. */}
       {minutes > 0 && <span style={railTime}>{formatCookTime(minutes)}</span>}
-      {repeat && (
-        <span style={railRepeat}>
-          {repeat.title.split(' ')[0].toLowerCase()} ×{repeat.count}
+      {/* Suppressed at zero for the same reason as the time: an unplanned week
+          has no dishes, and "0 dishes" states it twice. */}
+      {dishes > 0 && (
+        <span style={railDishes}>
+          {dishes} {dishes === 1 ? 'dish' : 'dishes'}
         </span>
       )}
     </Link>
@@ -321,6 +402,14 @@ const chip: CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
+// B1′ — the repeat mark on the chip rather than the cell. A 2px clay edge on
+// the dish that also ran yesterday, which works identically for Tue→Wed and
+// for Sun→Mon, and leaves the cell border to today and past.
+const chipRepeat: CSSProperties = {
+  borderLeft: '2px solid var(--clay)',
+  paddingLeft: 4,
+}
+
 const chipHollow: CSSProperties = {
   background: 'transparent',
   border: '1px solid var(--border)',
@@ -348,6 +437,28 @@ const dot: CSSProperties = {
   width: 4,
   height: 4,
   borderRadius: 1,
+}
+
+const loadTrack: CSSProperties = {
+  marginTop: 'auto',
+  height: 3,
+  borderRadius: 2,
+  background: 'var(--border)',
+  overflow: 'hidden',
+  display: 'block',
+}
+
+const loadFill: CSSProperties = {
+  display: 'block',
+  height: '100%',
+  borderRadius: 2,
+}
+
+const mobileLoad: CSSProperties = {
+  height: 2,
+  borderRadius: 1,
+  display: 'block',
+  opacity: 0.75,
 }
 
 const railStyle: CSSProperties = {
@@ -380,13 +491,14 @@ const railTime: CSSProperties = {
   letterSpacing: '-0.01em',
 }
 
-const railRepeat: CSSProperties = {
-  fontSize: 9,
+// Context like the time above it, so it stays muted. Clay now means one thing
+// only on this surface — a dish repeating from the day before — and it lives
+// on the chip, not here.
+const railDishes: CSSProperties = {
+  fontSize: 9.5,
   fontWeight: 700,
-  color: 'var(--clay)',
-  letterSpacing: '0.02em',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
+  color: 'var(--muted)',
+  fontVariantNumeric: 'tabular-nums',
+  letterSpacing: '0.01em',
   whiteSpace: 'nowrap',
-  maxWidth: '100%',
 }

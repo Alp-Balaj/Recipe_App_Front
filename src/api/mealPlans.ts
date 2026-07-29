@@ -39,6 +39,18 @@ export interface MealPlanEntryRecipeSummary {
   id: string
   title: string
   imageUrl?: string | null
+  /**
+   * Prep + cook for this dish. REQUIRED — the server always sends it, same as
+   * MealPlanSummary.totalMinutes. This is what makes a per-DAY cook load free:
+   * the week summary's totalMinutes can't be broken down by day.
+   */
+  totalTimeMinutes: number
+  /**
+   * Nullable, and it matters: a recipe without a calorie figure must stay
+   * visibly uncounted rather than contributing a zero. Shaped like
+   * RecipeResponse.caloriesPerServing, which is the same wire field.
+   */
+  caloriesPerServing?: number | null
 }
 
 export interface MealPlanEntry {

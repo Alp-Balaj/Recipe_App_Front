@@ -29,31 +29,31 @@ const plan: MealPlan = {
       id: 'e1',
       dayOfWeek: 'Wednesday',
       mealType: 'Breakfast',
-      recipe: { id: 'r-shak', title: 'Shakshuka', imageUrl: null },
+      recipe: { id: 'r-shak', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
     },
     {
       id: 'e2',
       dayOfWeek: 'Monday',
       mealType: 'Lunch',
-      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null },
+      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null, totalTimeMinutes: 30 },
     },
     {
       id: 'e3',
       dayOfWeek: 'Tuesday',
       mealType: 'Lunch',
-      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null },
+      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null, totalTimeMinutes: 30 },
     },
     {
       id: 'e4',
       dayOfWeek: 'Thursday',
       mealType: 'Lunch',
-      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null },
+      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null, totalTimeMinutes: 30 },
     },
     {
       id: 'e5',
       dayOfWeek: 'Friday',
       mealType: 'Dinner',
-      recipe: { id: 'r-ramen', title: 'Quick ramen', imageUrl: null },
+      recipe: { id: 'r-ramen', title: 'Quick ramen', imageUrl: null, totalTimeMinutes: 30 },
     },
   ],
 }
@@ -166,12 +166,16 @@ describe('the month view', () => {
       expect(rail).toHaveAttribute('href', '/plan/week/2026-07-27')
     })
 
-    it('flags a dish planned three times in one week', async () => {
+    // Replaced the "×3" repeat warning: five entries drawn from three recipes
+    // reads as "3 dishes", which says the same thing without a threshold to
+    // fall under. Counted by recipe id, so the three orzo entries are one dish.
+    it("counts the week's distinct dishes", async () => {
       stubMonth()
       renderRoute('/plan?m=2026-07')
 
       const rail = await screen.findByRole('link', { name: /week of 2026-07-27/i })
-      await waitFor(() => expect(within(rail).getByText(/lemon ×3/i)).toBeInTheDocument())
+      await waitFor(() => expect(within(rail).getByText('3 dishes')).toBeInTheDocument())
+      expect(within(rail).queryByText(/×3/)).not.toBeInTheDocument()
     })
 
     // totalMinutes rides along on the plan summary (backend 849595b) — no
@@ -193,5 +197,138 @@ describe('the month view', () => {
       // An empty week reads as empty — no "0m" line claiming a cook time.
       expect(within(rail).queryByText(/\d+m$|\dh/)).not.toBeInTheDocument()
     })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// The insight strip + back-to-back marks (meal-plan insights, month PR).
+//
+// These are the only tests here that depend on what day it is, so the clock is
+// pinned. Only Date is faked — faking timers too would stall react-query and
+// userEvent.
+// ─────────────────────────────────────────────────────────────────────────
+describe('what the month works out about itself', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-29T12:00:00.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    window.matchMedia = realMatchMedia
+  })
+
+  // Only Friday 31 July has a dinner, and the grid ends on Sunday 2 August —
+  // so the window is the 5 days it can see, not a 7 it cannot.
+  it('prompts with the open dinners it can actually see', async () => {
+    stubMonth()
+    renderRoute('/plan?m=2026-07')
+
+    const card = await screen.findByRole('region', { name: /dinners ahead/i })
+    await waitFor(() => expect(card).toHaveTextContent(/4\s*dinners open in the next 5 days/i))
+    expect(within(card).getByRole('link', { name: /start with/i })).toHaveAttribute(
+      'href',
+      '/plan/2026-07-29',
+    )
+  })
+
+  it('hides the prompt on a month that does not contain today', async () => {
+    stubMonth()
+    renderRoute('/plan?m=2026-12')
+
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: /plan 2026-12-01/i })).toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('region', { name: /dinners ahead/i })).not.toBeInTheDocument()
+  })
+
+  // Lemon orzo runs Monday 27 and Tuesday 28 — the mark belongs to Tuesday.
+  it('marks a dish carried over from the day before', async () => {
+    goDesktop()
+    stubMonth()
+    renderRoute('/plan?m=2026-07')
+
+    const tuesday = await screen.findByRole('link', { name: /plan 2026-07-28/i })
+    await waitFor(() =>
+      expect(within(tuesday).getByTitle(/lemon orzo — also the day before/i)).toBeInTheDocument(),
+    )
+
+    const monday = screen.getByRole('link', { name: /plan 2026-07-27/i })
+    expect(within(monday).queryByTitle(/also the day before/i)).not.toBeInTheDocument()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// Calorie ribbon + in-cell cook load. Both read fields that now ride along on
+// the entry's recipe summary, so neither costs a request.
+// ─────────────────────────────────────────────────────────────────────────
+describe('the month cost signals', () => {
+  const COUNTED_PLAN: MealPlan = {
+    id: PLAN_ID,
+    weekStartDate: WEEK_31,
+    createdAt: WEEK_31,
+    entries: [
+      {
+        id: 'c1',
+        dayOfWeek: 'Monday',
+        mealType: 'Breakfast',
+        recipe: { id: 'r-oats', title: 'Oats', imageUrl: null, totalTimeMinutes: 10, caloriesPerServing: 300 },
+      },
+      {
+        id: 'c2',
+        dayOfWeek: 'Monday',
+        mealType: 'Dinner',
+        recipe: { id: 'r-ragu', title: 'Ragù', imageUrl: null, totalTimeMinutes: 170, caloriesPerServing: 800 },
+      },
+      {
+        // Tuesday is planned but uncountable — one dish has no figure.
+        id: 'c3',
+        dayOfWeek: 'Tuesday',
+        mealType: 'Dinner',
+        recipe: { id: 'r-soup', title: 'Soup', imageUrl: null, totalTimeMinutes: 25, caloriesPerServing: null },
+      },
+    ],
+  }
+
+  beforeEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    window.matchMedia = realMatchMedia
+  })
+
+  it('counts only the days it can total, and says how many', () => {
+    vi.spyOn(api, 'getMealPlans').mockResolvedValue({ items: [summary], nextCursor: null })
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(COUNTED_PLAN)
+    renderRoute('/plan?m=2026-07')
+
+    return waitFor(() => {
+      const ribbon = screen.getByRole('region', { name: /daily calories/i })
+      // Monday totals; Tuesday is planned but has a dish with no figure.
+      expect(ribbon).toHaveTextContent(/from 1 of 2 planned days/i)
+    })
+  })
+
+  it('says so plainly when no planned dish has a calorie figure', async () => {
+    stubMonth() // the shared fixture carries times but no calories
+    renderRoute('/plan?m=2026-07')
+
+    const ribbon = await screen.findByRole('region', { name: /daily calories/i })
+    await waitFor(() =>
+      // The copy uses a typographic apostrophe, so match around it.
+      expect(ribbon).toHaveTextContent(/none of this month.s dishes has a calorie figure/i),
+    )
+  })
+
+  it("marks a day's cook load in its cell", async () => {
+    goDesktop()
+    vi.spyOn(api, 'getMealPlans').mockResolvedValue({ items: [summary], nextCursor: null })
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(COUNTED_PLAN)
+    renderRoute('/plan?m=2026-07')
+
+    // Monday 27 July: 10 + 170 minutes.
+    const monday = await screen.findByRole('link', { name: /plan 2026-07-27/i })
+    await waitFor(() =>
+      expect(within(monday).getByTitle(/3h in the kitchen/i)).toBeInTheDocument(),
+    )
   })
 })

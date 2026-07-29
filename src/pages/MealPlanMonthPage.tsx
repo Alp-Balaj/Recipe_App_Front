@@ -14,6 +14,11 @@
 //
 // The month lives in ?m=YYYY-MM rather than component state, so a month is
 // linkable and the back button steps through the ones you looked at.
+//
+// Insights PR: a strip sits between the header and the grid holding what the
+// page can work out about itself (M2). It costs the grid vertical space, which
+// is the trade — the prompt is worth nothing below the fold. The grid stays a
+// calendar; the derived numbers live in one band above it.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useMemo, type CSSProperties } from 'react'
@@ -31,8 +36,11 @@ import {
   shortMonthOf,
   todayPlanDate,
 } from '@/lib/planDates'
+import { dayLoads, nextDinnerGap, repeatedFromYesterday } from '@/lib/planInsights'
 import StateBlock from '@/components/ui/StateBlock'
 import MonthGrid from '@/components/mealplan/MonthGrid'
+import MonthInsightStrip from '@/components/mealplan/MonthInsightStrip'
+import CalorieRibbon from '@/components/mealplan/CalorieRibbon'
 
 const SLOTS_PER_WEEK = 21
 
@@ -49,6 +57,12 @@ export default function MealPlanMonthPage() {
 
   const planned = weekStarts.reduce((sum, key) => sum + (byWeek.get(key)?.entryCount ?? 0), 0)
   const total = weeks.length * SLOTS_PER_WEEK
+
+  // Both are arithmetic over the weeks already in memory — the whole reason
+  // these two cards could ship ahead of anything needing recipe details.
+  const gap = useMemo(() => nextDinnerGap(weeks, byWeek, today), [weeks, byWeek, today])
+  const repeats = useMemo(() => repeatedFromYesterday(weeks, byWeek), [weeks, byWeek])
+  const loads = useMemo(() => dayLoads(weeks, byWeek), [weeks, byWeek])
 
   return (
     <div className="scroll" style={pageStyle}>
@@ -85,7 +99,17 @@ export default function MealPlanMonthPage() {
 
       {!isError && (
         <>
-          <MonthGrid monthStart={monthStart} weeks={weeks} byWeek={byWeek} today={today} />
+          <MonthInsightStrip gap={gap}>
+            <CalorieRibbon weeks={weeks} monthStart={monthStart} loads={loads} />
+          </MonthInsightStrip>
+          <MonthGrid
+            monthStart={monthStart}
+            weeks={weeks}
+            byWeek={byWeek}
+            today={today}
+            repeats={repeats}
+            loads={loads}
+          />
           {isLoading && (
             <div role="status" style={loadingNote}>
               Loading your plans…

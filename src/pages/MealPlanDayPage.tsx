@@ -48,6 +48,7 @@ import {
 import StateBlock from '@/components/ui/StateBlock'
 import MealCard from '@/components/mealplan/MealCard'
 import DayIngredients, { type IngredientGroup } from '@/components/mealplan/DayIngredients'
+import DayTotals, { type DaySlot } from '@/components/mealplan/DayTotals'
 import PickerContent from '@/components/mealplan/PickerContent'
 import RecipePickerModal from '@/components/mealplan/RecipePickerModal'
 
@@ -75,7 +76,14 @@ interface Placed {
   planId: string
   entryId: string
   title: string
-  meal: MealTypeName
+  /** "dinner" / "tomorrow's dinner" — Undo can now reach off this page. */
+  where: string
+  /**
+   * The week the entry landed in, which is NOT always this page's week:
+   * repeating a Sunday meal puts it in next week's plan. Undo has to
+   * invalidate the week it actually touched.
+   */
+  weekStart: string
 }
 
 function DayView({ date }: { date: Date }) {
@@ -113,8 +121,8 @@ function DayView({ date }: { date: Date }) {
     return map
   }, [weekEntries])
 
-  const refreshPlan = (id: string) => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.mealPlans.week(weekStart) })
+  const refreshPlan = (id: string, week: string = weekStart) => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.mealPlans.week(week) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.mealPlans.detail(id) })
   }
 
@@ -132,16 +140,59 @@ function DayView({ date }: { date: Date }) {
     },
     onSuccess: ({ entry, planId: id }) => {
       refreshPlan(id)
-      setPlaced({ planId: id, entryId: entry.id, title: entry.recipe.title, meal: entry.mealType })
+      setPlaced({
+        planId: id,
+        entryId: entry.id,
+        title: entry.recipe.title,
+        where: entry.mealType.toLowerCase(),
+        weekStart,
+      })
     },
     onError: (err: unknown) =>
       setMessage(err instanceof ApiConflictError ? err.message : "Couldn't add that meal. Try again."),
   })
 
+  // The leftovers gesture: same dish, same slot, one day later. Tomorrow is in
+  // NEXT week whenever today is a Sunday, so the target plan is resolved
+  // lookup-or-create like any other week rather than assumed to be this one.
+  const repeatTomorrow = useMutation({
+    mutationFn: async (vars: { meal: MealTypeName; recipeId: string }) => {
+      const tomorrow = addDays(date, 1)
+      const targetWeek = weekStartOf(tomorrow)
+      const id =
+        targetWeek === weekStart && planId ? planId : await ensure.mutateAsync(targetWeek)
+      const entry = await addMealPlanEntry(id, {
+        dayOfWeek: dayNameOf(tomorrow),
+        mealType: vars.meal,
+        recipeId: vars.recipeId,
+      })
+      return { entry, planId: id, targetWeek }
+    },
+    onSuccess: ({ entry, planId: id, targetWeek }) => {
+      refreshPlan(id, targetWeek)
+      setPlaced({
+        planId: id,
+        entryId: entry.id,
+        title: entry.recipe.title,
+        where: `tomorrow's ${entry.mealType.toLowerCase()}`,
+        weekStart: targetWeek,
+      })
+    },
+    // A taken slot is the expected failure here, not an error condition — you
+    // already planned tomorrow's dinner, and silently replacing it would be the
+    // one thing this button must never do.
+    onError: (err: unknown, vars) =>
+      setMessage(
+        err instanceof ApiConflictError
+          ? `Tomorrow's ${vars.meal.toLowerCase()} is already planned. Open tomorrow to swap it.`
+          : "Couldn't add that to tomorrow. Try again.",
+      ),
+  })
+
   const removeFromDay = useMutation({
-    mutationFn: (vars: { planId: string; entryId: string }) =>
+    mutationFn: (vars: { planId: string; entryId: string; weekStart?: string }) =>
       removeMealPlanEntry(vars.planId, vars.entryId),
-    onSuccess: (_result, vars) => refreshPlan(vars.planId),
+    onSuccess: (_result, vars) => refreshPlan(vars.planId, vars.weekStart),
     onError: () => setMessage("Couldn't remove that meal. Try again."),
   })
 
@@ -177,7 +228,8 @@ function DayView({ date }: { date: Date }) {
         planId: vars.planId,
         entryId: entry.id,
         title: entry.recipe.title,
-        meal: entry.mealType,
+        where: entry.mealType.toLowerCase(),
+        weekStart,
       }),
     onError: () => setMessage("Couldn't swap that meal. What was there has been kept."),
   })
@@ -208,6 +260,11 @@ function DayView({ date }: { date: Date }) {
     entries.find((entry) => entry.mealType === meal)
 
   const openSlots = MEAL_ORDER.filter((meal) => !entryFor(meal)).length
+
+  const daySlots: DaySlot[] = MEAL_ORDER.map((meal) => {
+    const entry = entryFor(meal)
+    return { meal, entry, recipe: entry ? byId.get(entry.recipe.id) : undefined }
+  })
 
   const groups: IngredientGroup[] = MEAL_ORDER.map((meal) => {
     const entry = entryFor(meal)
@@ -294,14 +351,18 @@ function DayView({ date }: { date: Date }) {
           {placed && (
             <div role="status" style={undoBanner}>
               <span style={{ flex: 1, minWidth: 0 }}>
-                Added <strong>{placed.title}</strong> to {placed.meal.toLowerCase()}.
+                Added <strong>{placed.title}</strong> to {placed.where}.
               </span>
               <button
                 type="button"
                 style={undoButton}
                 disabled={removeFromDay.isPending}
                 onClick={() => {
-                  removeFromDay.mutate({ planId: placed.planId, entryId: placed.entryId })
+                  removeFromDay.mutate({
+                    planId: placed.planId,
+                    entryId: placed.entryId,
+                    weekStart: placed.weekStart,
+                  })
                   setPlaced(null)
                 }}
               >
@@ -315,6 +376,8 @@ function DayView({ date }: { date: Date }) {
               Some recipe details didn't load, so a few ingredients may be missing below.
             </div>
           )}
+
+          <DayTotals slots={daySlots} isLoading={detailsLoading} />
 
           <div style={mealStack}>
             {MEAL_ORDER.map((meal) => {
@@ -349,6 +412,16 @@ function DayView({ date }: { date: Date }) {
                           setMessage(null)
                           setPlaced(null)
                           removeFromDay.mutate({ planId, entryId: entry.id })
+                        }
+                      : undefined
+                  }
+                  // A past day is a record of what you ate, so it doesn't offer
+                  // to repeat itself — same rule the empty slots already follow.
+                  onRepeatTomorrow={
+                    entry && !past
+                      ? () => {
+                          setMessage(null)
+                          repeatTomorrow.mutate({ meal, recipeId: entry.recipe.id })
                         }
                       : undefined
                   }

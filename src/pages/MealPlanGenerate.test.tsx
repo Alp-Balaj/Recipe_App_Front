@@ -27,7 +27,7 @@ describe('generate shopping list', () => {
     })
     vi.spyOn(api, 'getMealPlan').mockResolvedValue({
       id: 'p1', weekStartDate: '2026-07-20T00:00:00Z', createdAt: '2026-07-19T00:00:00Z',
-      entries: [{ id: 'e1', dayOfWeek: 'Monday', mealType: 'Dinner', recipe: { id: 'r1', title: 'Toast', imageUrl: null } }],
+      entries: [{ id: 'e1', dayOfWeek: 'Monday', mealType: 'Dinner', recipe: { id: 'r1', title: 'Toast', imageUrl: null, totalTimeMinutes: 30 } }],
     })
   })
 

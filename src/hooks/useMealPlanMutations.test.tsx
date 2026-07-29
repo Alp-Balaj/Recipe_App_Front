@@ -14,7 +14,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 const entry: MealPlanEntry = {
   id: 'e1', dayOfWeek: 'Monday', mealType: 'Breakfast',
-  recipe: { id: 'r1', title: 'Toast', imageUrl: null },
+  recipe: { id: 'r1', title: 'Toast', imageUrl: null, totalTimeMinutes: 30 },
 }
 
 describe('useMealPlanMutations.moveEntry', () => {
