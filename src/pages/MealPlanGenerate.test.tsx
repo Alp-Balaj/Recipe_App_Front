@@ -23,7 +23,7 @@ describe('generate shopping list', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue({
-      id: 'p1', weekStartDate: '2026-07-20T00:00:00Z', createdAt: '2026-07-19T00:00:00Z', entryCount: 1,
+      id: 'p1', weekStartDate: '2026-07-20T00:00:00Z', createdAt: '2026-07-19T00:00:00Z', entryCount: 1, totalMinutes: 30,
     })
     vi.spyOn(api, 'getMealPlan').mockResolvedValue({
       id: 'p1', weekStartDate: '2026-07-20T00:00:00Z', createdAt: '2026-07-19T00:00:00Z',

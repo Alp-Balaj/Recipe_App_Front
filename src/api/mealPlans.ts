@@ -59,7 +59,15 @@ export interface MealPlanSummary {
   id: string
   weekStartDate: string
   createdAt: string
+  /**
+   * Both counters are computed server-side over entries whose recipe still
+   * exists, so they agree with GET /meal-plans/{id} — which drops entries whose
+   * recipe was soft-deleted. `entryCount` can therefore be lower than the number
+   * of slots the user filled, and that is correct: the missing dish is gone.
+   */
   entryCount: number
+  /** Prep + cook summed across the week's entries, per entry (a dish planned twice costs twice). */
+  totalMinutes: number
 }
 
 export interface MealPlanListResponse {

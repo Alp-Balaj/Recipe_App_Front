@@ -16,7 +16,7 @@ describe('useCurrentWeekPlan', () => {
 
   it('exposes the plan id when the week has a plan', async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue({
-      id: 'p1', weekStartDate: '2026-07-20T00:00:00Z', createdAt: '2026-07-19T00:00:00Z', entryCount: 0,
+      id: 'p1', weekStartDate: '2026-07-20T00:00:00Z', createdAt: '2026-07-19T00:00:00Z', entryCount: 0, totalMinutes: 0,
     })
 
     const { result } = renderHook(() => useCurrentWeekPlan('2026-07-20T00:00:00.000Z'), { wrapper })
@@ -54,7 +54,7 @@ describe('useEnsureWeekPlan', () => {
     // The race: another tab created the plan between our lookup and our POST.
     const lookup = vi.spyOn(api, 'getMealPlanForWeek')
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 'raced', weekStartDate: '2026-07-20T00:00:00Z', createdAt: '2026-07-19T00:00:00Z', entryCount: 0 })
+      .mockResolvedValueOnce({ id: 'raced', weekStartDate: '2026-07-20T00:00:00Z', createdAt: '2026-07-19T00:00:00Z', entryCount: 0, totalMinutes: 0 })
     vi.spyOn(api, 'createMealPlan').mockRejectedValue(new ApiConflictError('A meal plan for this week already exists.'))
 
     const { result } = renderHook(() => useEnsureWeekPlan(), { wrapper })

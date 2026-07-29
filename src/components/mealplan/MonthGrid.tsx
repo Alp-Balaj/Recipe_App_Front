@@ -193,9 +193,22 @@ function MobileCell({
   )
 }
 
-/** Coverage and repeats for one row — the row already being a week. */
+/**
+ * A duration as the shortest thing that still reads as time: "45m", "3h",
+ * "2h 15m". A full week can exceed ten hours, so bare minutes would stop
+ * being legible as a load signal well before the top of the range.
+ */
+export function formatCookTime(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
+}
+
+/** Coverage, cook load and repeats for one row — the row already being a week. */
 function WeekRail({ week, summary, dim }: { week: Date[]; summary?: WeekSummary; dim: boolean }) {
   const count = summary?.entryCount ?? 0
+  const minutes = summary?.totalMinutes ?? 0
   const repeat = summary?.repeats[0]
 
   return (
@@ -207,6 +220,9 @@ function WeekRail({ week, summary, dim }: { week: Date[]; summary?: WeekSummary;
       <span style={railCount}>
         {count}/{SLOTS_PER_WEEK}
       </span>
+      {/* Suppressed at zero rather than shown as "0m": an empty week's rail should
+          read as empty, not as a week that somehow costs no time to cook. */}
+      {minutes > 0 && <span style={railTime}>{formatCookTime(minutes)}</span>}
       {repeat && (
         <span style={railRepeat}>
           {repeat.title.split(' ')[0].toLowerCase()} ×{repeat.count}
@@ -349,6 +365,16 @@ const railCount: CSSProperties = {
   color: 'var(--accent)',
   fontVariantNumeric: 'tabular-nums',
   letterSpacing: '-0.02em',
+}
+
+// Secondary to the coverage count above it: muted, not accented. Coverage is
+// the thing you act on ("this week has gaps"); time is context for it.
+const railTime: CSSProperties = {
+  fontSize: 10,
+  fontWeight: 700,
+  color: 'var(--muted)',
+  fontVariantNumeric: 'tabular-nums',
+  letterSpacing: '-0.01em',
 }
 
 const railRepeat: CSSProperties = {
