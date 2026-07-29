@@ -6,7 +6,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider, type InitialEntry } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
@@ -104,5 +105,83 @@ describe('recipe canvas backdrop (desktop)', () => {
 
     expect(await screen.findByText('Miso butter noodles')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Discover' })).toHaveAttribute('aria-current', 'page')
+  })
+})
+
+// ── The day page ──────────────────────────────────────────────────────────
+// Reading a planned meal is a glance mid-plan, not a departure: the recipe
+// opens in the canvas and the day it belongs to stays in the pane. That needs
+// BOTH halves — MealCard carrying the backdrop, and the shell knowing how to
+// render /plan/:date behind the canvas.
+
+const DAY = '2026-07-29' // a Wednesday
+const WEEK_START = '2026-07-27T00:00:00.000Z'
+
+const PLAN = {
+  id: 'plan-1',
+  weekStartDate: WEEK_START,
+  createdAt: WEEK_START,
+  entries: [
+    {
+      id: 'entry-dinner',
+      dayOfWeek: 'Wednesday',
+      mealType: 'Dinner',
+      recipe: { id: 'r1', title: RECIPE.title, imageUrl: null },
+    },
+  ],
+}
+
+describe('recipe canvas over the day page (desktop)', () => {
+  beforeEach(() => {
+    useDesktopViewport()
+    server.use(
+      http.get('*/recipes/r1', () => HttpResponse.json(RECIPE)),
+      http.get('*/meal-plans', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: PLAN.id,
+              weekStartDate: WEEK_START,
+              createdAt: WEEK_START,
+              entryCount: 1,
+              totalMinutes: 15,
+            },
+          ],
+          nextCursor: null,
+        }),
+      ),
+      http.get('*/meal-plans/plan-1', () => HttpResponse.json(PLAN)),
+    )
+  })
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia
+  })
+
+  it("keeps the day behind the canvas when a meal's Recipe button is used", async () => {
+    const user = userEvent.setup()
+    renderAt(`/plan/${DAY}`)
+
+    await waitFor(() =>
+      expect(within(screen.getByTestId('day-slot-Dinner')).getByText(RECIPE.title)).toBeInTheDocument(),
+    )
+    await user.click(within(screen.getByTestId('day-slot-Dinner')).getByRole('link', { name: 'Recipe' }))
+
+    // The canvas holds the recipe (its description exists only on the detail
+    // page — the title also appears on the meal card behind it)...
+    expect(await screen.findByText('Deeply savoury weeknight noodles.')).toBeInTheDocument()
+    // ...and the day is still the page under it, with the Plan tab still lit.
+    await waitFor(() => expect(screen.getByTestId('day-slot-Dinner')).toBeInTheDocument())
+    expect(screen.getByRole('heading', { name: /wednesday/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Plan' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Discover' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('renders the day as the backdrop on a reload of that recipe URL', async () => {
+    renderAt({ pathname: '/recipes/r1', state: { backdrop: `/plan/${DAY}` } })
+
+    expect(await screen.findByText('Deeply savoury weeknight noodles.')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /wednesday/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Plan' })).toHaveAttribute('aria-current', 'page')
   })
 })
