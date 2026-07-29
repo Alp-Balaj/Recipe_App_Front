@@ -127,6 +127,18 @@ describe('the month view', () => {
   describe('on desktop', () => {
     beforeEach(() => goDesktop())
 
+    // Seven columns plus the week rail don't fit the 720px reading column:
+    // each cell lands at ~82px, too narrow for a dish name to survive as a
+    // chip. The shell's wide-page rule (AppShell.isWidePage) is what buys the
+    // room, so it's asserted here rather than in the grid's own tests.
+    it('takes the wide desktop column, not the 720px reading column', async () => {
+      stubMonth()
+      renderRoute('/plan?m=2026-07')
+
+      await screen.findByRole('link', { name: /plan 2026-07-29/i })
+      expect(document.querySelector('.conversation-inner')).toHaveStyle({ maxWidth: '1240px' })
+    })
+
     it('lays the month out Monday-first, with a column for the week', async () => {
       stubMonth()
       renderRoute('/plan?m=2026-07')
