@@ -23,6 +23,9 @@ import ProfilePage from '@/pages/ProfilePage'
 import UserProfilePage from '@/pages/UserProfilePage'
 import type { ThemeContextValue } from './ThemeRoot'
 
+/** /plan/2026-07-29 — the day page, but not /plan or /plan/week/:start. */
+const DAY_PLAN_PATH = /^\/plan\/\d{4}-\d{2}-\d{2}$/
+
 /**
  * Tabbed shell layout route: sidebar + conversation pane (+ recipe canvas) on
  * desktop, bottom tab bar on mobile/tablet. The active tab derives from the
@@ -94,7 +97,12 @@ function AppShellContent() {
     panePath.startsWith('/discover') ||
     panePath.startsWith('/feed') ||
     panePath.startsWith('/users') ||
-    panePath.startsWith('/profile')
+    panePath.startsWith('/profile') ||
+    // The day page docks the recipe picker beside the meals; in the readable
+    // column the two share 720px and adding a meal is cramped to the point of
+    // unusable. The month (/plan) and week board (/plan/week/:start) keep the
+    // narrow column — only the split layout needs the room.
+    DAY_PLAN_PATH.test(panePath)
 
   // ── Auth gate (guest access, D9 amendment) ──────────────────────────────
   // A guest landing on an account-only route by direct URL gets Discover with

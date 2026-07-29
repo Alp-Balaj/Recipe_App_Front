@@ -447,8 +447,11 @@ const splitLayout: CSSProperties = {
   alignItems: 'flex-start',
 }
 
+// The shell gives this page the wide desktop column (AppShell's isWidePage), so
+// the rail can hold a recipe row without crushing it. It still shrinks back to
+// its old 330px on a 1024px screen, where the meals need that space more.
 const pickerRail: CSSProperties = {
-  flex: '0 0 330px',
+  flex: '0 0 clamp(330px, 34%, 420px)',
   minWidth: 0,
 }
 
