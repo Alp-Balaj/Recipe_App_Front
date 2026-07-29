@@ -28,9 +28,6 @@ import { formatPlanDate } from '@/lib/planDates'
 const MAX_PAGES = 4
 const PAGE_SIZE = 50
 
-/** A dish planned three or more times in one week is worth flagging. */
-const REPEAT_THRESHOLD = 3
-
 export interface WeekSummary {
   /** "2026-07-27" — the Monday this week starts on. */
   weekStart: string
@@ -39,8 +36,16 @@ export interface WeekSummary {
   /** Prep + cook across the week, from the summary. 0 when the week has no plan. */
   totalMinutes: number
   entries: MealPlanEntry[]
-  /** Titles planned REPEAT_THRESHOLD+ times this week, most repeated first. */
-  repeats: { title: string; count: number }[]
+  /**
+   * How many DIFFERENT dishes fill those entries, counted by recipe id — two
+   * recipes that happen to share a title are two dishes.
+   *
+   * This replaced a "×3 repeat" warning. The warning only fired past a
+   * threshold, so a week of three dishes cooked twice each — obviously
+   * repetitive — scored a clean rail. The ratio against entryCount says the
+   * same thing continuously and never goes quiet.
+   */
+  distinctDishes: number
 }
 
 async function fetchPlansCovering(oldestNeeded: string, signal?: AbortSignal): Promise<MealPlanSummary[]> {
@@ -105,22 +110,13 @@ export function useMonthPlans(weekStarts: string[]) {
       const summary = inView.get(weekStart)
       const entries = summary ? (entriesByPlan.get(summary.id) ?? []) : []
 
-      const counts = new Map<string, number>()
-      for (const entry of entries) {
-        counts.set(entry.recipe.title, (counts.get(entry.recipe.title) ?? 0) + 1)
-      }
-      const repeats = [...counts.entries()]
-        .filter(([, count]) => count >= REPEAT_THRESHOLD)
-        .map(([title, count]) => ({ title, count }))
-        .sort((a, b) => b.count - a.count)
-
       byWeek.set(weekStart, {
         weekStart,
         planId: summary?.id,
         entryCount: summary?.entryCount ?? 0,
         totalMinutes: summary?.totalMinutes ?? 0,
         entries,
-        repeats,
+        distinctDishes: new Set(entries.map((entry) => entry.recipe.id)).size,
       })
     }
 

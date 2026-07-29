@@ -60,7 +60,7 @@ const plan: MealPlan = {
       id: 'entry-tue',
       dayOfWeek: 'Tuesday',
       mealType: 'Dinner',
-      recipe: { id: 'r-harissa', title: 'Green harissa chicken', imageUrl: null },
+      recipe: { id: 'r-harissa', title: 'Green harissa chicken', imageUrl: null, totalTimeMinutes: 30 },
     },
   ],
 }
@@ -164,7 +164,7 @@ describe('the recipe picker', () => {
       id: 'entry-new',
       dayOfWeek: 'Wednesday',
       mealType: 'Dinner',
-      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null },
+      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null, totalTimeMinutes: 30 },
     })
 
     const user = await openPicker()
@@ -195,7 +195,7 @@ describe('the recipe picker', () => {
           id: 'entry-wed-brk',
           dayOfWeek: 'Wednesday',
           mealType: 'Breakfast',
-          recipe: { id: 'r-shak', title: 'Shakshuka', imageUrl: null },
+          recipe: { id: 'r-shak', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
         },
       ],
     })
@@ -266,7 +266,7 @@ describe('the recipe picker', () => {
       id: 'entry-new',
       dayOfWeek: 'Wednesday',
       mealType: 'Dinner',
-      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null },
+      recipe: { id: 'r-orzo', title: 'Lemon orzo', imageUrl: null, totalTimeMinutes: 30 },
     })
 
     const user = await openPicker()

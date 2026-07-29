@@ -7,7 +7,7 @@ const entry: MealPlanEntry = {
   id: 'e1',
   dayOfWeek: 'Wednesday',
   mealType: 'Dinner',
-  recipe: { id: 'r1', title: 'Lentil Soup', imageUrl: null },
+  recipe: { id: 'r1', title: 'Lentil Soup', imageUrl: null, totalTimeMinutes: 30 },
 }
 
 describe('WeekGrid', () => {

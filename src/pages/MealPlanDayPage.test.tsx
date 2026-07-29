@@ -32,20 +32,20 @@ const plan: MealPlan = {
       id: 'entry-breakfast',
       dayOfWeek: 'Wednesday',
       mealType: 'Breakfast',
-      recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null },
+      recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
     },
     {
       id: 'entry-lunch',
       dayOfWeek: 'Wednesday',
       mealType: 'Lunch',
-      recipe: { id: 'recipe-corn', title: 'Charred corn salad', imageUrl: null },
+      recipe: { id: 'recipe-corn', title: 'Charred corn salad', imageUrl: null, totalTimeMinutes: 30 },
     },
     {
       // A different day — must not appear on Wednesday's page.
       id: 'entry-thursday',
       dayOfWeek: 'Thursday',
       mealType: 'Dinner',
-      recipe: { id: 'recipe-ramen', title: 'Quick ramen', imageUrl: null },
+      recipe: { id: 'recipe-ramen', title: 'Quick ramen', imageUrl: null, totalTimeMinutes: 30 },
     },
   ],
 }
@@ -214,7 +214,7 @@ describe('the day page', () => {
       id: 'entry-new',
       dayOfWeek: 'Wednesday',
       mealType: 'Lunch',
-      recipe: { id: 'recipe-corn', title: 'Charred corn salad', imageUrl: null },
+      recipe: { id: 'recipe-corn', title: 'Charred corn salad', imageUrl: null, totalTimeMinutes: 30 },
     })
     stubRecipeDetails()
     const user = userEvent.setup()
@@ -238,7 +238,7 @@ describe('the day page', () => {
       id: 'entry-swapped',
       dayOfWeek: 'Wednesday',
       mealType: 'Breakfast',
-      recipe: { id: 'recipe-corn', title: 'Charred corn salad', imageUrl: null },
+      recipe: { id: 'recipe-corn', title: 'Charred corn salad', imageUrl: null, totalTimeMinutes: 30 },
     })
     stubRecipeDetails()
     const user = userEvent.setup()
@@ -288,7 +288,7 @@ describe('the day page', () => {
         id: 'entry-breakfast',
         dayOfWeek: 'Wednesday',
         mealType: 'Breakfast',
-        recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null },
+        recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
       })
 
     const user = userEvent.setup()
@@ -317,5 +317,162 @@ describe('the day page', () => {
     const nav = await screen.findByRole('navigation', { name: /nearby days/i })
     const links = within(nav).getAllByRole('link')
     expect(links.map((a) => a.getAttribute('href'))).toEqual(['/plan/2026-07-28', '/plan/2026-07-30'])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// Day totals + Repeat tomorrow (meal-plan insights, day PR).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Wed 29 July 2026 is a weekday mid-week; Sun 2 Aug is the week-boundary case. */
+const SUNDAY_PLAN_ID = 'plan-sunday'
+const NEXT_WEEK_START = '2026-08-03T00:00:00.000Z'
+
+function stubDetails(recipes: RecipeResponse[]) {
+  vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
+    if (path === '/recipes') return Promise.resolve({ items: recipes, nextCursor: null })
+    const hit = recipes.find((recipe) => path === `/recipes/${recipe.id}`)
+    return Promise.resolve(hit ?? undefined)
+  }) as unknown as typeof client.apiFetch)
+}
+
+describe('the day totals strip', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('adds up calories and kitchen time when every meal has a figure', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
+    stubDetails([
+      makeRecipe({ id: 'recipe-shakshuka', title: 'Shakshuka', caloriesPerServing: 420, totalTimeMinutes: 25 }),
+      makeRecipe({ id: 'recipe-corn', title: 'Charred corn salad', caloriesPerServing: 610, totalTimeMinutes: 35 }),
+    ])
+
+    renderRoute('/plan/2026-07-29')
+
+    const totals = await screen.findByRole('region', { name: /totals for this day/i })
+    // 420 + 610 kcal, 25 + 35 minutes. Thousands separator is locale-dependent.
+    await waitFor(() => expect(totals).toHaveTextContent(/1[,.\s]?030/))
+    expect(totals).toHaveTextContent(/1 h/)
+    // Nothing is missing, so no denominator is offered.
+    expect(totals).not.toHaveTextContent(/of 2 meals/i)
+  })
+
+  it('shows its denominator and names the dish when a calorie figure is missing', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
+    stubDetails([
+      makeRecipe({ id: 'recipe-shakshuka', title: 'Shakshuka', caloriesPerServing: 420, totalTimeMinutes: 25 }),
+      makeRecipe({ id: 'recipe-corn', title: 'Charred corn salad', caloriesPerServing: null, totalTimeMinutes: 35 }),
+    ])
+
+    renderRoute('/plan/2026-07-29')
+
+    const totals = await screen.findByRole('region', { name: /totals for this day/i })
+    await waitFor(() => expect(totals).toHaveTextContent(/from 1 of 2 meals/i))
+    expect(totals).toHaveTextContent(/charred corn salad has no calorie figure/i)
+    // Time is complete even though calories are not — separate denominators.
+    expect(totals).toHaveTextContent(/1 h/)
+  })
+
+  it('stays out of the way on a day with nothing planned', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(null)
+
+    renderRoute('/plan/2026-07-29')
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /add a recipe for dinner/i })).toBeEnabled(),
+    )
+    expect(screen.queryByRole('region', { name: /totals for this day/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('repeat tomorrow', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it("puts the same dish in tomorrow's matching slot", async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
+    stubDetails([shakshuka, cornSalad])
+    const add = vi.spyOn(api, 'addMealPlanEntry').mockResolvedValue({
+      id: 'entry-tomorrow',
+      dayOfWeek: 'Thursday',
+      mealType: 'Breakfast',
+      recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
+    })
+
+    renderRoute('/plan/2026-07-29')
+
+    const button = await screen.findByRole('button', { name: /repeat shakshuka tomorrow/i })
+    await userEvent.click(button)
+
+    await waitFor(() =>
+      expect(add).toHaveBeenCalledWith(PLAN_ID, {
+        dayOfWeek: 'Thursday',
+        mealType: 'Breakfast',
+        recipeId: 'recipe-shakshuka',
+      }),
+    )
+    // The undo strip has to say WHERE it went — it isn't this page any more.
+    expect(await screen.findByText(/tomorrow's breakfast/i)).toBeInTheDocument()
+  })
+
+  it("creates next week's plan when tomorrow crosses the Monday", async () => {
+    const sundayPlan: MealPlan = {
+      id: SUNDAY_PLAN_ID,
+      weekStartDate: WEEK_START,
+      createdAt: WEEK_START,
+      entries: [
+        {
+          id: 'entry-sunday',
+          dayOfWeek: 'Sunday',
+          mealType: 'Dinner',
+          recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
+        },
+      ],
+    }
+
+    // Only THIS week has a plan; next week must be created.
+    vi.spyOn(api, 'getMealPlanForWeek').mockImplementation(async (weekStart: string) =>
+      weekStart === WEEK_START ? { ...summary, id: SUNDAY_PLAN_ID } : null,
+    )
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(sundayPlan)
+    stubDetails([shakshuka])
+    const create = vi.spyOn(api, 'createMealPlan').mockResolvedValue({
+      id: 'plan-next-week',
+      weekStartDate: NEXT_WEEK_START,
+      createdAt: NEXT_WEEK_START,
+      entries: [],
+    })
+    const add = vi.spyOn(api, 'addMealPlanEntry').mockResolvedValue({
+      id: 'entry-monday',
+      dayOfWeek: 'Monday',
+      mealType: 'Dinner',
+      recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
+    })
+
+    renderRoute('/plan/2026-08-02')
+
+    const button = await screen.findByRole('button', { name: /repeat shakshuka tomorrow/i })
+    await userEvent.click(button)
+
+    await waitFor(() => expect(create).toHaveBeenCalledWith(NEXT_WEEK_START))
+    expect(add).toHaveBeenCalledWith('plan-next-week', {
+      dayOfWeek: 'Monday',
+      mealType: 'Dinner',
+      recipeId: 'recipe-shakshuka',
+    })
+  })
+
+  it('refuses to overwrite a slot that tomorrow already has', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
+    stubDetails([shakshuka, cornSalad])
+    vi.spyOn(api, 'addMealPlanEntry').mockRejectedValue(new client.ApiConflictError('Slot taken'))
+
+    renderRoute('/plan/2026-07-29')
+
+    await userEvent.click(await screen.findByRole('button', { name: /repeat shakshuka tomorrow/i }))
+
+    expect(await screen.findByText(/tomorrow's breakfast is already planned/i)).toBeInTheDocument()
   })
 })
