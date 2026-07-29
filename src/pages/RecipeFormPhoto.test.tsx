@@ -304,7 +304,7 @@ describe('RecipeForm photo upload (cp07)', () => {
   it('edit overlay prefills the existing photo as a resolved preview', async () => {
     const user = userEvent.setup()
     server.use(
-      http.get('*/recipes', () =>
+      http.get('*/recipes/mine', () =>
         HttpResponse.json({
           items: [
             makeRecipeResponse({

@@ -34,18 +34,33 @@ function makeRecipe(overrides: Partial<RecipeResponse> = {}): RecipeResponse {
 }
 
 describe('MyRecipesPage', () => {
-  it('shows only the caller-owned recipes from the paged list', async () => {
+  // The page used to page the GLOBAL list and filter by author in the browser,
+  // which silently lost anything past the page cap. It now asks the server for
+  // the caller's recipes directly, so the assertion moved: not "it filtered
+  // correctly" but "it asked the right endpoint and rendered what came back".
+  it('reads the caller-scoped endpoint and renders everything it returns', async () => {
+    let globalListCalls = 0
     server.use(
-      http.get('*/recipes', () =>
+      http.get('*/recipes/mine', () =>
         HttpResponse.json({
           items: [
-            makeRecipe({ id: 'a', title: 'Mine A', createdByUserId: ME }),
-            makeRecipe({ id: 'b', title: 'Someone Else', createdByUserId: OTHER }),
-            makeRecipe({ id: 'c', title: 'Mine C', createdByUserId: ME }),
+            makeRecipe({ id: 'a', title: 'Mine A' }),
+            // A private draft: invisible in GET /recipes for everyone but its
+            // author, so the old client-side filter could never have shown it.
+            makeRecipe({ id: 'c', title: 'Mine C', visibility: 'Private' }),
           ],
           nextCursor: null,
         }),
       ),
+      // Sentinel: if the page ever falls back to the global list, this fires and
+      // "Someone Else" shows up in the output.
+      http.get('*/recipes', () => {
+        globalListCalls += 1
+        return HttpResponse.json({
+          items: [makeRecipe({ id: 'b', title: 'Someone Else', createdByUserId: OTHER })],
+          nextCursor: null,
+        })
+      }),
     )
 
     renderRoute('/recipes/mine')
@@ -53,6 +68,9 @@ describe('MyRecipesPage', () => {
     expect(await screen.findByText('Mine A')).toBeInTheDocument()
     expect(screen.getByText('Mine C')).toBeInTheDocument()
     expect(screen.queryByText('Someone Else')).not.toBeInTheDocument()
+    // The point of the change: the global list is never touched, so a page of
+    // other people's recipes can't crowd yours out.
+    expect(globalListCalls).toBe(0)
   })
 
   it('deletes a recipe after confirmation and drops it from the list', async () => {
@@ -60,7 +78,7 @@ describe('MyRecipesPage', () => {
     let recipes = [makeRecipe({ id: 'r1', title: 'Deletable', createdByUserId: ME })]
     const deleteSpy = vi.fn()
     server.use(
-      http.get('*/recipes', () => HttpResponse.json({ items: recipes, nextCursor: null })),
+      http.get('*/recipes/mine', () => HttpResponse.json({ items: recipes, nextCursor: null })),
       http.delete('*/recipes/r1', () => {
         deleteSpy()
         recipes = recipes.filter((r) => r.id !== 'r1')
@@ -88,7 +106,7 @@ describe('MyRecipesPage', () => {
     let recipes = [makeRecipe({ id: 'r1', title: 'Old Title', createdByUserId: ME })]
     let putBody: { title: string } | null = null
     server.use(
-      http.get('*/recipes', () => HttpResponse.json({ items: recipes, nextCursor: null })),
+      http.get('*/recipes/mine', () => HttpResponse.json({ items: recipes, nextCursor: null })),
       http.put('*/recipes/r1', async ({ request }) => {
         putBody = (await request.json()) as { title: string }
         const updated = { ...recipes[0], title: putBody.title }
@@ -117,7 +135,7 @@ describe('MyRecipesPage', () => {
     const user = userEvent.setup()
     const recipes = [makeRecipe({ id: 'r1', title: 'Old Title', createdByUserId: ME })]
     server.use(
-      http.get('*/recipes', () => HttpResponse.json({ items: recipes, nextCursor: null })),
+      http.get('*/recipes/mine', () => HttpResponse.json({ items: recipes, nextCursor: null })),
       http.put('*/recipes/r1', () => new HttpResponse(null, { status: 403 })),
     )
 

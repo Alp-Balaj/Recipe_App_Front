@@ -20,6 +20,7 @@ const summary: MealPlanSummary = {
   weekStartDate: WEEK_START,
   createdAt: '2026-07-27T00:00:00.000Z',
   entryCount: 2,
+  totalMinutes: 70,
 }
 
 const plan: MealPlan = {

@@ -1,11 +1,15 @@
 // My-recipes page (/recipes/mine) — checkpoint 06, lane B.
 //
-// v1 lists the caller's own recipes by filtering the paged GET /recipes result
-// client-side on createdByUserId (the auth store carries userId). GET /recipes
-// already returns full RecipeResponse objects, so edit prefills straight from
-// the list item — no separate GET /recipes/{id} round-trip is needed. If this
-// client-side filtering proves too coarse at scale, the flagged ?mine=true
-// backend micro-addition is the sanctioned next step (see the plan).
+// Now backed by the real GET /recipes/mine (backend 849595b). v1 paged the
+// GLOBAL list and filtered client-side on createdByUserId, which meant a
+// recipe sitting past the page cap simply never appeared — and "Load more"
+// could fetch a whole page that added nothing visible, because every row in it
+// belonged to someone else. The server narrows by author now, so pages are
+// dense and complete, and private drafts come back too (they are invisible in
+// GET /recipes, which is Public-only for everyone but their author).
+//
+// The list still returns full RecipeResponse objects, so edit prefills
+// straight from the list item — no separate GET /recipes/{id} round-trip.
 //
 // Edit reuses the shared RecipeForm in a Modal (there is no /recipes/:id/edit
 // route — the router is frozen), submitting PUT /recipes/{id}; 403 and 404 are
@@ -57,12 +61,13 @@ export default function MyRecipesPage() {
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteRecipes({
     queryKey: queryKeys.recipes.mine(),
     pageSize: PAGE_LIMIT,
+    path: '/recipes/mine',
   })
 
-  const mine = useMemo(() => {
-    const all = (data?.pages ?? []).flatMap((p) => p.items)
-    return userId ? all.filter((r) => r.createdByUserId === userId) : []
-  }, [data, userId])
+  // Every row is already the caller's — the endpoint scopes to the JWT subject,
+  // so there is nothing left to filter. The defensive userId check stays only
+  // because the page can render for a heartbeat before the session resolves.
+  const mine = useMemo(() => (userId ? (data?.pages ?? []).flatMap((p) => p.items) : []), [data, userId])
 
   // ── Delete flow ───────────────────────────────────────────────────────────
   const runDelete = async () => {

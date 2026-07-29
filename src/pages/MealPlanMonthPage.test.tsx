@@ -16,6 +16,7 @@ const summary: MealPlanSummary = {
   weekStartDate: WEEK_31,
   createdAt: WEEK_31,
   entryCount: 5,
+  totalMinutes: 155,
 }
 
 /** Lemon orzo three times in one week — exactly what the rail should flag. */
@@ -161,12 +162,24 @@ describe('the month view', () => {
       await waitFor(() => expect(within(rail).getByText(/lemon ×3/i)).toBeInTheDocument())
     })
 
+    // totalMinutes rides along on the plan summary (backend 849595b) — no
+    // per-recipe fetch. 155 minutes reads as "2h 35m", not "155m".
+    it("shows the week's cook load beside its coverage", async () => {
+      stubMonth()
+      renderRoute('/plan?m=2026-07')
+
+      const rail = await screen.findByRole('link', { name: /week of 2026-07-27/i })
+      await waitFor(() => expect(within(rail).getByText('2h 35m')).toBeInTheDocument())
+    })
+
     it('leaves a week with no plan showing nothing planned', async () => {
       stubMonth()
       renderRoute('/plan?m=2026-07')
 
       const rail = await screen.findByRole('link', { name: /week of 2026-07-06/i })
       expect(within(rail).getByText('0/21')).toBeInTheDocument()
+      // An empty week reads as empty — no "0m" line claiming a cook time.
+      expect(within(rail).queryByText(/\d+m$|\dh/)).not.toBeInTheDocument()
     })
   })
 })

@@ -13,10 +13,12 @@
 // history in a way a ?search= parameter could not be. Everyone's public
 // recipes stay paged, because that list has no bound worth prefetching.
 //
-// Known limitation, inherited not introduced: there is no server-side "mine",
-// so own-recipes are scanned out of the global list and filtered by author —
-// exactly what MyRecipesPage.tsx:62 does, and lossy in the same way past the
-// cap. A real /recipes/mine endpoint would fix both at once.
+// The own-recipes list used to be scanned out of the global list and filtered
+// by author, which was lossy past the scan cap: with 200 recipes scanned and
+// yours older than all of them, "Mine" came back empty. GET /recipes/mine
+// (backend 849595b) narrows server-side, so the same cap now bounds YOUR
+// recipes rather than everyone's — and private drafts are included, which the
+// scan could never see.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useMemo } from 'react'
@@ -30,8 +32,8 @@ import type { RecipeIngredient, RecipeListResponse, RecipeResponse } from '@/api
 /** Page sizes and caps — bounded so "fetch it all" can never run away. */
 const SAVED_PAGE = 50
 const SAVED_CAP = 150
-const SCAN_PAGE = 50
-const SCAN_CAP = 200
+const MINE_PAGE = 50
+const MINE_CAP = 200
 const HISTORY_PLANS = 4
 
 /** One candidate, merged from every source that knows about it. */
@@ -70,18 +72,16 @@ async function fetchAllSaved(signal?: AbortSignal): Promise<RecipeResponse[]> {
   return out
 }
 
-/** Scan the global list for the caller's own recipes, to a cap. */
-async function fetchMine(userId: string, signal?: AbortSignal): Promise<RecipeResponse[]> {
+/** Every page of the caller's own recipes, to a cap. */
+async function fetchMine(signal?: AbortSignal): Promise<RecipeResponse[]> {
   const out: RecipeResponse[] = []
-  let scanned = 0
   let cursor: string | undefined
-  while (scanned < SCAN_CAP) {
-    const page: RecipeListResponse = await apiFetch<RecipeListResponse>('/recipes', {
-      query: { cursor, limit: SCAN_PAGE },
+  while (out.length < MINE_CAP) {
+    const page: RecipeListResponse = await apiFetch<RecipeListResponse>('/recipes/mine', {
+      query: { cursor, limit: MINE_PAGE },
       signal,
     })
-    scanned += page.items.length
-    out.push(...page.items.filter((r) => r.createdByUserId === userId))
+    out.push(...page.items)
     if (!page.nextCursor) break
     cursor = page.nextCursor
   }
@@ -133,7 +133,9 @@ export interface PickerCorpus {
 }
 
 /**
- * @param userId  the signed-in user, for the own-recipes scan
+ * @param userId  the signed-in user — keys the own-recipes cache so switching
+ *                account never serves the previous user's list. The request
+ *                itself is scoped by the JWT, not by this value.
  * @param enabled fetch only while the picker is actually open
  */
 export function usePickerCorpus(userId: string | undefined, enabled: boolean): PickerCorpus {
@@ -146,7 +148,7 @@ export function usePickerCorpus(userId: string | undefined, enabled: boolean): P
 
   const mine = useQuery({
     queryKey: queryKeys.picker.mine(userId ?? ''),
-    queryFn: ({ signal }) => fetchMine(userId!, signal),
+    queryFn: ({ signal }) => fetchMine(signal),
     enabled: enabled && !!userId,
     staleTime: 5 * 60 * 1000,
   })

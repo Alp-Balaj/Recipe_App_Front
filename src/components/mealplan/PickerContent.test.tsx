@@ -47,6 +47,7 @@ const summary: MealPlanSummary = {
   weekStartDate: WEEK_START,
   createdAt: WEEK_START,
   entryCount: 1,
+  totalMinutes: 45,
 }
 
 /** Harissa already sits on Tuesday — the picker must warn, not hide. */
@@ -74,6 +75,12 @@ function stubEverything() {
   vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
     if (path === '/recipes') {
       return Promise.resolve({ items: [harissa, orzo, ramen], nextCursor: null })
+    }
+    // Must precede the /recipes/{id} branch below — "mine" is a list route, not
+    // an id. The server scopes it to the caller, so this returns only ramen
+    // (the one carrying USER_ID) rather than everything for the client to sift.
+    if (path === '/recipes/mine') {
+      return Promise.resolve({ items: [ramen], nextCursor: null })
     }
     if (path.startsWith('/recipes/')) {
       const id = path.slice('/recipes/'.length)
@@ -223,6 +230,7 @@ describe('the recipe picker', () => {
     })
     vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
       if (path === '/recipes') return Promise.resolve({ items: [], nextCursor: null })
+      if (path === '/recipes/mine') return Promise.resolve({ items: [], nextCursor: null })
       if (path === '/recipes/r-shak') {
         return Promise.resolve(
           makeRecipe({

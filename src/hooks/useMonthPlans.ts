@@ -11,12 +11,11 @@
 // queryKeys.mealPlans.detail(id) with the day page and the board, so a month
 // you've been working in is largely warm already.
 //
-// Deliberately NOT fetched: per-recipe cook times. Totalling a week's time
-// would mean a GET /recipes/{id} for every entry — up to 21 per week, 100+ for
-// a month — and a partial total is worse than none, because it would quietly
-// under-report. The rail carries coverage and repeats (both free from data we
-// already have here) and leaves time to a backend change: MealPlanSummary
-// could carry totalMinutes alongside entryCount for no extra round trip.
+// Cook time rides along on the summary now (backend 849595b): MealPlanSummary
+// carries totalMinutes beside entryCount, summed server-side per entry. That
+// was the change this hook asked for — the alternative was a GET /recipes/{id}
+// per entry, up to 21 a week and 100+ a month, and a partial total would have
+// quietly under-reported. It costs no extra round trip here.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useMemo } from 'react'
@@ -37,6 +36,8 @@ export interface WeekSummary {
   weekStart: string
   planId?: string
   entryCount: number
+  /** Prep + cook across the week, from the summary. 0 when the week has no plan. */
+  totalMinutes: number
   entries: MealPlanEntry[]
   /** Titles planned REPEAT_THRESHOLD+ times this week, most repeated first. */
   repeats: { title: string; count: number }[]
@@ -117,6 +118,7 @@ export function useMonthPlans(weekStarts: string[]) {
         weekStart,
         planId: summary?.id,
         entryCount: summary?.entryCount ?? 0,
+        totalMinutes: summary?.totalMinutes ?? 0,
         entries,
         repeats,
       })
