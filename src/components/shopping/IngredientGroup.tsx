@@ -20,7 +20,7 @@
 //    contributes two parts) and the week board's insight strip wants it.
 //
 // Presentational — what a tick or a × MEANS belongs to the page, same rule as
-// MealCard/SlotCell. In particular the page, not this component, decides that a
+// MealCard/MealPanel. In particular the page, not this component, decides that a
 // Derived row is suppressed and a Manual row is deleted.
 // ─────────────────────────────────────────────────────────────────────────
 

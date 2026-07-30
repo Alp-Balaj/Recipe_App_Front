@@ -1,16 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────
 // One meal on the day page (meal-plan redesign, day-page PR).
 //
-// The board's SlotCell is a grid cell 21 of which share a screen; this is one
-// of three on a page of its own, so it carries what the board deliberately
-// omits — servings, ingredient count, a way into the recipe.
+// The week board's meal chip is one of 21 sharing a screen; this is one of three
+// on a page of its own, so it carries what the board deliberately omits —
+// servings, ingredient count, a way into the recipe.
 //
 // Meal temperature (--meal-b / -l / -d) arrives as a 5px band rather than a
 // background wash: at this size a full tint would compete with the food
 // photograph, which is the one thing on the card worth looking at.
 //
 // Presentational — every decision about what an action means belongs to the
-// page, same rule as SlotCell.
+// page, same rule as the week board's row and panel.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CSSProperties } from 'react'

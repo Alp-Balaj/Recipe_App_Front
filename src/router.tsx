@@ -11,7 +11,7 @@ import RecipeFormPage from './pages/RecipeFormPage'
 import MyRecipesPage from './pages/MyRecipesPage'
 import RecipeDetailPage from './pages/RecipeDetailPage'
 import UserProfilePage from './pages/UserProfilePage'
-import MealPlanPage from './pages/MealPlanPage'
+import MealPlanWeekPage from './pages/MealPlanWeekPage'
 import MealPlanMonthPage from './pages/MealPlanMonthPage'
 import MealPlanDayPage from './pages/MealPlanDayPage'
 import ShoppingListPage from './pages/ShoppingListPage'
@@ -53,7 +53,10 @@ export const routes: RouteObject[] = [
           // can now show ANY week, which is the bug this rehoming fixes.
           // Segment counts differ, so none of these three can shadow another.
           { path: '/plan', element: <MealPlanMonthPage /> },
-          { path: '/plan/week/:start', element: <MealPlanPage /> },
+          // week/shopping rework (2026-07-29 design), Task 8 — ELEMENT ONLY: the
+          // days-as-rows board replaces the old 7×3 editor at the same path. No
+          // route added, removed or reordered.
+          { path: '/plan/week/:start', element: <MealPlanWeekPage /> },
           { path: '/plan/:date', element: <MealPlanDayPage /> },
           { path: '/shopping-list', element: <ShoppingListPage /> },
           { path: '/profile', element: <ProfilePage /> },

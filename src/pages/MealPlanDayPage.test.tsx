@@ -9,7 +9,7 @@ import type { RecipeResponse } from '@/api/types'
 
 // The day page resolves week → plan → entries, then fetches each planned
 // recipe in full for its ingredients. Plan calls are stubbed on the api module
-// (the idiom MealPlanPage.test.tsx uses); the recipe details go through
+// (the idiom the retired week-board test used); the recipe details go through
 // apiFetch, so that is stubbed once and routed by path.
 
 const WEEK_START = '2026-07-27T00:00:00.000Z' // the Monday of Wed 29 July 2026
