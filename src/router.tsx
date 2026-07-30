@@ -16,6 +16,7 @@ import MealPlanMonthPage from './pages/MealPlanMonthPage'
 import MealPlanDayPage from './pages/MealPlanDayPage'
 import ShoppingListPage from './pages/ShoppingListPage'
 import AdminPage from './pages/AdminPage'
+import NotificationsPage from './pages/NotificationsPage'
 
 /**
  * The ONE route-registration file (frozen after checkpoint 01).
@@ -71,6 +72,12 @@ export const routes: RouteObject[] = [
           // the additive routes above. Role-gated INSIDE AdminPage (non-admins
           // get a full-page denial); the server enforces the real boundary.
           { path: '/admin', element: <AdminPage /> },
+          // open-loops slice 3 — SANCTIONED ADDITIVE route registration, same
+          // discipline as the social-feed, chat-ai and meal-planning additive
+          // routes above. Deliberately NOT in navItems.ts: six tabs is already
+          // as many as the mobile bottom bar holds, so notifications are reached
+          // through the bell in the shell chrome instead of a seventh tab.
+          { path: '/notifications', element: <NotificationsPage /> },
           { path: '/profile', element: <ProfilePage /> },
           { path: '/recipes/new', element: <RecipeFormPage /> },
           { path: '/recipes/mine', element: <MyRecipesPage /> },

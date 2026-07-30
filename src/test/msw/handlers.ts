@@ -130,4 +130,15 @@ export const handlers = [
   // so every earlier test behaves byte-identically; fallback-specific tests
   // override with a 200 RecipeSocialResponse via `server.use(...)`. ──
   http.get('*/recipes/:id/social', () => new HttpResponse(null, { status: 404 })),
+
+  // ── open-loops slice 3 defaults (ADDITIVE, 2026-07-30) ──
+  // The bell mounts in the shell chrome for every signed-in test, so it polls
+  // the unread count on every authenticated render. Default to zero so the
+  // badge is absent unless a test opts in — otherwise each of the 300+ existing
+  // tests would fire an unhandled request that falls through to the real
+  // network. Notification-specific tests override with `server.use(...)`.
+  http.get('*/notifications/unread-count', () => HttpResponse.json({ unreadCount: 0 })),
+  http.get('*/notifications', () =>
+    HttpResponse.json({ items: [], nextCursor: null, unreadCount: 0 }),
+  ),
 ]

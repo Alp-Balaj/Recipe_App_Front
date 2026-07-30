@@ -169,4 +169,19 @@ export const queryKeys = {
     /** GET /admin/audit — the append-only action log, newest first. */
     audit: () => ['admin', 'audit'] as const,
   },
+
+  // open-loops slice 3 — SANCTIONED ADDITIVE EDIT to this frozen module, same rationale
+  // as the blocks above. Nothing already here changed.
+  //
+  // `unread` is deliberately its own key rather than being derived from `list`: the bell
+  // polls the count on an interval and must not drag a page of rows along with it, and
+  // the page must not be refetched every poll just because the bell is mounted.
+  notifications: {
+    /** Everything notification-related — the invalidation prefix after marking read. */
+    all: ['notifications'] as const,
+    /** The keyset-paged list. */
+    list: () => ['notifications', 'list'] as const,
+    /** Just the badge count. */
+    unread: () => ['notifications', 'unread'] as const,
+  },
 } as const

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import { requiresAuth, useAuthGate } from '@/auth/AuthGateContext'
 import Avatar from '@/components/Avatar'
+import NotificationBell from '@/components/NotificationBell'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { cookingRankMeta } from '@/lib/cookingRank'
 import { MoonIcon, PlusIcon, SunIcon } from './navIcons'
@@ -254,6 +255,11 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
               <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)' }}>View profile</span>
             </span>
           </button>
+          {/* open-loops slice 3: the bell sits with the avatar and the theme
+              toggle because it is chrome, not navigation — navItems.ts stays a
+              six-tab list. Signed-in branch only: notifications are
+              account-only, so a guest has nothing to poll. */}
+          <NotificationBell size={18} />
           <button
             onClick={onToggleMode}
             title={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
