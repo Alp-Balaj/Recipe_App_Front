@@ -24,7 +24,14 @@
 //
 // NO COLD START. An unplanned week is seven empty rows and nothing to press: a
 // plan comes into existence when a MEAL is planned, which is the rule the day
-// page already established. The only write on this surface is Remove.
+// page already established.
+//
+// WRITES (amended by stream C, AI meal-plan generation): Remove, plus accepting
+// slots from an AI-proposed week (PlanWeekAssistant). The proposal is
+// deliberately NOT the old editor vocabulary this header banished — the server
+// writes nothing when proposing, only open slots are ever proposed, and each
+// accepted slot goes through the same POST the day page uses. Judgment stays
+// the surface's job; the assistant just fills the empty rows being judged.
 // ─────────────────────────────────────────────────────────────────────────
 
 import {
@@ -49,6 +56,7 @@ import { dinnerRepeats, weekJudgment } from '@/lib/weekJudgment'
 import Modal from '@/components/ui/Modal'
 import StateBlock from '@/components/ui/StateBlock'
 import MealPanel from '@/components/mealplan/MealPanel'
+import PlanWeekAssistant from '@/components/mealplan/PlanWeekAssistant'
 import WeekDayRow from '@/components/mealplan/WeekDayRow'
 import WeekSummary from '@/components/mealplan/WeekSummary'
 
@@ -178,6 +186,7 @@ export default function MealPlanWeekPage() {
       {!isLoading && !error && !detail.isLoading && !detail.error && (
         <>
           <WeekNote counted={counted.length} planned={planned.length} />
+          <PlanWeekAssistant weekStart={weekStart} entries={entries} />
           {rows}
           <WeekSummary
             insight={insight.data}
