@@ -20,6 +20,7 @@ import type { CreateRecipeRequest, RecipeResponse } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
 import { resolveImageUrl } from '@/lib/images'
 import TextField from '@/components/ui/TextField'
+import { IngredientNameField } from '@/components/recipes/IngredientNameField'
 
 // ── Schema (mirrors the backend CreateRecipeRequestValidator) ───────────────
 
@@ -661,11 +662,11 @@ export function RecipeForm({
               />
             </div>
             <div style={{ flex: 1 }}>
-              <TextField
+              <IngredientNameField
                 label={idx === 0 ? 'Name' : ''}
                 aria-label={`Ingredient ${idx + 1} name`}
                 error={errors.ingredients?.[idx]?.name?.message}
-                {...register(`ingredients.${idx}.name` as const)}
+                registration={register(`ingredients.${idx}.name` as const)}
               />
             </div>
             <button
