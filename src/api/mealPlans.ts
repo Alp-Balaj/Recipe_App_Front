@@ -169,6 +169,37 @@ export function removeMealPlanEntry(planId: string, entryId: string): Promise<vo
   return apiFetch<void>(`/meal-plans/${planId}/entries/${entryId}`, { method: 'DELETE' })
 }
 
+// ── AI week proposal (stream C, D2 = propose-then-accept) ───────────────────
+
+/** One proposed (day, meal) assignment. Same recipe summary shape as a planned entry. */
+export interface ProposedSlot {
+  dayOfWeek: DayName
+  mealType: MealTypeName
+  recipe: MealPlanEntryRecipeSummary
+}
+
+/**
+ * The assistant's proposal for a week. READ-ONLY on the server: nothing is
+ * written until the user accepts slots, and each accepted slot goes through the
+ * ordinary POST /meal-plans/{id}/entries — which is why collisions surface as
+ * per-slot 409s here in the client, never inside the proposal. Slots covers only
+ * OPEN (day, meal) positions; existing entries are never proposed over. Empty is
+ * a valid proposal: a full week, or nothing to ground on.
+ */
+export interface WeekProposal {
+  weekStartDate: string
+  slots: ProposedSlot[]
+}
+
+/**
+ * POST /meal-plans/propose-week → 200. Costs a real LLM call (rides the chat
+ * rate lane); a 502 means the assistant failed and nothing was changed — safe
+ * to retry. 400 on a weekStartDate that isn't a UTC-midnight Monday.
+ */
+export function proposeWeek(weekStartDate: string): Promise<WeekProposal> {
+  return apiFetch<WeekProposal>('/meal-plans/propose-week', { method: 'POST', body: { weekStartDate } })
+}
+
 // ── Grocery insight ─────────────────────────────────────────────────────────
 
 /**
