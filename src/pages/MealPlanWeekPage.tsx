@@ -184,9 +184,22 @@ export default function MealPlanWeekPage() {
       )}
 
       {!isLoading && !error && !detail.isLoading && !detail.error && (
+        <WeekNote counted={counted.length} planned={planned.length} />
+      )}
+      {/* MOUNTED (not conditionally rendered) across the detail swap: accepting
+          a proposal on an unplanned week creates the plan, which flips planId
+          and puts the detail query back into isLoading — and unmounting the
+          assistant there would throw away the outcome it is about to report.
+          It hides itself via `hidden` instead, which preserves its state. */}
+      {!isLoading && !error && (
+        <PlanWeekAssistant
+          weekStart={weekStart}
+          entries={entries}
+          hidden={detail.isLoading || Boolean(detail.error)}
+        />
+      )}
+      {!isLoading && !error && !detail.isLoading && !detail.error && (
         <>
-          <WeekNote counted={counted.length} planned={planned.length} />
-          <PlanWeekAssistant weekStart={weekStart} entries={entries} />
           {rows}
           <WeekSummary
             insight={insight.data}

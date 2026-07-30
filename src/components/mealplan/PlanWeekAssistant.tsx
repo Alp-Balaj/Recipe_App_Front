@@ -57,9 +57,18 @@ interface ApplyOutcome {
 export default function PlanWeekAssistant({
   weekStart,
   entries,
+  hidden = false,
 }: {
   weekStart: string
   entries: MealPlanEntry[]
+  /**
+   * Render nothing while staying MOUNTED. The page keeps this component at a
+   * stable position across the detail query's loading swap because accepting a
+   * proposal on an unplanned week creates the plan, which flips planId and
+   * refetches the detail — and an unmount there would throw away the outcome
+   * banner the user is owed (caught live: "Added 20 meals" never appeared).
+   */
+  hidden?: boolean
 }) {
   const queryClient = useQueryClient()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -155,25 +164,32 @@ export default function PlanWeekAssistant({
     if (!apply.isPending) setProposal(null)
   }
 
-  // A full week has nothing to propose into; the card would be a dead button.
-  if (openSlotCount <= 0) return null
+  if (hidden) return null
+
+  // A full week has nothing to propose into; the card would be a dead button —
+  // but it still hosts the outcome banner when the accept is what filled it.
+  if (openSlotCount <= 0 && !outcome) return null
 
   return (
     <div style={cardStyle}>
       <span style={labelStyle}>Plan my week</span>
-      <p style={lineStyle}>
-        Let the assistant propose meals for your {openSlotCount} open{' '}
-        {openSlotCount === 1 ? 'slot' : 'slots'} — nothing is added until you accept.
-      </p>
+      {openSlotCount > 0 && (
+        <p style={lineStyle}>
+          Let the assistant propose meals for your {openSlotCount} open{' '}
+          {openSlotCount === 1 ? 'slot' : 'slots'} — nothing is added until you accept.
+        </p>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          style={proposeButton}
-          disabled={propose.isPending}
-          onClick={() => propose.mutate()}
-        >
-          {propose.isPending ? 'Planning your week…' : 'Propose a week'}
-        </button>
+        {openSlotCount > 0 && (
+          <button
+            type="button"
+            style={proposeButton}
+            disabled={propose.isPending}
+            onClick={() => propose.mutate()}
+          >
+            {propose.isPending ? 'Planning your week…' : 'Propose a week'}
+          </button>
+        )}
         {propose.isError && (
           <span role="status" style={errorText}>
             The assistant couldn't propose a week just now — nothing was changed. Try again.

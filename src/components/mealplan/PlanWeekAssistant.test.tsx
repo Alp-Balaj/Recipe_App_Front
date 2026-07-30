@@ -159,6 +159,10 @@ describe('the week-proposal flow', () => {
 
     await waitFor(() => expect(recorded.entryBodies).toHaveLength(2))
     expect(recorded.createdPlans).toEqual([{ weekStartDate: WEEK_START }])
+    // Regression (caught in the live browser pass): creating the plan flips
+    // planId and reloads the detail query, and the page used to unmount the
+    // assistant during that swap — losing the outcome before it ever rendered.
+    expect(await screen.findByText(/added 2 meals/i)).toBeInTheDocument()
   })
 
   it('a slot taken since proposing is reported as skipped while the rest still land', async () => {
