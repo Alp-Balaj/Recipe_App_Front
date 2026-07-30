@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderRoute } from '@/test/utils'
@@ -109,8 +109,24 @@ function stubRecipeDetails() {
   }) as unknown as typeof client.apiFetch)
 }
 
+// ── Pinned clock ──────────────────────────────────────────────────────────
+// Found while running the gate for the week/shopping rework (Tasks 5+6), on an
+// otherwise UNCHANGED tree: every case below hard-codes Wed 29 July 2026 as
+// "today", and the day page refuses additions on a PAST day (MealCard's isPast
+// branch renders "No dinner recorded" and no Add button). The moment real UTC time
+// passed that date these tests started failing for nothing the code did. Pin
+// "now" to the fixture's day so the suite stops depending on when it is run.
+const NOW = new Date('2026-07-29T12:00:00.000Z')
+
+function resetPerTest() {
+  vi.restoreAllMocks()
+  vi.setSystemTime(NOW)
+}
+
+afterAll(() => vi.useRealTimers())
+
 describe('the day page', () => {
-  beforeEach(() => vi.restoreAllMocks())
+  beforeEach(resetPerTest)
 
   it('rejects a malformed date instead of rendering a day', async () => {
     renderRoute('/plan/not-a-date')
@@ -337,7 +353,7 @@ function stubDetails(recipes: RecipeResponse[]) {
 }
 
 describe('the day totals strip', () => {
-  beforeEach(() => vi.restoreAllMocks())
+  beforeEach(resetPerTest)
 
   it('adds up calories and kitchen time when every meal has a figure', async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
@@ -387,7 +403,7 @@ describe('the day totals strip', () => {
 })
 
 describe('repeat tomorrow', () => {
-  beforeEach(() => vi.restoreAllMocks())
+  beforeEach(resetPerTest)
 
   it("puts the same dish in tomorrow's matching slot", async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
