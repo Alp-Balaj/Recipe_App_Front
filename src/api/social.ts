@@ -52,6 +52,14 @@ export interface FeedItemResponse {
   commentCount: number
   likedByMe: boolean
   savedByMe: boolean
+  // open-loops slice 1. averageRating is null when NOBODY has rated — not 0,
+  // which would render as a one-star recipe. ratingCount is the honest probe for
+  // "has anyone rated": 0 means no, and it is never null on the wire.
+  // myRating is null when the caller has not rated (or is a guest).
+  averageRating?: number | null
+  ratingCount: number
+  cookedByMe: boolean
+  myRating?: number | null
 }
 
 /**
@@ -102,6 +110,47 @@ export function unsaveRecipe(recipeId: string): Promise<void> {
   return apiFetch<void>(`/recipes/${recipeId}/saves`, { method: 'DELETE' })
 }
 
+// ── open-loops slice 1: cooked + rated ──────────────────────────────────────
+
+/**
+ * The caller's own cooked/rated row. Unlike the like/save toggles these
+ * endpoints answer 200 with a body rather than 204: the SPA needs the new
+ * timesCooked to render "cooked 3 times" and the rating control has to show
+ * what it just committed, neither of which is derivable from a 204.
+ */
+export interface CookedRecipeResponse {
+  recipeId: string
+  timesCooked: number
+  rating?: number | null
+  lastCookedAt?: string | null
+}
+
+/** POST /recipes/{id}/cooked → 200. Increments; never creates a second row. */
+export function markCooked(recipeId: string): Promise<CookedRecipeResponse> {
+  return apiFetch<CookedRecipeResponse>(`/recipes/${recipeId}/cooked`, { method: 'POST' })
+}
+
+/**
+ * PUT /recipes/{id}/rating → 200. Rating must be 1-5 (400 otherwise). Creates
+ * the row if the caller never logged a cook — you can rate something you made
+ * before this existed.
+ */
+export function rateRecipe(recipeId: string, rating: number): Promise<CookedRecipeResponse> {
+  return apiFetch<CookedRecipeResponse>(`/recipes/${recipeId}/rating`, {
+    method: 'PUT',
+    body: { rating },
+  })
+}
+
+/** DELETE /recipes/{id}/cooked → 200 (idempotent). Drops cooks AND rating. */
+export function clearCooked(recipeId: string): Promise<CookedRecipeResponse> {
+  return apiFetch<CookedRecipeResponse>(`/recipes/${recipeId}/cooked`, { method: 'DELETE' })
+}
+
+/** Backend RatingRequestValidator: InclusiveBetween(1, 5). */
+export const RATING_MIN = 1
+export const RATING_MAX = 5
+
 // ── F1: per-recipe social envelope ──────────────────────────────────────────
 
 /**
@@ -137,6 +186,10 @@ export interface CommentResponse {
   authorId: string
   authorUsername: string
   recipeId: string
+  // open-loops slice 1. Live-counted per read like every other social count;
+  // likedByMe is always false for a guest.
+  likeCount: number
+  likedByMe: boolean
 }
 
 /** GET /recipes/{id}/comments → 200 body (CreatedAt DESC keyset). */
@@ -179,6 +232,16 @@ export function updateComment(commentId: string, content: string): Promise<Comme
 /** DELETE /comments/{id} → 204 (comment author OR recipe author — decision I6). */
 export function deleteComment(commentId: string): Promise<void> {
   return apiFetch<void>(`/comments/${commentId}`, { method: 'DELETE' })
+}
+
+/** POST /comments/{id}/likes → 204 (idempotent). Awards the COMMENT's author. */
+export function likeComment(commentId: string): Promise<void> {
+  return apiFetch<void>(`/comments/${commentId}/likes`, { method: 'POST' })
+}
+
+/** DELETE /comments/{id}/likes → 204 (idempotent, unliking nothing is fine). */
+export function unlikeComment(commentId: string): Promise<void> {
+  return apiFetch<void>(`/comments/${commentId}/likes`, { method: 'DELETE' })
 }
 
 // ── cp06: follow graph + profiles ───────────────────────────────────────────

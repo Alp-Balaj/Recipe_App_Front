@@ -49,7 +49,7 @@ export function CommentsPanel({ recipeId, recipeAuthorId }: CommentsPanelProps) 
   const myId = user?.userId
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useComments(recipeId)
-  const { addComment, updateComment, deleteComment } = useSocialMutations()
+  const { addComment, updateComment, deleteComment, toggleCommentLike } = useSocialMutations()
 
   const [draft, setDraft] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -170,6 +170,17 @@ export function CommentsPanel({ recipeId, recipeAuthorId }: CommentsPanelProps) 
               }}
               savePending={updateComment.isPending}
               onDelete={() => remove(c.id)}
+              onToggleLike={() => {
+                // Same gate as every other write on a guest-readable surface:
+                // guests may read comments, so the modal opens here rather than
+                // the tap silently failing.
+                if (!requireAuth()) return
+                setError(null)
+                toggleCommentLike.mutate(
+                  { commentId: c.id, recipeId, next: !c.likedByMe },
+                  { onError: (err) => setError(commentErrorMessage(err)) },
+                )
+              }}
             />
           ))}
 
@@ -228,6 +239,7 @@ function CommentRow({
   onSaveEdit,
   savePending,
   onDelete,
+  onToggleLike,
 }: {
   comment: CommentResponse
   isOwn: boolean
@@ -238,6 +250,7 @@ function CommentRow({
   onSaveEdit: (content: string) => void
   savePending: boolean
   onDelete: () => void
+  onToggleLike: () => void
 }) {
   const [editDraft, setEditDraft] = useState(comment.content)
 
@@ -286,31 +299,48 @@ function CommentRow({
             <div style={{ fontSize: 13.5, lineHeight: 1.5, marginTop: 2, overflowWrap: 'anywhere' }}>
               {comment.content}
             </div>
-            {(isOwn || canDelete) && (
-              <div style={{ display: 'flex', gap: 12, marginTop: 3 }}>
-                {isOwn && (
-                  <button
-                    onClick={() => {
-                      setEditDraft(comment.content)
-                      onStartEdit()
-                    }}
-                    aria-label={`Edit comment by ${comment.authorUsername}`}
-                    style={rowActionBtn}
-                  >
-                    Edit
-                  </button>
-                )}
-                {canDelete && (
-                  <button
-                    onClick={onDelete}
-                    aria-label={`Delete comment by ${comment.authorUsername}`}
-                    style={rowActionBtn}
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-            )}
+            <div style={{ display: 'flex', gap: 12, marginTop: 3, alignItems: 'center' }}>
+              {/* Liking a comment is open to everyone who can see it, so this
+                  row is no longer gated on isOwn/canDelete. */}
+              <button
+                onClick={onToggleLike}
+                aria-pressed={comment.likedByMe}
+                aria-label={
+                  comment.likedByMe
+                    ? `Unlike comment by ${comment.authorUsername}`
+                    : `Like comment by ${comment.authorUsername}`
+                }
+                style={{
+                  ...rowActionBtn,
+                  color: comment.likedByMe ? 'var(--accent)' : 'var(--muted)',
+                  fontWeight: comment.likedByMe ? 800 : 700,
+                }}
+              >
+                {comment.likedByMe ? '♥' : '♡'}
+                {comment.likeCount > 0 ? ` ${comment.likeCount}` : ''}
+              </button>
+              {isOwn && (
+                <button
+                  onClick={() => {
+                    setEditDraft(comment.content)
+                    onStartEdit()
+                  }}
+                  aria-label={`Edit comment by ${comment.authorUsername}`}
+                  style={rowActionBtn}
+                >
+                  Edit
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  onClick={onDelete}
+                  aria-label={`Delete comment by ${comment.authorUsername}`}
+                  style={rowActionBtn}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>

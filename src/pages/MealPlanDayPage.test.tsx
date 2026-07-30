@@ -492,3 +492,102 @@ describe('repeat tomorrow', () => {
     expect(await screen.findByText(/tomorrow's breakfast is already planned/i)).toBeInTheDocument()
   })
 })
+
+// ── "I cooked this" (open-loops slice 1) ──────────────────────────────────
+// The clock is pinned to Wed 29 July 2026, so /plan/2026-07-29 is TODAY and
+// /plan/2026-07-31 is the future.
+
+describe('logging a cook from the day page', () => {
+  beforeEach(resetPerTest)
+
+  /** stubDetails, plus the cooked write routed by path. */
+  function stubWithCooked(onCooked: (path: string) => unknown) {
+    vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
+      if (path === '/recipes') {
+        return Promise.resolve({ items: [shakshuka, cornSalad], nextCursor: null })
+      }
+      if (path.endsWith('/cooked')) return Promise.resolve(onCooked(path))
+      const hit = [shakshuka, cornSalad].find((recipe) => path === `/recipes/${recipe.id}`)
+      return Promise.resolve(hit ?? undefined)
+    }) as unknown as typeof client.apiFetch)
+  }
+
+  it('logs the cook and reports the running count', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
+    const paths: string[] = []
+    stubWithCooked((path) => {
+      paths.push(path)
+      return { recipeId: 'recipe-shakshuka', timesCooked: 3, rating: null }
+    })
+
+    renderRoute('/plan/2026-07-29')
+
+    await userEvent.click(await screen.findByRole('button', { name: /mark shakshuka as cooked/i }))
+
+    expect(await screen.findByText(/you've cooked Shakshuka 3 times/i)).toBeInTheDocument()
+    expect(paths).toEqual(['/recipes/recipe-shakshuka/cooked'])
+  })
+
+  it('phrases the first cook as a first', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
+    stubWithCooked(() => ({ recipeId: 'recipe-shakshuka', timesCooked: 1, rating: null }))
+
+    renderRoute('/plan/2026-07-29')
+
+    await userEvent.click(await screen.findByRole('button', { name: /mark shakshuka as cooked/i }))
+
+    expect(await screen.findByText(/logged your first Shakshuka/i)).toBeInTheDocument()
+  })
+
+  it('is not offered on a future day — you have not cooked it yet', async () => {
+    const futurePlan: MealPlan = {
+      ...plan,
+      entries: [
+        {
+          id: 'entry-friday',
+          dayOfWeek: 'Friday',
+          mealType: 'Dinner',
+          recipe: { id: 'recipe-corn', title: 'Charred corn salad', imageUrl: null, totalTimeMinutes: 30 },
+        },
+      ],
+    }
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(futurePlan)
+    stubDetails([shakshuka, cornSalad])
+
+    renderRoute('/plan/2026-07-31')
+
+    // The dish is in Friday's dinner slot. Scoped, because the title also
+    // appears in the day's ingredient list — an unscoped query matches twice —
+    // and re-queried inside waitFor, because filling the slot swaps the node.
+    await waitFor(() => {
+      const dinner = screen.getByTestId('day-slot-Dinner')
+      expect(within(dinner).getByText('Charred corn salad')).toBeInTheDocument()
+    })
+    // …but the cook log is not offered for it, while Swap still is.
+    const dinner = screen.getByTestId('day-slot-Dinner')
+    expect(within(dinner).getByRole('button', { name: /swap/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /as cooked/i })).not.toBeInTheDocument()
+  })
+
+  it('surfaces a failed log instead of pretending it worked', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
+    vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
+      if (path === '/recipes') {
+        return Promise.resolve({ items: [shakshuka, cornSalad], nextCursor: null })
+      }
+      if (path.endsWith('/cooked')) return Promise.reject(new Error('nope'))
+      const hit = [shakshuka, cornSalad].find((recipe) => path === `/recipes/${recipe.id}`)
+      return Promise.resolve(hit ?? undefined)
+    }) as unknown as typeof client.apiFetch)
+
+    renderRoute('/plan/2026-07-29')
+
+    await userEvent.click(await screen.findByRole('button', { name: /mark shakshuka as cooked/i }))
+
+    expect(await screen.findByText(/couldn't log that/i)).toBeInTheDocument()
+  })
+})

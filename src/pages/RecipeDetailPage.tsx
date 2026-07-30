@@ -33,7 +33,7 @@ export default function RecipeDetailPage() {
   // GET /recipes/{id}/social to seed real counts + flags; 404 degrades to
   // the old hidden-counts rendering.
   const envelope = useSocialEnvelope(id ?? '', undefined, { fetchFallback: true })
-  const { toggleLike, toggleSave } = useSocialMutations()
+  const { toggleLike, toggleSave, setRating } = useSocialMutations()
   const { requireAuth } = useAuthGate()
 
   const close = () => {
@@ -248,6 +248,26 @@ export default function RecipeDetailPage() {
             </>
           )}
 
+          {/* Rating — open-loops slice 1. Sits directly above Comments because
+              it is the other "how did it go" affordance, and because by the
+              time you have scrolled past the steps you have an opinion. */}
+          <SectionLabel>
+            Rating
+            {envelope.ratingCount !== null && envelope.ratingCount > 0
+              ? ` (${envelope.ratingCount})`
+              : ''}
+          </SectionLabel>
+          <RatingRow
+            average={envelope.averageRating}
+            count={envelope.ratingCount}
+            mine={envelope.myRating}
+            pending={setRating.isPending}
+            onRate={(value) => {
+              if (!requireAuth()) return
+              setRating.mutate({ recipeId: recipe.id, rating: value })
+            }}
+          />
+
           {/* Comments — cp06: the inline testimonial-row panel (both widths;
               the feed card is where the mobile bottom sheet lives). */}
           <SectionLabel>
@@ -280,6 +300,68 @@ export default function RecipeDetailPage() {
       )}
 
       {cooking && <CookMode recipe={recipe} onExit={() => setCooking(false)} />}
+    </div>
+  )
+}
+
+/**
+ * Read the room's rating, set your own. Tapping the star you already gave
+ * retracts it (the backend drops the row), which is the only undo there is —
+ * so the label says so rather than leaving people stuck at a mis-tap.
+ *
+ * `average`/`count` null means "not known on this surface", which renders the
+ * same as "nobody has rated": no number. That collision is deliberate and is
+ * documented in useSocialEnvelope.
+ */
+function RatingRow({
+  average,
+  count,
+  mine,
+  pending,
+  onRate,
+}: {
+  average: number | null
+  count: number | null
+  mine: number | null
+  pending: boolean
+  onRate: (value: number | null) => void
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 2 }} role="group" aria-label="Rate this recipe">
+        {[1, 2, 3, 4, 5].map((star) => {
+          const filled = mine !== null && star <= mine
+          return (
+            <button
+              key={star}
+              onClick={() => onRate(mine === star ? null : star)}
+              disabled={pending}
+              aria-pressed={filled}
+              aria-label={
+                mine === star ? `Remove your ${star}-star rating` : `Rate ${star} out of 5`
+              }
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '2px 3px',
+                fontSize: 22,
+                lineHeight: 1,
+                cursor: pending ? 'default' : 'pointer',
+                color: filled ? 'var(--accent)' : 'var(--muted)',
+                opacity: pending ? 0.6 : 1,
+              }}
+            >
+              {filled ? '★' : '☆'}
+            </button>
+          )
+        })}
+      </div>
+      <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+        {average !== null && count
+          ? `${average.toFixed(1)} from ${count} ${count === 1 ? 'rating' : 'ratings'}`
+          : 'No ratings yet'}
+        {mine !== null ? ' · tap your star again to undo' : ''}
+      </span>
     </div>
   )
 }

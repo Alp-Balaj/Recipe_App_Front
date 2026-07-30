@@ -10,7 +10,7 @@
 // PascalCase property paths back onto the camelCase form fields.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useForm, useFieldArray, type UseFormSetError } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -366,6 +366,12 @@ export interface RecipeFormProps {
    * onto the fields.
    */
   onError?: (err: unknown) => boolean | void
+  /**
+   * The caller's account-level default visibility, applied to a still-untouched
+   * form once it loads. CREATE MODE ONLY — the edit overlay must never override
+   * a saved recipe's own visibility with an account preference.
+   */
+  applyDefaultVisibility?: RecipeFormValues['visibility']
 }
 
 export function RecipeForm({
@@ -377,6 +383,7 @@ export function RecipeForm({
   onCancel,
   errorFallback = 'Something went wrong saving your recipe. Please try again.',
   onError,
+  applyDefaultVisibility,
 }: RecipeFormProps) {
   const {
     register,
@@ -385,8 +392,19 @@ export function RecipeForm({
     setError,
     setValue,
     watch,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<RecipeFormValues>({ resolver: zodResolver(recipeFormSchema), defaultValues })
+
+  // The caller's "default visibility" account setting arrives asynchronously
+  // (it lives on the profile), so it can land after the form has mounted.
+  // Apply it only while the form is still untouched: remounting the form or
+  // resetting a dirty one would throw away whatever the user had already typed
+  // — a far worse bug than the wrong default. Create mode only; the edit page
+  // never passes this, because a saved recipe's own visibility is the truth.
+  useEffect(() => {
+    if (!applyDefaultVisibility || isDirty) return
+    setValue('visibility', applyDefaultVisibility)
+  }, [applyDefaultVisibility, isDirty, setValue])
 
   const ingredients = useFieldArray({ control, name: 'ingredients' })
   const steps = useFieldArray({ control, name: 'steps' })
