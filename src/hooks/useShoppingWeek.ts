@@ -88,6 +88,26 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
   const queryClient = useQueryClient()
   const listKey = queryKeys.shopping.week(weekStart, scope)
 
+  /**
+   * Mark the OTHER scope's projection stale, and deliberately NOT this one.
+   *
+   * Both scopes show the same groups, so a tick under 'Week' leaves the cached
+   * 'All' projection wrong — and with a 30s staleTime (src/main.tsx) switching
+   * scope within half a minute would show the row unticked again. Invalidating
+   * the sibling fixes that for free: it is not mounted, so `invalidateQueries`
+   * only flags it and the refetch happens when you switch to it.
+   *
+   * The current scope is left alone on purpose. Its cache is already correct
+   * (the optimistic patch put it there), and refetching the list you are reading
+   * on every single tick is the one thing this surface must not do — you are
+   * standing in a shop on a phone signal.
+   */
+  const invalidateSiblingScope = () =>
+    void queryClient.invalidateQueries({
+      predicate: (query) =>
+        query.queryKey[0] === 'shopping' && query.queryKey[1] === 'week' && query.queryKey[3] !== scope,
+    })
+
   /** cancel-in-flight → snapshot → optimistic patch, shared by both mark writes. */
   const beginOptimistic = async (edit: (cache: ShoppingList | undefined) => ShoppingList | undefined) => {
     await queryClient.cancelQueries({ queryKey: listKey })
@@ -112,6 +132,7 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
         })),
       ),
     onError: rollback,
+    onSettled: invalidateSiblingScope,
   })
 
   /**
@@ -129,6 +150,7 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
         })),
       ),
     onError: rollback,
+    onSettled: invalidateSiblingScope,
   })
 
   /** Add a row of your own to a week. Invalidates — the server assigns the group key. */

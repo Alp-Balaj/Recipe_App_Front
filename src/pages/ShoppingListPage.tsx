@@ -29,7 +29,7 @@
 // The page reads `origin` to choose — never the key's shape.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { weekStartOf } from '@/api/mealPlans'
 import type { ShoppingGroup, ShoppingScope, ShoppingWeek } from '@/api/shopping'
 import { useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
@@ -62,7 +62,13 @@ export default function ShoppingListPage() {
   // This route has no week parameter, so "this week" means the current one. It is
   // also the week a manual row goes to under either scope: under 'All' there is no
   // single scoped week, and the week you are shopping for is this one.
-  const currentWeek = useMemo(() => weekStartOf(new Date()), [])
+  //
+  // Deliberately NOT memoised on []. Pinning it at mount means a session left open
+  // across Monday 00:00 UTC keeps asking for last week and files manual adds into
+  // it — the same time-coupling that quietly broke the day-page tests. The call is
+  // cheap and returns a stable string, so the query key still only changes when the
+  // week actually does; no timer or interval is needed to notice.
+  const currentWeek = weekStartOf(new Date())
   // scope 'All' IGNORES weekStart server-side, and the cache key says so by
   // holding null — the two scopes are genuinely different projections.
   const scopedWeek = scope === 'Week' ? currentWeek : null
@@ -122,7 +128,12 @@ export default function ShoppingListPage() {
           ))}
         </div>
         {total > 0 && (
-          <span style={progress} aria-label="Bought so far">
+          // No aria-label here: on a generic role it is ARIA-prohibited, and where
+          // it IS honoured it REPLACES the text — costing a screen-reader user the
+          // number, which is the whole content. A visually-hidden prefix adds the
+          // context instead, so this announces "Bought 1 of 3".
+          <span style={progress}>
+            <span style={srOnly}>Bought </span>
             {purchased} of {total}
           </span>
         )}
@@ -180,6 +191,10 @@ export default function ShoppingListPage() {
               onToggle={() => setHideBought((collapsed) => !collapsed)}
             />
           </div>
+
+          {/* Everything is bought AND hidden: without this the list area is simply
+              blank, which reads as a broken page rather than a finished shop. */}
+          {rendered.length === 0 && <StateBlock title="Everything on this list is bought." />}
 
           {rendered.map((week) => (
             <section key={week.weekStartDate} style={{ marginBottom: 14 }}>
@@ -291,6 +306,19 @@ const bannerButton: CSSProperties = {
   fontSize: 12,
   fontWeight: 700,
   background: 'var(--surface)',
+}
+
+// Same visually-hidden recipe as RecipeFormPage.shared.tsx's srOnlyInputStyle.
+const srOnly: CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
 }
 
 const weekLabel: CSSProperties = {
