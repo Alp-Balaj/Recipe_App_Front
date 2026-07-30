@@ -53,7 +53,11 @@ export function requiresAuth(pathname: string): boolean {
     pathname === '/profile' ||
     pathname.startsWith('/profile/') ||
     pathname === '/recipes/new' ||
-    pathname === '/recipes/mine'
+    pathname === '/recipes/mine' ||
+    // open-loops slice 3: notifications are inherently account-only — every
+    // endpoint behind this route is caller-scoped, so a guest deep-linking it
+    // would otherwise render an empty page against three 401s.
+    pathname === '/notifications'
   )
 }
 

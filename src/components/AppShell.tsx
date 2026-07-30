@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   Outlet,
   useLocation,
@@ -14,6 +14,7 @@ import Sidebar from './Sidebar'
 import SidebarRail from './SidebarRail'
 import BottomNav from './BottomNav'
 import LoginModal from './LoginModal'
+import NotificationBell from './NotificationBell'
 import { useBackdropPath } from './recipeCanvas'
 import BrowsePage from '@/pages/BrowsePage'
 import ChatPage from '@/pages/ChatPage'
@@ -204,6 +205,18 @@ function AppShellContent() {
           detail overlay keep working unchanged. */}
       <div className="app-frame">
         {page}
+        {/* open-loops slice 3 — REVIEWED COMMIT against this frozen module,
+            following the AuthGateProvider (D9) precedent for a sanctioned
+            amendment here.
+            Why it has to live in the shell: on mobile there is no shared page
+            header — every page rolls its own, and the theme toggle only exists
+            in Sidebar (desktop) and ChatPage. The alternatives were editing
+            five page headers at three geometries, or a seventh bottom-nav tab
+            against frozen navItems.ts. Neither is better than one mount here.
+            It rides in the 54px top band the tab pages already reserve in their
+            padding, so nothing below it moves. Signed-in only: notifications
+            are account-only, and a guest would just be polling 401s. */}
+        {!isGuest && <NotificationBell size={19} style={mobileBellStyle} />}
         <BottomNav />
         {promptOpen && <LoginModal />}
       </div>
@@ -213,4 +226,16 @@ function AppShellContent() {
       </div>
     </>
   )
+}
+
+// Pinned into the top-right of the mobile frame. Absolute against .app-frame
+// (position: relative) so it floats over whichever page is mounted rather than
+// pushing it — the pages are themselves absolutely positioned.
+const mobileBellStyle: CSSProperties = {
+  position: 'absolute',
+  top: 8,
+  right: 10,
+  zIndex: 30,
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
 }
