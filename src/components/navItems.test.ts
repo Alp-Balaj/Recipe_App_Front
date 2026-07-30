@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { NAV_ITEMS, DESKTOP_NAV_ITEMS, activeTab } from './navItems'
 
 describe('nav items', () => {
-  // week/shopping rework, Task 9 — the reviewed commit against the frozen nav
-  // module: the Plan tab now lands on the current week (not the month), and
-  // the shopping list gets its own tab instead of sharing Plan's highlight.
-  it('sends the Plan tab to the current week, not the month', () => {
+  // The Plan tab lands on the month calendar (the front door), superseding
+  // week/shopping rework Task 9's /plan/week landing. That same reviewed
+  // commit also gave the shopping list its own tab instead of sharing Plan's
+  // highlight, which still holds below.
+  it('sends the Plan tab to the month calendar, not a week', () => {
     const plan = NAV_ITEMS.find((item) => item.id === 'plan')
     expect(plan).toBeDefined()
-    expect(plan!.to).toBe('/plan/week')
+    expect(plan!.to).toBe('/plan')
   })
 
   it('gives the shopping list its own tab', () => {
