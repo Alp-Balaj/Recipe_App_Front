@@ -54,6 +54,9 @@ export function requiresAuth(pathname: string): boolean {
     pathname.startsWith('/profile/') ||
     pathname === '/recipes/new' ||
     pathname === '/recipes/mine' ||
+    // stream D (governor): the admin surface is account-only; the role check
+    // itself happens inside AdminPage (and, authoritatively, on the server).
+    pathname === '/admin' ||
     // open-loops slice 3: notifications are inherently account-only — every
     // endpoint behind this route is caller-scoped, so a guest deep-linking it
     // would otherwise render an empty page against three 401s.

@@ -14,7 +14,11 @@ export const TEST_USER: AuthResponse = {
   expiresAtUtc: '2999-01-01T00:00:00Z',
   userId: '11111111-1111-1111-1111-111111111111',
   username: 'testuser',
+  role: 'User',
 }
+
+/** stream D (governor): the same session, promoted — for /admin surface tests. */
+export const TEST_ADMIN: AuthResponse = { ...TEST_USER, username: 'testadmin', role: 'Admin' }
 
 /** Build a fake auth context value; authenticated by default. */
 export function makeAuthValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {

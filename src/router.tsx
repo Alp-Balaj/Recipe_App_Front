@@ -15,6 +15,7 @@ import MealPlanWeekPage from './pages/MealPlanWeekPage'
 import MealPlanMonthPage from './pages/MealPlanMonthPage'
 import MealPlanDayPage from './pages/MealPlanDayPage'
 import ShoppingListPage from './pages/ShoppingListPage'
+import AdminPage from './pages/AdminPage'
 import NotificationsPage from './pages/NotificationsPage'
 
 /**
@@ -67,6 +68,10 @@ export const routes: RouteObject[] = [
           { path: '/plan/week/:start', element: <MealPlanWeekPage /> },
           { path: '/plan/:date', element: <MealPlanDayPage /> },
           { path: '/shopping-list', element: <ShoppingListPage /> },
+          // stream D (governor) — SANCTIONED ADDITIVE route, same discipline as
+          // the additive routes above. Role-gated INSIDE AdminPage (non-admins
+          // get a full-page denial); the server enforces the real boundary.
+          { path: '/admin', element: <AdminPage /> },
           // open-loops slice 3 — SANCTIONED ADDITIVE route registration, same
           // discipline as the social-feed, chat-ai and meal-planning additive
           // routes above. Deliberately NOT in navItems.ts: six tabs is already

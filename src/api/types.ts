@@ -18,12 +18,21 @@ export type Visibility = 'Public' | 'Private' | 'FriendsOnly'
 
 // ── Auth ──────────────────────────────────────────────────────────────────
 
+// stream D (governor) — SANCTIONED ADDITIVE EDIT to this frozen module: the
+// backend now returns the caller's role on both auth responses so the SPA can
+// gate the /admin surface without a second call. New optional-shaped field on
+// existing interfaces; nothing renamed or reshaped.
+/** RecipeApp.Domain.Enums.UserRole */
+export type UserRole = 'User' | 'Admin'
+
 /** AuthResponse — returned by BOTH POST /auth/register and POST /auth/login. */
 export interface AuthResponse {
   token: string
   expiresAtUtc: string
   userId: string
   username: string
+  /** stream D: present on every response since the governor landed. */
+  role: UserRole
 }
 
 /** RegisterRequest — POST /auth/register. */
@@ -46,6 +55,8 @@ export interface LoginRequest {
 export interface MeResponse {
   userId: string
   username: string
+  /** stream D: DB-read role, authoritative over the (possibly stale) token claim. */
+  role: UserRole
 }
 
 // ── Recipes ───────────────────────────────────────────────────────────────

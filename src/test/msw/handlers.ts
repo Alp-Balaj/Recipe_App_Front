@@ -12,6 +12,7 @@ export function makeAuthResponse(username: string): AuthResponse {
     expiresAtUtc: '2999-01-01T00:00:00Z',
     userId: '11111111-1111-1111-1111-111111111111',
     username,
+    role: 'User',
   }
 }
 
@@ -61,6 +62,7 @@ export const handlers = [
     return HttpResponse.json({
       userId: '11111111-1111-1111-1111-111111111111',
       username: 'booteduser',
+      role: 'User',
     })
   }),
 
