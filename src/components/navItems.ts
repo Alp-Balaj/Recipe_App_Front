@@ -13,14 +13,17 @@ export const NAV_ITEMS: { id: TabId; to: string; icon: ComponentType<IconProps>;
   { id: 'feed', to: '/feed', icon: FeedIcon, label: 'Feed' },
   { id: 'chat', to: '/chat', icon: ChatIcon, label: 'Chat' },
   { id: 'discover', to: '/discover', icon: DiscoverIcon, label: 'Discover' },
-  // week/shopping rework, Task 9 — the week is where users spend most of their
-  // planning time, so the Plan tab now lands there directly (via the additive
-  // /plan/week redirect) instead of the month; the month stays one tap away
-  // via the week's own "Month" link. Shopping gets its own tab below: sharing
-  // Plan was a DATA relationship (the list is generated from the week), not a
-  // USAGE one — planning happens at a table, shopping happens one-handed in
-  // an aisle, and those are different destinations.
-  { id: 'plan', to: '/plan/week', icon: PlanIcon, label: 'Plan' },
+  // The Plan tab lands on the month calendar — the front door to the planning
+  // surfaces, where the whole shape of the month is visible at a glance. Any
+  // week is one click away through the month's week rail, and a single day
+  // through its cells. (This supersedes week/shopping rework Task 9, which
+  // pointed the tab at a static /plan/week redirect on the theory that the week
+  // is where planning time is spent; with nothing pointing at it, that route
+  // and its PlanWeekIndex page were removed.) Shopping gets its own tab below:
+  // sharing Plan was a DATA relationship (the list is generated from the
+  // week), not a USAGE one — planning happens at a table, shopping happens
+  // one-handed in an aisle, and those are different destinations.
+  { id: 'plan', to: '/plan', icon: PlanIcon, label: 'Plan' },
   { id: 'shop', to: '/shopping-list', icon: ShopIcon, label: 'Shop' },
   { id: 'profile', to: '/profile', icon: ProfileIcon, label: 'Profile' },
 ]

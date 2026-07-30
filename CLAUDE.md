@@ -45,8 +45,11 @@ page files they own.
 **Additive routes are the one sanctioned edit.** A plan may register a NEW path
 pointing at a NEW page, with a comment naming the plan — nothing existing may be
 changed or reordered. `/feed`, `/users/:id`, `/chat/:conversationId`, `/plan`,
-`/shopping-list`, `/plan/:date` and `/plan/week` all landed this way. Anything
-else in this file still stops and goes through an explicit reviewed commit.
+`/shopping-list`, `/plan/:date` and (now-removed) `/plan/week` all landed this
+way. Anything else in this file still stops and goes through an explicit
+reviewed commit — including **removals**: `/plan/week` was retired on
+2026-07-30 as one of those, once the Plan tab moved to `/plan` and nothing
+pointed at the redirect any more.
 
 | Route | Page file | Filled by |
 |---|---|---|
@@ -59,15 +62,16 @@ else in this file still stops and goes through an explicit reviewed commit.
 | /recipes/mine | `MyRecipesPage.tsx` | lane B (06) |
 | /recipes/:id | `RecipeDetailPage.tsx` | lane A (03) |
 | /plan | `MealPlanMonthPage.tsx` | meal-plan redesign (month calendar) |
-| /plan/week | `PlanWeekIndex.tsx` | week/shopping rework — redirects to `/plan/week/:start` for the current week |
 | /plan/week/:start | `MealPlanWeekPage.tsx` | meal-planning-ui, rehomed by the redesign, rebuilt days-as-rows by the week/shopping rework |
 | /plan/:date | `MealPlanDayPage.tsx` | meal-plan redesign (one day) |
 | /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui, rewritten by the week/shopping rework (per-week projection + mark overlay) |
 | / and unknown | redirect → /discover | — |
 
-The Plan tab lands on `/plan/week` (the current week — where planning time is
-actually spent), not `/plan`; the month is one tap away via the week page's own
-"Month" link. `/shopping-list` has its own Shop tab — it no longer shares the
+The Plan tab lands on `/plan` (the month calendar — the front door to the
+planning surfaces); any week is one click away via the month's week rail, and
+a day via its cells. The old static `/plan/week` redirect is gone; that URL now
+falls through to `/plan/:date` and renders the day page's invalid-date state.
+`/shopping-list` has its own Shop tab — it no longer shares the
 Plan tab with the meal-planning surfaces (that was a data relationship, the
 list is generated from the week, not a usage one: planning happens at a table,
 shopping happens one-handed in an aisle).
