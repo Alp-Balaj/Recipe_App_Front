@@ -4,6 +4,7 @@ import appIcon from '@/assets/app-icon.png'
 import { useAuth } from '@/auth/AuthContext'
 import { requiresAuth, useAuthGate } from '@/auth/AuthGateContext'
 import Avatar from '@/components/Avatar'
+import NotificationBell from '@/components/NotificationBell'
 import { MoonIcon, PlusIcon, ProfileIcon, SunIcon } from './navIcons'
 import { DESKTOP_NAV_ITEMS, activeTab } from './navItems'
 import { useBackdropPath } from './recipeCanvas'
@@ -149,8 +150,11 @@ export default function SidebarRail({ mode, onToggleMode, onExpand }: Props) {
         })}
       </nav>
 
-      {/* Footer — theme toggle + profile avatar. */}
+      {/* Footer — bell (signed in), theme toggle, profile avatar. */}
       <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+        {/* open-loops slice 3. The rail's own tile geometry rather than the
+            bell's default padding, so it lines up with the buttons above it. */}
+        {!isGuest && <NotificationBell size={ICON} style={{ width: TILE, height: TILE }} />}
         <button
           onClick={onToggleMode}
           className="rail-btn"
