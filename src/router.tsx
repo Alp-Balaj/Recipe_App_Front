@@ -15,6 +15,7 @@ import MealPlanWeekPage from './pages/MealPlanWeekPage'
 import MealPlanMonthPage from './pages/MealPlanMonthPage'
 import MealPlanDayPage from './pages/MealPlanDayPage'
 import ShoppingListPage from './pages/ShoppingListPage'
+import PlanWeekIndex from './pages/PlanWeekIndex'
 
 /**
  * The ONE route-registration file (frozen after checkpoint 01).
@@ -53,6 +54,11 @@ export const routes: RouteObject[] = [
           // can now show ANY week, which is the bug this rehoming fixes.
           // Segment counts differ, so none of these three can shadow another.
           { path: '/plan', element: <MealPlanMonthPage /> },
+          // week/shopping rework, Task 9 — SANCTIONED ADDITIVE route: the Plan
+          // tab needs a static path but must land on the CURRENT week, which
+          // moves, so this resolves it and redirects. Placed before
+          // /plan/week/:start so the static segment isn't shadowed by the param.
+          { path: '/plan/week', element: <PlanWeekIndex /> },
           // week/shopping rework (2026-07-29 design), Task 8 — ELEMENT ONLY: the
           // days-as-rows board replaces the old 7×3 editor at the same path. No
           // route added, removed or reordered.

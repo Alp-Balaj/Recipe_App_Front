@@ -2,19 +2,34 @@ import { describe, expect, it } from 'vitest'
 import { NAV_ITEMS, DESKTOP_NAV_ITEMS, activeTab } from './navItems'
 
 describe('nav items', () => {
-  it('includes a Plan tab pointing at /plan', () => {
+  // week/shopping rework, Task 9 — the reviewed commit against the frozen nav
+  // module: the Plan tab now lands on the current week (not the month), and
+  // the shopping list gets its own tab instead of sharing Plan's highlight.
+  it('sends the Plan tab to the current week, not the month', () => {
     const plan = NAV_ITEMS.find((item) => item.id === 'plan')
     expect(plan).toBeDefined()
-    expect(plan!.to).toBe('/plan')
+    expect(plan!.to).toBe('/plan/week')
   })
 
-  it('keeps the Plan tab on desktop', () => {
+  it('gives the shopping list its own tab', () => {
+    const shop = NAV_ITEMS.find((item) => item.id === 'shop')
+    expect(shop).toBeDefined()
+    expect(shop!.to).toBe('/shopping-list')
+  })
+
+  it('keeps the Plan and Shop tabs on desktop', () => {
     expect(DESKTOP_NAV_ITEMS.some((item) => item.id === 'plan')).toBe(true)
+    expect(DESKTOP_NAV_ITEMS.some((item) => item.id === 'shop')).toBe(true)
   })
 
-  it('lights the Plan tab on both plan surfaces', () => {
+  it('lights the shop tab on the shopping list, not the plan tab', () => {
+    expect(activeTab('/shopping-list')).toBe('shop')
+  })
+
+  it('still lights the plan tab across every plan surface', () => {
     expect(activeTab('/plan')).toBe('plan')
-    expect(activeTab('/shopping-list')).toBe('plan')
+    expect(activeTab('/plan/week/2026-07-27')).toBe('plan')
+    expect(activeTab('/plan/2026-07-27')).toBe('plan')
   })
 
   it('leaves the existing tabs alone', () => {

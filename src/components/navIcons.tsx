@@ -75,6 +75,16 @@ export function PlanIcon(props: IconProps) {
   )
 }
 
+/** Shop — a shopping bag, echoing the shopping-list tab's own errand. */
+export function ShopIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6.5 8.5h11l-1 11.5h-9z" />
+      <path d="M9 8.5V7a3 3 0 0 1 6 0v1.5" />
+    </Svg>
+  )
+}
+
 /** Profile — a person bust. */
 export function ProfileIcon(props: IconProps) {
   return (
