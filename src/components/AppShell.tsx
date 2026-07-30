@@ -113,10 +113,14 @@ function AppShellContent() {
     // column the two share 720px and adding a meal is cramped to the point of
     // unusable. The month calendar wants the room for a different reason: at
     // 720px its seven columns are ~82px each, too narrow for a dish name to
-    // survive as a chip. The week board (/plan/week/:start) keeps the narrow
-    // column for now.
+    // survive as a chip. The week board (week/shopping rework, Task 9) needs
+    // it for a third reason: the desktop panel docks beside its seven day
+    // rows, and at 720px a row wraps to two lines — the day's evidence (meals,
+    // effort, calories) no longer reads on one line, which is the entire
+    // point of "days as rows".
     DAY_PLAN_PATH.test(panePath) ||
-    MONTH_PLAN_PATH.test(panePath)
+    MONTH_PLAN_PATH.test(panePath) ||
+    panePath.startsWith('/plan/week')
 
   // ── Auth gate (guest access, D9 amendment) ──────────────────────────────
   // A guest landing on an account-only route by direct URL gets Discover with
