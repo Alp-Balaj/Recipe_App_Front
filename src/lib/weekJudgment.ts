@@ -12,7 +12,7 @@
 // has no figure is not a light day.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { DayName, MealPlanEntry } from '@/api/mealPlans'
+import { DAY_ORDER, type DayName, type MealPlanEntry } from '@/api/mealPlans'
 import { addDays, dayNameOf, formatPlanDate } from './planDates'
 import { dayCalories, dayLoads, type PlannedWeek } from './planInsights'
 
@@ -89,27 +89,34 @@ export function weekJudgment(
  * Matched on recipe ID, not title — mirroring planInsights.repeatedFromYesterday's
  * deliberate choice ("two different recipes both called 'Pasta' are not the
  * same dinner twice"). Grouping by title would make the month and week
- * surfaces disagree about what a repeat is. The displayed `title` is
- * whichever planning of that recipe is LAST in `entries`, so an edited
- * recipe title shows current, not stale.
+ * surfaces disagree about what a repeat is. The displayed `title` is the
+ * title from whichever planning of that recipe falls LATEST IN THE WEEK
+ * (Monday-first, the same order `weekJudgment`'s `days` use) — never
+ * whichever entry happens to be last in the `entries` ARRAY, since callers
+ * are not guaranteed to hand entries in calendar order.
  *
  * Only dishes appearing 2+ times qualify; sorted by count descending, then
  * title ordinal.
  */
 export function dinnerRepeats(entries: MealPlanEntry[]): { title: string; count: number }[] {
-  const groups = new Map<string, { title: string; count: number }>()
+  const groups = new Map<string, { title: string; count: number; latestDayIndex: number }>()
   for (const entry of entries) {
     if (entry.mealType !== 'Dinner') continue
+    const dayIndex = DAY_ORDER.indexOf(entry.dayOfWeek)
     const existing = groups.get(entry.recipe.id)
     if (existing) {
       existing.count++
-      existing.title = entry.recipe.title
+      if (dayIndex >= existing.latestDayIndex) {
+        existing.title = entry.recipe.title
+        existing.latestDayIndex = dayIndex
+      }
     } else {
-      groups.set(entry.recipe.id, { title: entry.recipe.title, count: 1 })
+      groups.set(entry.recipe.id, { title: entry.recipe.title, count: 1, latestDayIndex: dayIndex })
     }
   }
 
   return Array.from(groups.values())
     .filter((group) => group.count >= 2)
+    .map(({ title, count }) => ({ title, count }))
     .sort((a, b) => b.count - a.count || (a.title < b.title ? -1 : a.title > b.title ? 1 : 0))
 }

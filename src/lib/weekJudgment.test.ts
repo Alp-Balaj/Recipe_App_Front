@@ -150,4 +150,22 @@ describe('dinnerRepeats', () => {
     ])
     expect(repeats).toEqual([{ title: 'Pasta', count: 2 }])
   })
+
+  it('picks the title by calendar order, not by array position', () => {
+    // Same two entries as the test above, but reversed in the array —
+    // Wednesday's 'Pasta' now comes FIRST, Monday's 'Spaghetti' SECOND. The
+    // displayed title must still be 'Pasta' (Wednesday is chronologically
+    // later in the week), proving the choice isn't just "last in the array".
+    const repeats = dinnerRepeats([
+      {
+        id: '2', dayOfWeek: 'Wednesday', mealType: 'Dinner',
+        recipe: { id: 'recipe-a', title: 'Pasta', imageUrl: null, totalTimeMinutes: 30, caloriesPerServing: 600 },
+      },
+      {
+        id: '1', dayOfWeek: 'Monday', mealType: 'Dinner',
+        recipe: { id: 'recipe-a', title: 'Spaghetti', imageUrl: null, totalTimeMinutes: 30, caloriesPerServing: 600 },
+      },
+    ])
+    expect(repeats).toEqual([{ title: 'Pasta', count: 2 }])
+  })
 })
