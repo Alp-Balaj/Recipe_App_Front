@@ -62,7 +62,7 @@ else in this file still stops and goes through an explicit reviewed commit.
 | /plan/week | `PlanWeekIndex.tsx` | week/shopping rework — redirects to `/plan/week/:start` for the current week |
 | /plan/week/:start | `MealPlanWeekPage.tsx` | meal-planning-ui, rehomed by the redesign, rebuilt days-as-rows by the week/shopping rework |
 | /plan/:date | `MealPlanDayPage.tsx` | meal-plan redesign (one day) |
-| /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui |
+| /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui, rewritten by the week/shopping rework (per-week projection + mark overlay) |
 | / and unknown | redirect → /discover | — |
 
 The Plan tab lands on `/plan/week` (the current week — where planning time is

@@ -12,7 +12,9 @@
 
 import { useState, type CSSProperties, type FormEvent } from 'react'
 
-export interface ManualAddFormProps {
+// Local, deliberately NOT exported: nothing outside this file consumes it (week/
+// shopping rework fix wave — it was exported and never imported).
+interface ManualAddFormProps {
   /** Resolves when the row is stored; rejects to keep the fields for a retry. */
   onAdd: (item: { ingredient: string; quantity: string }) => Promise<unknown>
   isPending: boolean

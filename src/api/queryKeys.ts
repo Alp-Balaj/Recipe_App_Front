@@ -113,12 +113,11 @@ export const queryKeys = {
     /** One plan's full week view. */
     detail: (planId: string) => ['mealPlans', 'detail', planId] as const,
   },
-  shoppingList: {
-    /** Everything shopping-list-related — generate invalidates this whole subtree. */
-    all: ['shoppingList'] as const,
-    /** The single per-user keyset-paged list (useInfiniteQuery). */
-    list: () => ['shoppingList', 'list'] as const,
-  },
+  // The old `shoppingList` block (all / list()) was DELETED here by the week/shopping rework's
+  // fix wave — explicitly authorised, and safe under the frozen-module rule because that rule
+  // protects consumers and this block had zero (verified by grep across src/). It keyed a
+  // single per-user keyset-paged list fed by a generate endpoint; both are gone. The
+  // projection's keys are `shopping` below.
 
   // meal-plan redesign — SANCTIONED ADDITIVE EDIT to this frozen module, same
   // rationale as the blocks above. Nothing already here changed.
@@ -141,8 +140,10 @@ export const queryKeys = {
   // week/shopping rework (2026-07-29 design) — SANCTIONED ADDITIVE EDIT to this frozen
   // module, same rationale as the blocks above. Nothing already here changed.
   //
-  // `shoppingList.list()` above is RETIRED with useShoppingList.ts: the list is no longer
-  // a single per-user keyset page. `all` stays so plan mutations can invalidate the subtree.
+  // Replaces the retired `shoppingList` block (see the note above it): the list is no longer a
+  // single per-user keyset page. `all` exists so plan-entry mutations can invalidate the whole
+  // subtree in one call — useMealPlanMutations.ts does exactly that, which is what keeps a plan
+  // edit from leaving a stale list behind the 30s production staleTime.
   shopping: {
     /** Everything projection-related. */
     all: ['shopping'] as const,

@@ -14,7 +14,9 @@
 
 import type { CSSProperties } from 'react'
 
-export interface BoughtSectionProps {
+// Local, deliberately NOT exported: nothing outside this file consumes it (week/
+// shopping rework fix wave — it was exported and never imported).
+interface BoughtSectionProps {
   /** How many groups are ticked across the visible scope. */
   count: number
   collapsed: boolean

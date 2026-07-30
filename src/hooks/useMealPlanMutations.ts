@@ -20,7 +20,21 @@ import {
 export function useMealPlanMutations(planId: string) {
   const queryClient = useQueryClient()
   const detailKey = queryKeys.mealPlans.detail(planId)
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: detailKey })
+
+  // The shopping list is a PROJECTION of these very entries, so any entry write makes every
+  // cached week projection wrong. Production staleTime is 30s (main.tsx), so without this a
+  // user who adds or removes a meal and opens /shopping-list within 30 seconds sees the
+  // PRE-EDIT list — indistinguishable from the stale-list bug this whole rework removed.
+  // `shopping.all` is the subtree prefix, so one call covers every (week, scope) entry.
+  //
+  // Both invalidations are RETURNED as one promise, not fired and forgotten: react-query awaits
+  // whatever onSuccess/onSettled returns before the mutation settles, which is the existing
+  // behaviour the detail invalidation already relied on.
+  const invalidate = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: detailKey }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
+    ])
 
   const addEntry = useMutation({
     mutationFn: (vars: { dayOfWeek: DayName; mealType: MealTypeName; recipeId: string }) =>

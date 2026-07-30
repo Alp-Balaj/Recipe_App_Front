@@ -3,7 +3,8 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
-import type { MealPlan, MealPlanEntry, MealPlanSummary } from '@/api/mealPlans'
+import { weekStartOf, type MealPlan, type MealPlanEntry, type MealPlanSummary } from '@/api/mealPlans'
+import { queryKeys } from '@/api/queryKeys'
 import type { RecipeResponse } from '@/api/types'
 import { server } from '@/test/msw/server'
 import { renderRoute } from '@/test/utils'
@@ -570,5 +571,87 @@ describe('the week board', () => {
 
     await screen.findByText('Mon 10')
     expect(asked).toEqual(['2026-08-10T00:00:00.000Z'])
+  })
+
+  /**
+   * ── the plan edit → shopping list seam (fix wave, F1) ─────────────────────
+   *
+   * The shopping list is a PROJECTION of these entries, so a plan edit makes every
+   * cached week projection wrong. useMealPlanMutations invalidated only
+   * mealPlans.detail, so a user who removed a meal and walked to /shopping-list
+   * inside the staleTime window was shown the PRE-EDIT list — the exact stale-list
+   * failure this whole rework exists to remove.
+   *
+   * This case is only capable of failing on PRODUCTION's staleTime (30_000, see
+   * src/main.tsx). On the default test client (staleTime 0) the seeded projection is
+   * stale the instant it lands, so mounting /shopping-list would refetch regardless
+   * and the test would pass with the invalidation deleted — passing for the wrong
+   * reason. The seed is written with setQueryData, which stamps dataUpdatedAt=now:
+   * as FRESH as a list the user read seconds ago.
+   */
+  it('invalidates the cached shopping projection when a meal leaves the plan', async () => {
+    const withoutThursdayLunch: MealPlan = {
+      ...plan,
+      entries: entries.filter((e) => e.id !== 'entry-thu-lunch'),
+    }
+    const shoppingGroup = (displayName: string) => ({
+      key: displayName.toLowerCase().replace(/\s+/g, ''),
+      displayName,
+      parts: [{ quantity: '1', dishTitle: 'Pasta al forno' }],
+      dishes: ['Pasta al forno'],
+      isPurchased: false,
+      origin: 'Derived' as const,
+      manualItemId: null,
+    })
+    let shoppingFetches = 0
+    server.use(
+      ...plannedWeek({ details: [plan, withoutThursdayLunch] }),
+      http.get('/api/shopping-list', () => {
+        shoppingFetches += 1
+        return HttpResponse.json({
+          weeks: [{
+            weekStartDate: WEEK_START,
+            purchasedCount: 0,
+            totalCount: 1,
+            groups: [shoppingGroup('Post-edit leek')],
+          }],
+          orphanedPurchasedNames: [],
+        })
+      }),
+    )
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 30_000 }, mutations: { retry: false } },
+    })
+    // weekStartOf(new Date()) rather than a literal Monday, matching the page's own
+    // key: the clock is pinned to this fixture's Thursday, so it resolves to WEEK_START.
+    client.setQueryData(queryKeys.shopping.week(weekStartOf(new Date()), 'Week'), {
+      weeks: [{
+        weekStartDate: WEEK_START,
+        purchasedCount: 0,
+        totalCount: 1,
+        groups: [shoppingGroup('Pre-edit leek')],
+      }],
+      orphanedPurchasedNames: [],
+    })
+
+    renderRoute('/plan/week/2026-07-27', { client })
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /pasta al forno, thursday lunch/i }),
+    )
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: /remove/i }),
+    )
+    await waitFor(() => expect(within(row('Thursday')).getByText('95m')).toBeInTheDocument())
+
+    // Walk to the list the way the user does — the footer's own link.
+    const footer = await screen.findByRole('region', { name: /what this week costs/i })
+    await userEvent.click(within(footer).getByRole('link', { name: /shopping list/i }))
+
+    // What the shopper sees came from the server, not from the pre-edit cache.
+    expect(await screen.findByText('Post-edit leek')).toBeInTheDocument()
+    expect(screen.queryByText('Pre-edit leek')).not.toBeInTheDocument()
+    expect(shoppingFetches).toBe(1)
   })
 })

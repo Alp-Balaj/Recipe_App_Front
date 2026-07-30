@@ -27,7 +27,9 @@
 import type { CSSProperties } from 'react'
 import type { ShoppingGroup } from '@/api/shopping'
 
-export interface IngredientGroupProps {
+// Local, deliberately NOT exported: nothing outside this file consumes it (week/
+// shopping rework fix wave — it was exported and never imported).
+interface IngredientGroupProps {
   group: ShoppingGroup
   /** Explicit next value, never a toggle — the mark write is an explicit set. */
   onToggle: (isPurchased: boolean) => void

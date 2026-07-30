@@ -27,7 +27,9 @@ import TextField from '@/components/ui/TextField'
 
 const DEBOUNCE_MS = 300
 
-export interface IngredientNameFieldProps {
+// Local, deliberately NOT exported: nothing outside this file consumes it (week/
+// shopping rework fix wave — it was exported and never imported).
+interface IngredientNameFieldProps {
   label: string
   /** react-hook-form's `register('ingredients.N.name')` return for this field. */
   registration: UseFormRegisterReturn
