@@ -53,7 +53,10 @@ export function requiresAuth(pathname: string): boolean {
     pathname === '/profile' ||
     pathname.startsWith('/profile/') ||
     pathname === '/recipes/new' ||
-    pathname === '/recipes/mine'
+    pathname === '/recipes/mine' ||
+    // stream D (governor): the admin surface is account-only; the role check
+    // itself happens inside AdminPage (and, authoritatively, on the server).
+    pathname === '/admin'
   )
 }
 

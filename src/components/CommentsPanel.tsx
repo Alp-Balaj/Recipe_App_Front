@@ -18,6 +18,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { useAuthGate } from '@/auth/AuthGateContext'
 import Avatar from '@/components/Avatar'
 import Modal from '@/components/ui/Modal'
+import ReportModal from '@/components/ReportModal'
 import { useComments } from '@/hooks/useComments'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
 import { timeAgo } from '@/lib/time'
@@ -54,6 +55,8 @@ export function CommentsPanel({ recipeId, recipeAuthorId }: CommentsPanelProps) 
   const [draft, setDraft] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // stream D (governor): the comment currently being reported, if any.
+  const [reportTarget, setReportTarget] = useState<CommentResponse | null>(null)
 
   // Flatten pages, de-duping by id (a just-added comment can also arrive on a
   // later keyset page fetched afterwards).
@@ -181,6 +184,11 @@ export function CommentsPanel({ recipeId, recipeAuthorId }: CommentsPanelProps) 
                   { onError: (err) => setError(commentErrorMessage(err)) },
                 )
               }}
+              onReport={() => {
+                // stream D: same guest gate as the like tap above.
+                if (!requireAuth()) return
+                setReportTarget(c)
+              }}
             />
           ))}
 
@@ -196,6 +204,15 @@ export function CommentsPanel({ recipeId, recipeAuthorId }: CommentsPanelProps) 
             </div>
           )}
         </>
+      )}
+
+      {reportTarget && (
+        <ReportModal
+          targetType="Comment"
+          targetId={reportTarget.id}
+          targetLabel={`${reportTarget.authorUsername}'s comment`}
+          onClose={() => setReportTarget(null)}
+        />
       )}
     </div>
   )
@@ -240,6 +257,7 @@ function CommentRow({
   savePending,
   onDelete,
   onToggleLike,
+  onReport,
 }: {
   comment: CommentResponse
   isOwn: boolean
@@ -251,6 +269,7 @@ function CommentRow({
   savePending: boolean
   onDelete: () => void
   onToggleLike: () => void
+  onReport: () => void
 }) {
   const [editDraft, setEditDraft] = useState(comment.content)
 
@@ -338,6 +357,17 @@ function CommentRow({
                   style={rowActionBtn}
                 >
                   Delete
+                </button>
+              )}
+              {/* stream D (governor): report — anyone but the author (the
+                  backend 400s a self-report anyway). */}
+              {!isOwn && (
+                <button
+                  onClick={onReport}
+                  aria-label={`Report comment by ${comment.authorUsername}`}
+                  style={rowActionBtn}
+                >
+                  Report
                 </button>
               )}
             </div>

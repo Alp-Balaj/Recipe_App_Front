@@ -30,7 +30,11 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
   const { data: profile } = useUserProfile(user?.userId)
   // The open recipe is a canvas over a page, not a destination: the tab that
   // stays lit is the one for the page behind it.
-  const current = activeTab(useBackdropPath())
+  const backdropPath = useBackdropPath()
+  const current = activeTab(backdropPath)
+  // stream D (governor): /admin maps to no tab; the extra admin pill below
+  // lights itself from the raw path instead.
+  const onAdmin = backdropPath === '/admin'
   const username = user?.username ?? 'You'
   const rank = cookingRankMeta(profile?.cookingRank ?? 0)
 
@@ -143,6 +147,35 @@ export default function Sidebar({ mode, onToggleMode, onCollapse }: Props) {
               </button>
             )
           })}
+          {/* stream D (governor): the admin queue — visible only to admins.
+              Not a NAV_ITEMS entry (navItems.ts is frozen shell internals);
+              a role-gated extra pill in the same visual vocabulary. */}
+          {user?.role === 'Admin' && (
+            <button
+              onClick={() => go('/admin')}
+              aria-current={onAdmin ? 'page' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 13,
+                width: '100%',
+                cursor: 'pointer',
+                border: 'none',
+                borderRadius: 13,
+                padding: '11px 13px',
+                fontFamily: 'inherit',
+                fontSize: 14.5,
+                fontWeight: onAdmin ? 800 : 600,
+                textAlign: 'left',
+                transition: 'background 0.2s, color 0.2s',
+                background: onAdmin ? 'var(--accent-fill)' : 'transparent',
+                color: onAdmin ? 'var(--accent-ink)' : 'var(--muted)',
+              }}
+            >
+              <span style={{ width: 19, textAlign: 'center', fontWeight: 800 }}>⚖</span>
+              Admin
+            </button>
+          )}
         </nav>
 
         {/* Collapsible Recipes / Chats lists (ChatGPT pattern). */}

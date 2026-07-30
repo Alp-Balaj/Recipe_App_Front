@@ -135,8 +135,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(persisted.token)
     apiFetch<MeResponse>('/auth/me')
       .then((me) => {
-        // Trust the server's identity over whatever was cached.
-        persist({ ...persisted, userId: me.userId, username: me.username })
+        // Trust the server's identity over whatever was cached. stream D: role
+        // rides along — a promotion (or a pre-governor session with no cached
+        // role) corrects itself on the next boot, since /auth/me is DB-backed.
+        persist({ ...persisted, userId: me.userId, username: me.username, role: me.role })
         setStatus('authenticated')
       })
       .catch(() => {

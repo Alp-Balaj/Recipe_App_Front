@@ -15,6 +15,7 @@ import MealPlanWeekPage from './pages/MealPlanWeekPage'
 import MealPlanMonthPage from './pages/MealPlanMonthPage'
 import MealPlanDayPage from './pages/MealPlanDayPage'
 import ShoppingListPage from './pages/ShoppingListPage'
+import AdminPage from './pages/AdminPage'
 
 /**
  * The ONE route-registration file (frozen after checkpoint 01).
@@ -66,6 +67,10 @@ export const routes: RouteObject[] = [
           { path: '/plan/week/:start', element: <MealPlanWeekPage /> },
           { path: '/plan/:date', element: <MealPlanDayPage /> },
           { path: '/shopping-list', element: <ShoppingListPage /> },
+          // stream D (governor) — SANCTIONED ADDITIVE route, same discipline as
+          // the additive routes above. Role-gated INSIDE AdminPage (non-admins
+          // get a full-page denial); the server enforces the real boundary.
+          { path: '/admin', element: <AdminPage /> },
           { path: '/profile', element: <ProfilePage /> },
           { path: '/recipes/new', element: <RecipeFormPage /> },
           { path: '/recipes/mine', element: <MyRecipesPage /> },

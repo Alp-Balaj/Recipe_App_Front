@@ -9,6 +9,7 @@ import { useSocialEnvelope } from '@/hooks/useSocialEnvelope'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
 import type { RecipeResponse, RecipeStep } from '@/api/types'
 import { CommentsPanel } from '@/components/CommentsPanel'
+import ReportModal from '@/components/ReportModal'
 import StateBlock from '@/components/ui/StateBlock'
 import Modal from '@/components/ui/Modal'
 import { resolveImageUrl } from '@/lib/images'
@@ -26,6 +27,8 @@ export default function RecipeDetailPage() {
   const { user } = useAuth()
   const { data: recipe, isLoading, isError, error, refetch } = useRecipe(id)
   const [cooking, setCooking] = useState(false)
+  // stream D (governor): the report dialog for this recipe.
+  const [reporting, setReporting] = useState(false)
   // cp06: like/save via the decision-I3 envelope seam (feed-cache hits when
   // the reader arrived from /feed). F1 (decision recipe-social-envelope-
   // endpoint): when the caches can't answer — notably for the recipe's OWN
@@ -138,6 +141,25 @@ export default function RecipeDetailPage() {
           >
             {envelope.savedByMe ? '⚑' : '⚐'}
           </button>
+          {/* stream D (governor): report — a fourth round header action, own
+              recipes excluded (the backend 400s a self-report anyway). */}
+          {!isOwn && (
+            <button
+              onClick={() => {
+                if (!requireAuth()) return
+                setReporting(true)
+              }}
+              aria-label="Report recipe"
+              title="Report this recipe"
+              style={{
+                ...roundIconBtn(15),
+                right: 130,
+                left: 'auto',
+              }}
+            >
+              !
+            </button>
+          )}
         </div>
 
         <div style={{ padding: 18 }}>
@@ -300,6 +322,15 @@ export default function RecipeDetailPage() {
       )}
 
       {cooking && <CookMode recipe={recipe} onExit={() => setCooking(false)} />}
+
+      {reporting && (
+        <ReportModal
+          targetType="Recipe"
+          targetId={recipe.id}
+          targetLabel="this recipe"
+          onClose={() => setReporting(false)}
+        />
+      )}
     </div>
   )
 }

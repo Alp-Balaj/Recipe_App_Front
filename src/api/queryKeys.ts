@@ -155,4 +155,18 @@ export const queryKeys = {
     /** One plan's grocery insight (size / overlap / outlier). */
     insight: (planId: string) => ['grocery', 'insight', planId] as const,
   },
+
+  // stream D (governor) — SANCTIONED ADDITIVE EDIT to this frozen module, same
+  // rationale as the blocks above. Nothing already here changed. The admin
+  // surface is role-gated server-side; these keys only exist on /admin.
+  admin: {
+    /** Everything the admin surface reads — invalidate after any admin action. */
+    all: ['admin'] as const,
+    /** GET /admin/overview — the three counts. */
+    overview: () => ['admin', 'overview'] as const,
+    /** GET /admin/reports keyset-paged queue, keyed by status filter (useInfiniteQuery). */
+    reports: (status: string) => ['admin', 'reports', status] as const,
+    /** GET /admin/audit — the append-only action log, newest first. */
+    audit: () => ['admin', 'audit'] as const,
+  },
 } as const
