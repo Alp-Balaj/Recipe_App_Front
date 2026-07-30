@@ -49,6 +49,10 @@ function makeFeedItem(over: Partial<FeedItemResponse> = {}): FeedItemResponse {
     commentCount: 1,
     likedByMe: false,
     savedByMe: false,
+    averageRating: null,
+    ratingCount: 0,
+    cookedByMe: false,
+    myRating: null,
     ...over,
   }
 }

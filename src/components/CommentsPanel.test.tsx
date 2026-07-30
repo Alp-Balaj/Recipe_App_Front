@@ -43,6 +43,8 @@ function makeComment(over: Partial<CommentResponse> = {}): CommentResponse {
     authorId: 'commenter-1',
     authorUsername: 'sam_cooks',
     recipeId: 'cmt-r1',
+    likeCount: 0,
+    likedByMe: false,
     ...over,
   }
 }
@@ -61,6 +63,10 @@ function givenFeedWithItem(item: Partial<FeedItemResponse> = {}, recipe: Partial
             commentCount: 2,
             likedByMe: false,
             savedByMe: false,
+            averageRating: null,
+            ratingCount: 0,
+            cookedByMe: false,
+            myRating: null,
             ...item,
           },
         ],
@@ -141,6 +147,10 @@ describe('Comment sheet (feed card, mobile bottom sheet)', () => {
               commentCount: 2,
               likedByMe: false,
               savedByMe: false,
+              averageRating: null,
+              ratingCount: 0,
+              cookedByMe: false,
+              myRating: null,
             },
           ],
           nextCursor: null,
@@ -336,5 +346,86 @@ describe('Comment sheet (feed card, mobile bottom sheet)', () => {
     expect(await within(sheet).findByRole('alert')).toHaveTextContent(/only the comment's author/i)
     // Nothing was removed.
     expect(within(sheet).getByText('Protected take')).toBeInTheDocument()
+  })
+})
+
+describe('Comment likes (open-loops slice 1)', () => {
+  function givenOneComment(over: Partial<CommentResponse> = {}) {
+    givenFeedWithItem()
+    server.use(
+      http.get('*/recipes/:id/comments', () =>
+        HttpResponse.json({
+          items: [makeComment({ content: 'Likeable take', authorUsername: 'sam_cooks', ...over })],
+          nextCursor: null,
+        } satisfies CommentListResponse),
+      ),
+    )
+  }
+
+  it('shows the like count and flips optimistically before the request settles', async () => {
+    givenOneComment({ likeCount: 2, likedByMe: false })
+    let liked = 0
+    server.use(
+      http.post('*/comments/:id/likes', () => {
+        liked += 1
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/feed')
+
+    const sheet = await openSheet()
+    const like = await within(sheet).findByRole('button', { name: 'Like comment by sam_cooks' })
+    expect(like).toHaveTextContent('2')
+    expect(like).toHaveAttribute('aria-pressed', 'false')
+
+    await userEvent.click(like)
+
+    const pressed = await within(sheet).findByRole('button', { name: 'Unlike comment by sam_cooks' })
+    expect(pressed).toHaveTextContent('3')
+    expect(pressed).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(liked).toBe(1))
+  })
+
+  it('unlikes an already-liked comment', async () => {
+    givenOneComment({ likeCount: 1, likedByMe: true })
+    const methods: string[] = []
+    server.use(
+      http.delete('*/comments/:id/likes', () => {
+        methods.push('DELETE')
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/feed')
+
+    const sheet = await openSheet()
+    await userEvent.click(
+      await within(sheet).findByRole('button', { name: 'Unlike comment by sam_cooks' }),
+    )
+
+    const unpressed = await within(sheet).findByRole('button', {
+      name: 'Like comment by sam_cooks',
+    })
+    // Count drops to 0 and the bare heart is shown with no number.
+    expect(unpressed).toHaveTextContent('♡')
+    expect(unpressed).not.toHaveTextContent('1')
+    await waitFor(() => expect(methods).toEqual(['DELETE']))
+  })
+
+  it('rolls the optimistic patch back when the request fails', async () => {
+    givenOneComment({ likeCount: 4, likedByMe: false })
+    server.use(http.post('*/comments/:id/likes', () => new HttpResponse(null, { status: 500 })))
+    renderRoute('/feed')
+
+    const sheet = await openSheet()
+    await userEvent.click(
+      await within(sheet).findByRole('button', { name: 'Like comment by sam_cooks' }),
+    )
+
+    // Back to the server's truth — not stuck at the optimistic 5.
+    const restored = await within(sheet).findByRole('button', {
+      name: 'Like comment by sam_cooks',
+    })
+    await waitFor(() => expect(restored).toHaveTextContent('4'))
+    expect(restored).toHaveAttribute('aria-pressed', 'false')
   })
 })

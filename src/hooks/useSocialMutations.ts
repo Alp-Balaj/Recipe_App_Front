@@ -26,16 +26,22 @@ import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from
 import { queryKeys } from '@/api/queryKeys'
 import {
   addComment,
+  clearCooked,
   deleteComment,
   followUser,
+  likeComment,
   likeRecipe,
+  markCooked,
+  rateRecipe,
   saveRecipe,
   unfollowUser,
+  unlikeComment,
   unlikeRecipe,
   unsaveRecipe,
   updateComment,
   type CommentListResponse,
   type CommentResponse,
+  type CookedRecipeResponse,
   type FeedItemResponse,
   type FeedListResponse,
   type UserProfileResponse,
@@ -53,6 +59,22 @@ export interface SocialToggleVars {
 export interface FollowToggleVars {
   userId: string
   next: boolean
+}
+
+/** commentId + the DESIRED like state. recipeId locates the cached page. */
+export interface CommentLikeVars {
+  commentId: string
+  recipeId: string
+  next: boolean
+}
+
+/**
+ * Rating is a SET, not a toggle: `rating` is the star the user picked, or null
+ * to retract (which clears the cook count too — the backend drops the row).
+ */
+export interface RateVars {
+  recipeId: string
+  rating: number | null
 }
 
 type FeedCache = InfiniteData<FeedListResponse>
@@ -128,6 +150,47 @@ function patchCommentsCache(
 ): void {
   queryClient.setQueryData<CommentsCache>(queryKeys.comments.list(recipeId), (data) =>
     data ? patch(data) : data,
+  )
+}
+
+/**
+ * The caller's own rating is the ONLY contribution that changes, so the new
+ * average is derivable from the old one — no refetch and no invented numbers.
+ * `previous`/`next` are null for "not rated". Returns a null average when the
+ * last rating is retracted: 0 would render as one star.
+ */
+export function recomputeAverage(
+  average: number | null,
+  count: number,
+  previous: number | null,
+  next: number | null,
+): { average: number | null; count: number } {
+  const total = average === null ? 0 : average * count
+  const totalWithoutMine = previous === null ? total : total - previous
+  const countWithoutMine = previous === null ? count : count - 1
+  const newCount = next === null ? countWithoutMine : countWithoutMine + 1
+  if (newCount <= 0) return { average: null, count: 0 }
+  const newTotal = next === null ? totalWithoutMine : totalWithoutMine + next
+  return { average: newTotal / newCount, count: newCount }
+}
+
+/** Patch one comment inside the cached comments pages for a recipe. */
+function patchOneComment(
+  queryClient: QueryClient,
+  recipeId: string,
+  commentId: string,
+  patch: (comment: CommentResponse) => CommentResponse,
+): void {
+  queryClient.setQueryData<CommentsCache>(queryKeys.comments.list(recipeId), (data) =>
+    data
+      ? {
+          ...data,
+          pages: data.pages.map((page) => ({
+            ...page,
+            items: page.items.map((c) => (c.id === commentId ? patch(c) : c)),
+          })),
+        }
+      : data,
   )
 }
 
@@ -250,7 +313,97 @@ export function useSocialMutations() {
     },
   })
 
+  // ── open-loops slice 1: rating + cooked ──────────────────────────────────
+
+  const setRating = useMutation({
+    mutationFn: ({ recipeId, rating }: RateVars) =>
+      rating === null ? clearCooked(recipeId) : rateRecipe(recipeId, rating),
+    onMutate: async ({ recipeId, rating }) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.feed.all })
+      await settleEnvelopeEntry(queryClient, recipeId)
+      const snapshot = snapshotCaches(queryClient, [
+        queryKeys.feed.all,
+        queryKeys.social.envelope(recipeId),
+      ])
+
+      patchFeedCaches(queryClient, recipeId, (item) => {
+        if ((item.myRating ?? null) === rating) return item
+        const next = recomputeAverage(
+          item.averageRating ?? null,
+          item.ratingCount,
+          item.myRating ?? null,
+          rating,
+        )
+        return {
+          ...item,
+          myRating: rating,
+          averageRating: next.average,
+          ratingCount: next.count,
+          // Retracting a rating drops the whole row, cook count included.
+          cookedByMe: rating === null ? false : item.cookedByMe,
+        }
+      })
+
+      patchEnvelopeCache(queryClient, recipeId, (env) => {
+        if (env.myRating === rating) return env
+        // Counts we don't know stay unknown — the flag may still flip.
+        const next =
+          env.ratingCount === null
+            ? { average: env.averageRating, count: null as number | null }
+            : recomputeAverage(env.averageRating, env.ratingCount, env.myRating, rating)
+        return {
+          ...env,
+          myRating: rating,
+          averageRating: next.average,
+          ratingCount: next.count,
+          cookedByMe: rating === null ? false : env.cookedByMe,
+        }
+      })
+
+      return { snapshot }
+    },
+    onError: (_err, _vars, context) => {
+      if (context) restoreCaches(queryClient, context.snapshot)
+    },
+  })
+
+  /**
+   * "I cooked this" is not a toggle and has no count in the envelope — the
+   * server's reply carries timesCooked for the caller to surface. All the
+   * shared caches need to learn is that cookedByMe is now true.
+   */
+  const logCooked = useMutation({
+    mutationFn: ({ recipeId }: { recipeId: string }) => markCooked(recipeId),
+    onSuccess: (_row: CookedRecipeResponse, { recipeId }) => {
+      patchFeedCaches(queryClient, recipeId, (item) =>
+        item.cookedByMe ? item : { ...item, cookedByMe: true },
+      )
+      patchEnvelopeCache(queryClient, recipeId, (env) =>
+        env.cookedByMe === true ? env : { ...env, cookedByMe: true },
+      )
+    },
+  })
+
   // ── Comments (cache-patched on success; the server owns ids/timestamps) ──
+
+  const toggleCommentLike = useMutation({
+    mutationFn: ({ commentId, next }: CommentLikeVars) =>
+      next ? likeComment(commentId) : unlikeComment(commentId),
+    onMutate: async ({ commentId, recipeId, next }) => {
+      const key = queryKeys.comments.list(recipeId)
+      await queryClient.cancelQueries({ queryKey: key })
+      const snapshot = snapshotCaches(queryClient, [key])
+      patchOneComment(queryClient, recipeId, commentId, (c) =>
+        c.likedByMe === next
+          ? c // already in the desired state — don't double-count
+          : { ...c, likedByMe: next, likeCount: Math.max(0, c.likeCount + (next ? 1 : -1)) },
+      )
+      return { snapshot }
+    },
+    onError: (_err, _vars, context) => {
+      if (context) restoreCaches(queryClient, context.snapshot)
+    },
+  })
 
   const addCommentMutation = useMutation({
     mutationFn: ({ recipeId, content }: { recipeId: string; content: string }) =>
@@ -305,6 +458,9 @@ export function useSocialMutations() {
     toggleLike,
     toggleSave,
     toggleFollow,
+    setRating,
+    logCooked,
+    toggleCommentLike,
     addComment: addCommentMutation,
     updateComment: updateCommentMutation,
     deleteComment: deleteCommentMutation,

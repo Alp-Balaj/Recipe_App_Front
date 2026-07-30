@@ -4,10 +4,19 @@
 import { useNavigate } from 'react-router-dom'
 import { RecipeForm, emptyRecipeDefaults } from './RecipeFormPage.shared'
 import { useCreateRecipe } from '@/hooks/useRecipeMutations'
+import { useAuth } from '@/auth/AuthContext'
+import { useUserProfile } from '@/hooks/useUserProfile'
 
 export default function RecipeFormPage() {
   const navigate = useNavigate()
   const createRecipe = useCreateRecipe()
+  // Honour the caller's "default visibility" account setting. It has been
+  // stored and editable since the account-settings work while this form
+  // hardcoded Public, so choosing Private-by-default silently did nothing.
+  // The profile is usually already cached (/profile mounts it); until it
+  // arrives the form falls back to the same Public it always used.
+  const { user } = useAuth()
+  const { data: profile } = useUserProfile(user?.userId)
 
   return (
     <div
@@ -27,6 +36,7 @@ export default function RecipeFormPage() {
 
       <RecipeForm
         defaultValues={emptyRecipeDefaults}
+        applyDefaultVisibility={profile?.defaultRecipeVisibility}
         submitLabel="Publish recipe"
         pendingLabel="Publishing…"
         submit={(body) => createRecipe.mutateAsync(body)}

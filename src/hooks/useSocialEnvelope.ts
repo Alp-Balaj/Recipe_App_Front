@@ -34,12 +34,29 @@ import { useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@
 import { queryKeys } from '@/api/queryKeys'
 import { getRecipeSocial, type FeedListResponse } from '@/api/social'
 
-/** Per-recipe interaction state; null = unknown on this surface. */
+/**
+ * Per-recipe interaction state; null = unknown on this surface.
+ *
+ * open-loops slice 1 caveat — the rating fields break the "null = unknown"
+ * rule, because for two of them null is a REAL value the server sends:
+ * `averageRating` is null when nobody has rated, `myRating` is null when the
+ * caller has not. Only `ratingCount` and `cookedByMe` carry the unknown/known
+ * distinction, which is why isFullyKnown() probes those two and not the other
+ * two — treating a legitimately-null average as "unknown" would make the F1
+ * fallback refetch on every mount of an unrated recipe, forever.
+ *
+ * This is safe for rendering because unknown and unrated look identical: no
+ * stars either way.
+ */
 export interface SocialEnvelope {
   likeCount: number | null
   commentCount: number | null
   likedByMe: boolean | null
   savedByMe: boolean | null
+  averageRating: number | null
+  ratingCount: number | null
+  cookedByMe: boolean | null
+  myRating: number | null
 }
 
 export const UNKNOWN_ENVELOPE: SocialEnvelope = {
@@ -47,15 +64,25 @@ export const UNKNOWN_ENVELOPE: SocialEnvelope = {
   commentCount: null,
   likedByMe: null,
   savedByMe: null,
+  averageRating: null,
+  ratingCount: null,
+  cookedByMe: null,
+  myRating: null,
 }
 
-/** True when every field is known — nothing left for the F1 fallback to add. */
+/**
+ * True when every field is known — nothing left for the F1 fallback to add.
+ * See the SocialEnvelope note: averageRating and myRating are deliberately not
+ * probed, since null is a legitimate server value for both.
+ */
 function isFullyKnown(env: SocialEnvelope): boolean {
   return (
     env.likeCount !== null &&
     env.commentCount !== null &&
     env.likedByMe !== null &&
-    env.savedByMe !== null
+    env.savedByMe !== null &&
+    env.ratingCount !== null &&
+    env.cookedByMe !== null
   )
 }
 
@@ -76,6 +103,10 @@ export function readEnvelopeFromFeedCaches(
             commentCount: item.commentCount,
             likedByMe: item.likedByMe,
             savedByMe: item.savedByMe,
+            averageRating: item.averageRating ?? null,
+            ratingCount: item.ratingCount,
+            cookedByMe: item.cookedByMe,
+            myRating: item.myRating ?? null,
           }
         }
       }
@@ -133,6 +164,13 @@ export function useSocialEnvelope(
           commentCount: latest.commentCount ?? wire.commentCount,
           likedByMe: latest.likedByMe ?? wire.likedByMe,
           savedByMe: latest.savedByMe ?? wire.savedByMe,
+          // `??` reads correctly for the rating pair despite their ambiguous
+          // null: when local is null-because-unknown the wire value wins, and
+          // when local is null-because-unrated the wire is null too.
+          averageRating: latest.averageRating ?? wire.averageRating ?? null,
+          ratingCount: latest.ratingCount ?? wire.ratingCount,
+          cookedByMe: latest.cookedByMe ?? wire.cookedByMe,
+          myRating: latest.myRating ?? wire.myRating ?? null,
         }
       } catch (err) {
         if (signal.aborted) {

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
+import { makeUserProfile } from '@/test/msw/handlers'
 import { renderRoute } from '@/test/utils'
 import type { CreateRecipeRequest, RecipeResponse } from '@/api/types'
 
@@ -124,5 +125,44 @@ describe('RecipeFormPage (create)', () => {
     // "Title" → title field; "Ingredients[0].Name" → ingredients.0.name field.
     expect(await screen.findByText('Server says the title is off')).toBeInTheDocument()
     expect(screen.getByText('Unknown ingredient')).toBeInTheDocument()
+  })
+
+  // open-loops slice 1. The account setting has been stored and editable since
+  // the account-settings work while this form hardcoded Public, so picking
+  // "Private by default" silently did nothing.
+  it("seeds visibility from the author's default-visibility setting", async () => {
+    server.use(
+      http.get('*/users/:id', () =>
+        HttpResponse.json(makeUserProfile({ defaultRecipeVisibility: 'Private' })),
+      ),
+    )
+
+    renderRoute('/recipes/new')
+
+    const select = await screen.findByLabelText('Visibility')
+    await waitFor(() => expect(select).toHaveValue('Private'))
+  })
+
+  it('does not clobber a visibility the user already chose', async () => {
+    const user = userEvent.setup()
+    // The preference lands well after the user has made their own choice.
+    server.use(
+      http.get('*/users/:id', async () => {
+        await delay(300)
+        return HttpResponse.json(makeUserProfile({ defaultRecipeVisibility: 'Private' }))
+      }),
+    )
+
+    renderRoute('/recipes/new')
+
+    const select = await screen.findByLabelText('Visibility')
+    await user.selectOptions(select, 'FriendsOnly')
+    await user.type(screen.getByLabelText(/^title/i), 'Deliberately friends-only')
+
+    // The late preference must not overwrite a form the user is working in —
+    // applying it here would silently change who can see what they are writing.
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(select).toHaveValue('FriendsOnly')
+    expect(screen.getByLabelText(/^title/i)).toHaveValue('Deliberately friends-only')
   })
 })

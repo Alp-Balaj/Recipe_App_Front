@@ -46,6 +46,10 @@ function makeSocial(over: Partial<RecipeSocialResponse> = {}): RecipeSocialRespo
     commentCount: 0,
     likedByMe: false,
     savedByMe: false,
+    averageRating: null,
+    ratingCount: 0,
+    cookedByMe: false,
+    myRating: null,
     ...over,
   }
 }
@@ -103,6 +107,10 @@ describe('RecipeDetailPage envelope fallback (F1)', () => {
               commentCount: 4,
               likedByMe: true,
               savedByMe: false,
+              averageRating: null,
+              ratingCount: 0,
+              cookedByMe: false,
+              myRating: null,
             },
           ],
           nextCursor: null,

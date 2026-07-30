@@ -33,6 +33,7 @@ import {
 } from '@/api/mealPlans'
 import { useCurrentWeekPlan, useEnsureWeekPlan, useMealPlanDetail } from '@/hooks/useMealPlan'
 import { useDayRecipes } from '@/hooks/useDayRecipes'
+import { useSocialMutations } from '@/hooks/useSocialMutations'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { shortDayLabel } from '@/hooks/usePickerCorpus'
 import {
@@ -195,6 +196,13 @@ function DayView({ date }: { date: Date }) {
     onSuccess: (_result, vars) => refreshPlan(vars.planId, vars.weekStart),
     onError: () => setMessage("Couldn't remove that meal. Try again."),
   })
+
+  // open-loops slice 1. This goes through the SHARED social mutation rather
+  // than a local one like the plan edits above, because the cook count is
+  // social state the feed and detail caches also hold — the plan is only where
+  // the gesture happens to live. The reply carries timesCooked, which is the
+  // one fact the envelope does not keep, so it is surfaced in the banner.
+  const { logCooked } = useSocialMutations()
 
   // Swap is DELETE-then-POST because slots are exclusive and POST is
   // pure-create (meal-planning-v1-semantics #4). If the POST fails we put the
@@ -422,6 +430,29 @@ function DayView({ date }: { date: Date }) {
                       ? () => {
                           setMessage(null)
                           repeatTomorrow.mutate({ meal, recipeId: entry.recipe.id })
+                        }
+                      : undefined
+                  }
+                  // Only for days that have happened. Offering "I cooked this"
+                  // against next Thursday's dinner would be asking the user to
+                  // lie, and the rank award behind it is real.
+                  onCooked={
+                    entry && (past || isToday(date))
+                      ? () => {
+                          setMessage(null)
+                          const title = entry.recipe.title
+                          logCooked.mutate(
+                            { recipeId: entry.recipe.id },
+                            {
+                              onSuccess: (row) =>
+                                setMessage(
+                                  row.timesCooked > 1
+                                    ? `Logged — you've cooked ${title} ${row.timesCooked} times.`
+                                    : `Logged your first ${title}.`,
+                                ),
+                              onError: () => setMessage("Couldn't log that. Try again."),
+                            },
+                          )
                         }
                       : undefined
                   }

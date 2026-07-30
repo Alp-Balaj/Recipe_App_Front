@@ -55,6 +55,12 @@ interface Props {
    * household size; you cooked a lot of it, you're having it again.
    */
   onRepeatTomorrow?: () => void
+  /**
+   * Log that this actually got made (open-loops slice 1). The page decides when
+   * to offer it — a dish planned for next Thursday has not been cooked yet — and
+   * what it means; this card only renders the button, like every other action.
+   */
+  onCooked?: () => void
   /** Past days are a record of what you ate, so they don't invite additions. */
   isPast?: boolean
 }
@@ -68,6 +74,7 @@ export default function MealCard({
   onSwap,
   onRemove,
   onRepeatTomorrow,
+  onCooked,
   isPast = false,
 }: Props) {
   const { tint, ink } = mealTokens(meal)
@@ -128,6 +135,16 @@ export default function MealCard({
         <Link to={`/recipes/${entry.recipe.id}`} state={{ backdrop }} style={actionButton}>
           Recipe
         </Link>
+        {onCooked && (
+          <button
+            type="button"
+            aria-label={`Mark ${entry.recipe.title} as cooked`}
+            style={{ ...actionButton, cursor: 'pointer' }}
+            onClick={onCooked}
+          >
+            I cooked this
+          </button>
+        )}
         {onSwap && (
           <button
             type="button"

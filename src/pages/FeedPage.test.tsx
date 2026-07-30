@@ -41,6 +41,10 @@ function makeItem(over: Partial<FeedItemResponse> = {}, recipe: Partial<RecipeRe
     commentCount: 3,
     likedByMe: false,
     savedByMe: false,
+    averageRating: null,
+    ratingCount: 0,
+    cookedByMe: false,
+    myRating: null,
     ...over,
   }
 }
