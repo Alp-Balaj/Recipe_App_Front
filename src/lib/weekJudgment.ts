@@ -35,6 +35,15 @@ export interface DayJudgment {
  * A week with nothing planned reports 0 and a null heaviestDay — a week
  * with no plan is not a week with no cooking time, so it says nothing
  * rather than lying with zeros.
+ *
+ * `averageMinutes` is returned as the RAW float, deliberately unrounded — a
+ * caller formatting it for display can round to whatever precision the
+ * surface wants, but rounding here would throw away precision a future
+ * consumer (e.g. a running weekly total) might need.
+ *
+ * `heaviestDay`'s tie-break favours the EARLIER day: the reduction only
+ * replaces the current heaviest on a strict `>`, so among equal-minute days
+ * the one that comes first in the week (Monday-first order) wins.
  */
 export function weekJudgment(
   weekStart: Date,
@@ -77,19 +86,30 @@ export function weekJudgment(
  * efficient choice, and flagging it would be nagging the user about a
  * decision they made on purpose.
  *
- * Matched on recipe title. Only dishes appearing 2+ times qualify; sorted by
- * count descending, then title ordinal.
+ * Matched on recipe ID, not title — mirroring planInsights.repeatedFromYesterday's
+ * deliberate choice ("two different recipes both called 'Pasta' are not the
+ * same dinner twice"). Grouping by title would make the month and week
+ * surfaces disagree about what a repeat is. The displayed `title` is
+ * whichever planning of that recipe is LAST in `entries`, so an edited
+ * recipe title shows current, not stale.
+ *
+ * Only dishes appearing 2+ times qualify; sorted by count descending, then
+ * title ordinal.
  */
 export function dinnerRepeats(entries: MealPlanEntry[]): { title: string; count: number }[] {
-  const counts = new Map<string, number>()
+  const groups = new Map<string, { title: string; count: number }>()
   for (const entry of entries) {
     if (entry.mealType !== 'Dinner') continue
-    const title = entry.recipe.title
-    counts.set(title, (counts.get(title) ?? 0) + 1)
+    const existing = groups.get(entry.recipe.id)
+    if (existing) {
+      existing.count++
+      existing.title = entry.recipe.title
+    } else {
+      groups.set(entry.recipe.id, { title: entry.recipe.title, count: 1 })
+    }
   }
 
-  return Array.from(counts.entries())
-    .filter(([, count]) => count >= 2)
-    .map(([title, count]) => ({ title, count }))
+  return Array.from(groups.values())
+    .filter((group) => group.count >= 2)
     .sort((a, b) => b.count - a.count || (a.title < b.title ? -1 : a.title > b.title ? 1 : 0))
 }
