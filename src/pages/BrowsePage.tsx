@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SocialRecipeCard from '@/components/SocialRecipeCard'
 import StateBlock from '@/components/ui/StateBlock'
@@ -8,6 +8,12 @@ import { useRecipeList, type BrowseFilters } from '@/hooks/useRecipeList'
 import type { Difficulty, RecipeResponse } from '@/api/types'
 
 const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
+
+/**
+ * How long typing has to settle before the search term reaches the wire.
+ * Matches IngredientNameField's debounce, the app's other type-ahead.
+ */
+const SEARCH_DEBOUNCE_MS = 300
 
 export default function BrowsePage() {
   // BrowsePage also renders as the canvas BACKDROP, where `useLocation()` is a
@@ -24,9 +30,23 @@ export default function BrowsePage() {
   const [search, setSearch] = useState('')
   const [showFilters, setShowFilters] = useState(true)
 
+  // open-loops slice 2: search moved to the SERVER. It used to filter only the
+  // pages already loaded, so a recipe sitting on page four did not exist for
+  // search until you had paged that far — the same silently-lossy bug that
+  // GET /recipes/mine was created to fix for "My recipes".
+  //
+  // Two pieces of state: `search` is what the input shows (instant), and
+  // `debouncedSearch` is what reaches the query key, so typing does not fire a
+  // request per keystroke. Only the debounced value is a dependency below.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [search])
+
   const filters: BrowseFilters = useMemo(
-    () => ({ cuisine, difficulty, tags }),
-    [cuisine, difficulty, tags],
+    () => ({ cuisine, difficulty, tags, search: debouncedSearch }),
+    [cuisine, difficulty, tags, debouncedSearch],
   )
 
   const {
@@ -55,21 +75,12 @@ export default function BrowsePage() {
     return out
   }, [data])
 
-  // Client-side title/description search — purely presentational, layered on
-  // top of the server-filtered list (no extra request).
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return recipes
-    return recipes.filter(
-      (r) => r.title.toLowerCase().includes(q) || r.description.toLowerCase().includes(q),
-    )
-  }, [recipes, search])
-
-  const hasActiveFilters = !!cuisine || !!difficulty || tags.length > 0
+  const hasActiveFilters = !!cuisine || !!difficulty || tags.length > 0 || !!search.trim()
   const clearFilters = () => {
     setCuisine('')
     setDifficulty(undefined)
     setTags([])
+    setSearch('')
   }
 
   const addTag = (t: string) => setTags((prev) => (prev.includes(t) ? prev : [...prev, t]))
@@ -96,9 +107,11 @@ export default function BrowsePage() {
     <StateBlock
       title="No recipes found"
       body={
-        hasActiveFilters
-          ? 'No recipes match these filters yet. Try loosening them.'
-          : 'Nothing here yet — be the first to add a recipe.'
+        search.trim()
+          ? `Nothing matches "${search.trim()}" — searched titles, descriptions and ingredients.`
+          : hasActiveFilters
+            ? 'No recipes match these filters yet. Try loosening them.'
+            : 'Nothing here yet — be the first to add a recipe.'
       }
       action={hasActiveFilters ? { label: 'Clear filters', onClick: clearFilters } : undefined}
     />
@@ -109,12 +122,12 @@ export default function BrowsePage() {
         // columns at the design's content width and degrades to two/one when
         // the recipe canvas pane is open.
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 20 }}>
-          {visible.map((r) => (
+          {recipes.map((r) => (
             <SocialRecipeCard key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />
           ))}
         </div>
       ) : (
-        visible.map((r) => (
+        recipes.map((r) => (
           <SocialRecipeCard key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />
         ))
       )}

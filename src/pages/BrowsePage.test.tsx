@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
@@ -149,5 +149,116 @@ describe('BrowsePage', () => {
     chip.focus()
     await userEvent.keyboard('{Enter}')
     await waitFor(() => expect(urls.some((u) => u.includes('difficulty=Medium'))).toBe(true))
+  })
+})
+
+// ── Server-side search (open-loops slice 2) ──────────────────────────────────
+// Search used to filter only the pages already loaded, so a match on page four
+// did not exist until you paged that far. It now reaches the wire as ?search=.
+//
+// These run on REAL timers, unlike IngredientNameField's debounce tests. Those
+// mount a bare component; these mount a route that loads over MSW first, and
+// waitFor/findBy deadlock against fake timers (they poll on the very timers
+// being faked). The debounce is 300ms and waitFor's default budget is 1000ms,
+// so real timers cover it comfortably.
+//
+// Input still goes through fireEvent rather than user-event: typing char by
+// char with user-event would await between keystrokes and defeat the point of
+// the debounce assertions.
+describe('BrowsePage search', () => {
+  async function typeSearch(value: string) {
+    fireEvent.change(screen.getByLabelText('Search recipes'), { target: { value } })
+  }
+
+  it('sends the term to the server as ?search=', async () => {
+    const urls: string[] = []
+    server.use(
+      listHandler((url) => {
+        urls.push(url.pathname + url.search)
+        return HttpResponse.json({ items: [makeRecipe({ title: 'Miso ramen' })], nextCursor: null })
+      }),
+    )
+    renderRoute('/discover')
+    expect(await screen.findByText('Miso ramen')).toBeInTheDocument()
+
+    await typeSearch('miso')
+
+    await waitFor(() => expect(urls.some((u) => u.includes('search=miso'))).toBe(true))
+    // A fresh key means a fresh first page — no cursor is carried across.
+    expect(urls.every((u) => !u.includes('cursor='))).toBe(true)
+  })
+
+  it('debounces — typing does not fire a request per keystroke', async () => {
+    let requests = 0
+    server.use(
+      listHandler(() => {
+        requests += 1
+        return HttpResponse.json({ items: [makeRecipe({ title: 'Debounced' })], nextCursor: null })
+      }),
+    )
+    renderRoute('/discover')
+    expect(await screen.findByText('Debounced')).toBeInTheDocument()
+    const initial = requests
+
+    // Five keystrokes with no await between them — all inside one debounce window.
+    const input = screen.getByLabelText('Search recipes')
+    for (const value of ['l', 'la', 'las', 'lasa', 'lasag']) {
+      fireEvent.change(input, { target: { value } })
+    }
+
+    await waitFor(() => expect(requests).toBe(initial + 1))
+    // Settle well past the window and confirm no straggler requests followed.
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(requests).toBe(initial + 1)
+  })
+
+  it('does not send a blank term as a filter', async () => {
+    const urls: string[] = []
+    server.use(
+      listHandler((url) => {
+        urls.push(url.pathname + url.search)
+        return HttpResponse.json({ items: [makeRecipe({ title: 'Unfiltered' })], nextCursor: null })
+      }),
+    )
+    renderRoute('/discover')
+    expect(await screen.findByText('Unfiltered')).toBeInTheDocument()
+
+    await typeSearch('   ')
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
+    expect(urls.every((u) => !u.includes('search='))).toBe(true)
+  })
+
+  it('names the term in the empty state rather than blaming the filters', async () => {
+    server.use(listHandler(() => HttpResponse.json({ items: [], nextCursor: null })))
+    renderRoute('/discover')
+    await screen.findByText('No recipes found')
+
+    await typeSearch('kohlrabi')
+
+    expect(
+      await screen.findByText(/Nothing matches "kohlrabi" — searched titles, descriptions and ingredients\./),
+    ).toBeInTheDocument()
+  })
+
+  it('clears the term along with the other filters', async () => {
+    const urls: string[] = []
+    server.use(
+      listHandler((url) => {
+        urls.push(url.pathname + url.search)
+        return HttpResponse.json({ items: [makeRecipe({ title: 'Clearable' })], nextCursor: null })
+      }),
+    )
+    renderRoute('/discover')
+    expect(await screen.findByText('Clearable')).toBeInTheDocument()
+
+    await typeSearch('ramen')
+    await waitFor(() => expect(urls.some((u) => u.includes('search=ramen'))).toBe(true))
+
+    // "Clear filters" appears because a search term counts as an active filter.
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+
+    expect(screen.getByLabelText('Search recipes')).toHaveValue('')
+    await waitFor(() => expect(urls[urls.length - 1]).not.toContain('search='))
   })
 })
