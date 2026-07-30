@@ -25,6 +25,13 @@ import { isToday, planDayPath, shortDayOf } from '@/lib/planDates'
 import { mealTokens } from './MealCard'
 import LoadBar from './LoadBar'
 
+/**
+ * How far above the week's own average a day has to sit before the ratio is
+ * worth words. Below this the marker on the bar already says everything a
+ * number would, and "1.1× average" is noise dressed as a finding.
+ */
+const NOTABLE_RATIO = 1.4
+
 interface Props {
   day: DayJudgment
   /** That day's entries only — the page has already filtered. */
@@ -40,6 +47,8 @@ interface Props {
   onSelect?: (entry: MealPlanEntry) => void
   /** The entry whose panel is open, so its chip can show as selected. */
   selectedEntryId?: string | null
+  /** The element id of the panel a chip opens, for aria-controls. */
+  panelId?: string
 }
 
 export default function WeekDayRow({
@@ -51,13 +60,14 @@ export default function WeekDayRow({
   averageCalories,
   onSelect,
   selectedEntryId = null,
+  panelId,
 }: Props) {
   const today = isToday(day.date)
   const planned = day.plannedCount > 0
   // Only worth stating once it is a real difference; below that the marker on
   // the bar already says everything a ratio would.
   const ratio = planned && averageMinutes > 0 ? day.minutes / averageMinutes : 0
-  const showRatio = ratio >= 1.4
+  const showRatio = ratio >= NOTABLE_RATIO
 
   return (
     <li
@@ -81,6 +91,7 @@ export default function WeekDayRow({
               entry={entry}
               dayName={day.dayName}
               selected={entry.id === selectedEntryId}
+              panelId={panelId}
               onSelect={onSelect}
             />
           ) : (
@@ -93,6 +104,10 @@ export default function WeekDayRow({
       </div>
 
       <div style={effortCell}>
+        {/* The columns are positional, and position is exactly what a screen
+            reader does not have. Each figure carries its own column name so
+            "140m" and "not counted" cannot be read against the wrong one. */}
+        <span style={srOnly}>Time in the kitchen</span>
         {planned ? (
           <>
             <LoadBar value={day.minutes} max={maxMinutes} average={averageMinutes} unit="m" />
@@ -108,6 +123,7 @@ export default function WeekDayRow({
       </div>
 
       <div style={calorieCell}>
+        <span style={srOnly}>Planned calories</span>
         {planned ? (
           <LoadBar
             value={day.calories ?? 0}
@@ -137,12 +153,14 @@ function MealChip({
   entry,
   dayName,
   selected,
+  panelId,
   onSelect,
 }: {
   meal: MealTypeName
   entry: MealPlanEntry
   dayName: string
   selected: boolean
+  panelId?: string
   onSelect?: (entry: MealPlanEntry) => void
 }) {
   const { tint, ink } = mealTokens(meal)
@@ -150,7 +168,11 @@ function MealChip({
     <button
       type="button"
       aria-label={`${entry.recipe.title}, ${dayName} ${meal.toLowerCase()}`}
-      aria-pressed={selected}
+      // expanded, not pressed: the chip opens a panel rather than toggling a
+      // state of its own, and aria-controls only points at the panel while it
+      // exists — a dangling idref is worse than none.
+      aria-expanded={onSelect ? selected : undefined}
+      aria-controls={selected && panelId ? panelId : undefined}
       disabled={!onSelect}
       onClick={onSelect ? () => onSelect(entry) : undefined}
       style={{

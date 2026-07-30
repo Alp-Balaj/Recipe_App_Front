@@ -27,7 +27,15 @@
 // page already established. The only write on this surface is Remove.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useMemo, useState, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
@@ -38,12 +46,18 @@ import { useDayRecipes } from '@/hooks/useDayRecipes'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { addDays, parsePlanDate, planWeekPath, todayPlanDate } from '@/lib/planDates'
 import { dinnerRepeats, weekJudgment } from '@/lib/weekJudgment'
-import { formatMinutes } from '@/pages/recipeVisuals'
 import Modal from '@/components/ui/Modal'
 import StateBlock from '@/components/ui/StateBlock'
 import MealPanel from '@/components/mealplan/MealPanel'
 import WeekDayRow from '@/components/mealplan/WeekDayRow'
 import WeekSummary from '@/components/mealplan/WeekSummary'
+
+/**
+ * The panel's element id. One constant rather than a generated one because there
+ * is only ever ONE panel open on this surface, and the chips need to name it in
+ * `aria-controls` before they know which variant will render it.
+ */
+const PANEL_ID = 'week-meal-panel'
 
 /** "Mon 27 Jul – Sun 2 Aug" for the week beginning at a UTC-midnight Monday. */
 function weekRangeLabel(weekStartIso: string): string {
@@ -67,6 +81,13 @@ export default function MealPlanWeekPage() {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const closePanel = useCallback(() => setSelectedId(null), [])
+  // Focus has to land somewhere real when the panel closes. Both containers try
+  // the chip that opened it first (Modal does its own restore; DesktopDock does
+  // the same), but after a successful REMOVE that chip has been unmounted and
+  // focus falls to <body> — from where a keyboard reader has to start the page
+  // again. The board heading is the meaningful fallback.
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
   const entries = useMemo(() => detail.data?.entries ?? [], [detail.data])
   const judgment = useMemo(() => weekJudgment(new Date(weekStart), entries), [weekStart, entries])
@@ -91,6 +112,17 @@ export default function MealPlanWeekPage() {
     ? judgment.days.find((day) => day.dayName === selected.dayOfWeek) ?? null
     : null
 
+  // Closing the panel must not drop focus on the floor. Both containers restore
+  // to the chip first; this catches the case where that chip no longer exists.
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    const open = selected !== null
+    if (wasOpen.current && !open && document.activeElement === document.body) {
+      headingRef.current?.focus()
+    }
+    wasOpen.current = open
+  }, [selected])
+
   const planned = judgment.days.filter((day) => day.plannedCount > 0)
   const counted = planned.filter((day) => day.isCalorieCounted)
   const maxCalories = counted.reduce((most, day) => Math.max(most, day.calories ?? 0), 0)
@@ -114,12 +146,18 @@ export default function MealPlanWeekPage() {
           maxCalories={maxCalories}
           averageCalories={averageCalories}
           selectedEntryId={selectedId}
+          panelId={PANEL_ID}
           onSelect={planId ? (entry) => setSelectedId(entry.id) : undefined}
         />
       ))}
     </ul>
   )
 
+  // The week resolves in TWO requests, and the second one has its own states.
+  // Without them a planned week showed the cold-start copy and seven empty rows
+  // for the whole detail round trip — and PERMANENTLY if that request failed,
+  // which told the reader their plan was empty when it was not. Cold start now
+  // means exactly one thing: this week genuinely has no plan.
   const body = (
     <>
       {isLoading && <StateBlock title="Loading your week…" />}
@@ -128,11 +166,25 @@ export default function MealPlanWeekPage() {
         <StateBlock title="Couldn't load this week" body="Check your connection and try again." />
       )}
 
-      {!isLoading && !error && (
+      {!isLoading && !error && detail.isLoading && <StateBlock title="Loading this week's meals…" />}
+
+      {!isLoading && !error && !detail.isLoading && detail.error && (
+        <StateBlock
+          title="Couldn't load this week's meals"
+          body="Your plan is still there — check your connection and try again."
+        />
+      )}
+
+      {!isLoading && !error && !detail.isLoading && !detail.error && (
         <>
-          <EffortRead judgment={judgment} counted={counted.length} planned={planned.length} />
+          <WeekNote counted={counted.length} planned={planned.length} />
           {rows}
-          <WeekSummary insight={insight.data} isLoading={insight.isLoading} repeats={repeats} />
+          <WeekSummary
+            insight={insight.data}
+            isLoading={insight.isLoading}
+            repeats={repeats}
+            hasPlan={planId !== null}
+          />
         </>
       )}
     </>
@@ -144,7 +196,13 @@ export default function MealPlanWeekPage() {
         ‹ Month
       </Link>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>Your week</h1>
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0, outline: 'none' }}
+        >
+          Your week
+        </h1>
         <nav style={{ display: 'flex', gap: 6, marginLeft: 'auto' }} aria-label="Nearby weeks">
           <Link to={planWeekPath(previous)} style={stepLink}>
             ‹ Prev
@@ -164,28 +222,26 @@ export default function MealPlanWeekPage() {
         <div style={splitLayout}>
           <div style={{ flex: '1 1 auto', minWidth: 0 }}>{body}</div>
           {selected && selectedDay && planId && (
-            <aside style={panelRail} aria-label="The meal you tapped">
+            <DesktopDock onClose={closePanel}>
               <MealPanelDock
                 planId={planId}
                 entry={selected}
                 date={selectedDay.date}
-                variant="panel"
-                onClose={() => setSelectedId(null)}
+                onClose={closePanel}
               />
-            </aside>
+            </DesktopDock>
           )}
         </div>
       ) : (
         <>
           {body}
           {selected && selectedDay && planId && (
-            <Modal onClose={() => setSelectedId(null)} label={selected.recipe.title} variant="bottom">
+            <Modal onClose={closePanel} label={selected.recipe.title} variant="bottom">
               <MealPanelDock
                 planId={planId}
                 entry={selected}
                 date={selectedDay.date}
-                variant="sheet"
-                onClose={() => setSelectedId(null)}
+                onClose={closePanel}
               />
             </Modal>
           )}
@@ -196,23 +252,17 @@ export default function MealPlanWeekPage() {
 }
 
 /**
- * The week's effort verdict, stated in words above the rows — the top-ranked
- * signal, and the one thing the bars alone cannot say ("which day is the
- * problem"). An unplanned week says nothing rather than reporting zeros, and
- * offers no way to create anything: there is nothing to start.
+ * The one week-level line that isn't already on a row: how much of the calorie
+ * read is actually counted. Everything else the rows say for themselves — the
+ * heaviest day's own row already carries "2.2× average", and repeating that as
+ * prose here was the same judgment stated twice.
+ *
+ * A week with nothing planned says so and offers no way to create anything:
+ * there is nothing to start. A fully-counted week renders nothing at all — no
+ * news is not a card.
  */
-function EffortRead({
-  judgment,
-  counted,
-  planned,
-}: {
-  judgment: ReturnType<typeof weekJudgment>
-  counted: number
-  planned: number
-}) {
-  const { heaviestDay, heaviestMinutes, averageMinutes } = judgment
-
-  if (!heaviestDay || planned === 0) {
+function WeekNote({ counted, planned }: { counted: number; planned: number }) {
+  if (planned === 0) {
     return (
       <div style={card}>
         <span style={label}>This week</span>
@@ -223,37 +273,61 @@ function EffortRead({
     )
   }
 
-  const average = Math.round(averageMinutes)
-  const ratio = average > 0 ? heaviestMinutes / averageMinutes : 0
+  if (counted === planned) return null
 
   return (
     <div style={card}>
-      <span style={label}>Effort</span>
-      {/* formatMinutes, not the row's compact "140m": this is prose, and the same
-          figure in two forms is easier to read than the same string twice. */}
+      <span style={label}>Planned calories</span>
       <p style={line}>
-        <span style={{ fontWeight: 700, color: 'var(--text)' }}>{heaviestDay.dayName}</span> is the
-        heaviest day at <span style={figure}>{formatMinutes(heaviestMinutes)}</span>
-        {ratio >= 1.4 && <> — {formatRatio(ratio)}× the week&rsquo;s own average</>}
-        {ratio < 1.4 && <> against a {formatMinutes(average)} average</>}.
+        Counted on {counted} of {planned} planned {planned === 1 ? 'day' : 'days'} — a day with a
+        dish that has no figure stays uncounted.
       </p>
-      {counted < planned && (
-        // The week-level half of the honesty rule: say how much of the calorie
-        // read is actually counted, so a run of "not counted" rows is explained
-        // rather than looking like a bug.
-        <p style={line}>
-          Planned calories are counted on {counted} of {planned} planned{' '}
-          {planned === 1 ? 'day' : 'days'} — a day with a dish that has no figure stays uncounted.
-        </p>
-      )}
     </div>
   )
 }
 
-/** 2.24 → "2.2", 2.0 → "2". Same rule WeekDayRow uses. */
-function formatRatio(ratio: number): string {
-  const rounded = Math.round(ratio * 10) / 10
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+/**
+ * The docked container on desktop. It exists as its own component so its
+ * keyboard contract can be mount-scoped: focus moves in when it opens, Escape
+ * closes it, and focus returns to the chip that opened it — the same contract
+ * Modal gives the sheet, which this branch deliberately does not use (a dialog
+ * would dim the week, and the week staying readable is the whole point of
+ * docking). It sits last in DOM order, after the rows and the footer, so moving
+ * focus in is not a nicety: without it the dock is ~20 tab stops away.
+ */
+function DesktopDock({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLElement>(null)
+  // Captured during render, not in the effect: by effect time the active element
+  // could already be inside the dock. Same reasoning as Modal's own capture.
+  const [trigger] = useState(() => document.activeElement as HTMLElement | null)
+
+  useEffect(() => {
+    ref.current?.focus()
+    return () => {
+      // isConnected, because a successful remove unmounts the chip we came from;
+      // the page's heading fallback picks that case up.
+      if (trigger?.isConnected) trigger.focus()
+    }
+  }, [trigger])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  return (
+    <aside
+      ref={ref}
+      tabIndex={-1}
+      style={panelRail}
+      aria-label="The meal you tapped"
+    >
+      {children}
+    </aside>
+  )
 }
 
 /**
@@ -266,13 +340,11 @@ function MealPanelDock({
   planId,
   entry,
   date,
-  variant,
   onClose,
 }: {
   planId: string
   entry: MealPlanEntry
   date: Date
-  variant: 'panel' | 'sheet'
   onClose: () => void
 }) {
   const { removeEntry } = useMealPlanMutations(planId)
@@ -282,16 +354,20 @@ function MealPanelDock({
     <MealPanel
       entry={entry}
       date={date}
+      id={PANEL_ID}
       recipe={byId.get(entry.recipe.id)}
       isLoading={isLoading}
       isError={isError}
       isRemoving={removeEntry.isPending}
-      // No confirm and no banner: the panel closes because its entry stops
-      // existing (the page derives it from the entries), which is a clearer
-      // report than a message about something that is no longer on screen.
+      // A SUCCESS needs no message: the panel closes because its entry stops
+      // existing (the page derives it from the entries), which reports itself.
+      // A FAILURE has no such tell — nothing left the list, so the tap looks
+      // like it did nothing at all — and it says so inside the panel rather
+      // than in a page-level banner, which is the editor vocabulary this
+      // surface deliberately drops.
+      removeFailed={removeEntry.isError}
       onRemove={() => removeEntry.mutate(entry.id)}
       onClose={onClose}
-      variant={variant}
     />
   )
 }
@@ -320,8 +396,11 @@ const splitLayout: CSSProperties = {
 const panelRail: CSSProperties = {
   flex: '0 0 clamp(240px, 36%, 340px)',
   minWidth: 0,
+  // The ONE sticky on this pair: MealPanel had a second one for the same job,
+  // and two nested stickies only ever fight each other.
   position: 'sticky',
   top: 0,
+  outline: 'none',
 }
 
 const rowList: CSSProperties = {
@@ -359,14 +438,6 @@ const line: CSSProperties = {
   color: 'var(--muted)',
   lineHeight: 1.4,
   overflowWrap: 'anywhere',
-}
-
-const figure: CSSProperties = {
-  fontSize: 17,
-  fontWeight: 800,
-  letterSpacing: '-0.02em',
-  color: 'var(--accent)',
-  fontVariantNumeric: 'tabular-nums',
 }
 
 const backLink: CSSProperties = {

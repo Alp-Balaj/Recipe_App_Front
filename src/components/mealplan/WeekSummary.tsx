@@ -24,9 +24,16 @@ interface Props {
   isLoading?: boolean
   /** Dinners planned more than once this week, from dinnerRepeats. */
   repeats: { title: string; count: number }[]
+  /**
+   * Whether the week has a plan at all. Without it this card could not tell "no
+   * insight yet" from "no insight ever": the insight query is DISABLED on an
+   * unplanned week, so `insight` stays undefined and `isLoading` false forever,
+   * and the card rendered as a heading and a link with nothing between them.
+   */
+  hasPlan?: boolean
 }
 
-export default function WeekSummary({ insight, isLoading = false, repeats }: Props) {
+export default function WeekSummary({ insight, isLoading = false, repeats, hasPlan = true }: Props) {
   return (
     <section style={card} aria-label="What this week costs at the shop">
       <div style={head}>
@@ -36,9 +43,11 @@ export default function WeekSummary({ insight, isLoading = false, repeats }: Pro
         </Link>
       </div>
 
-      {isLoading && <p style={line}>Working out this week's shop…</p>}
+      {!hasPlan && <p style={line}>Nothing planned yet, so there is nothing to buy for this week.</p>}
 
-      {!isLoading && insight && insight.distinctIngredientCount > 0 && (
+      {hasPlan && isLoading && <p style={line}>Working out this week's shop…</p>}
+
+      {hasPlan && !isLoading && insight && insight.distinctIngredientCount > 0 && (
         <p style={line}>
           <span style={figure}>{insight.distinctIngredientCount}</span> ingredients this week
           {insight.sharedIngredientCount > 0 && (
@@ -51,15 +60,17 @@ export default function WeekSummary({ insight, isLoading = false, repeats }: Pro
         </p>
       )}
 
-      {!isLoading && insight?.outlier && (
+      {hasPlan && !isLoading && insight?.outlier && (
         <p style={line}>
           <span style={{ fontWeight: 700 }}>{insight.outlier.title}</span> uses{' '}
           {insight.outlier.uniqueIngredientCount} ingredients unique to this week.
         </p>
       )}
 
-      {!isLoading && insight && insight.distinctIngredientCount === 0 && (
-        <p style={line}>Nothing planned yet, so there is nothing to buy.</p>
+      {hasPlan && !isLoading && (!insight || insight.distinctIngredientCount === 0) && (
+        // A planned week whose dishes carry no structured ingredients at all —
+        // and the failure case, which must not render as a blank card either.
+        <p style={line}>Nothing to buy from this week's meals yet.</p>
       )}
 
       {repeats.length > 0 && (

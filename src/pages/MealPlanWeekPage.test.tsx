@@ -68,6 +68,27 @@ const entries: MealPlanEntry[] = [
 
 const plan: MealPlan = { id: PLAN_ID, weekStartDate: WEEK_START, createdAt: WEEK_START, entries }
 
+/**
+ * A two-day week whose average is whatever `(a + b) / 2` is, for pinning the
+ * ratio threshold from both sides. Minutes come from the entries themselves, so
+ * the arithmetic under test is the real weekJudgment one.
+ */
+function ratioWeek(a: number, b: number): MealPlan {
+  return {
+    id: PLAN_ID,
+    weekStartDate: WEEK_START,
+    createdAt: WEEK_START,
+    entries: [
+      entry('entry-long', 'Monday', 'Dinner', {
+        id: 'recipe-long', title: 'Long braise', imageUrl: null, totalTimeMinutes: a, caloriesPerServing: 500,
+      }),
+      entry('entry-quick', 'Tuesday', 'Dinner', {
+        id: 'recipe-quick', title: 'Quick stir fry', imageUrl: null, totalTimeMinutes: b, caloriesPerServing: 500,
+      }),
+    ],
+  }
+}
+
 const insight = {
   distinctIngredientCount: 23,
   sharedIngredientCount: 6,
@@ -100,7 +121,16 @@ function makeRecipe(over: Partial<RecipeResponse> & Pick<RecipeResponse, 'id' | 
 }
 
 /** Plan lookup + detail + insight + the panel's recipe, all as real requests. */
-function plannedWeek(opts: { details?: MealPlan[]; onDelete?: (planId: string, entryId: string) => void } = {}) {
+function plannedWeek(
+  opts: {
+    details?: MealPlan[]
+    onDelete?: (planId: string, entryId: string) => void
+    /** Anything but 204 makes the remove fail. Overriding this handler in a
+     *  second `server.use` argument would NOT work: within one call the earlier
+     *  handler wins, so the 204 below would keep answering. */
+    deleteStatus?: number
+  } = {},
+) {
   const queue = [...(opts.details ?? [])]
   return [
     http.get('/api/meal-plans', () => HttpResponse.json({ items: [summary], nextCursor: null })),
@@ -108,7 +138,7 @@ function plannedWeek(opts: { details?: MealPlan[]; onDelete?: (planId: string, e
     http.get('/api/meal-plans/:id/grocery-insight', () => HttpResponse.json(insight)),
     http.delete('/api/meal-plans/:id/entries/:entryId', ({ params }) => {
       opts.onDelete?.(String(params.id), String(params.entryId))
-      return new HttpResponse(null, { status: 204 })
+      return new HttpResponse(null, { status: opts.deleteStatus ?? 204 })
     }),
     http.get('/api/recipes/:id', ({ params }) =>
       HttpResponse.json(makeRecipe({ id: String(params.id), title: 'Pasta al forno' })),
@@ -125,6 +155,29 @@ async function rows() {
 /** One day's row. Await `rows()` first — the board renders once the plan resolves. */
 function row(dayName: string) {
   return screen.getByTestId(`week-day-${dayName}`)
+}
+
+/**
+ * The suite-wide stub in src/test/setup.ts answers `matches: false` to
+ * everything, so every case is the SHEET unless it says otherwise. The dock is
+ * the branch the brief specifies for desktop and is otherwise unreachable.
+ */
+function pinDesktop(): () => void {
+  const original = window.matchMedia
+  window.matchMedia = ((query: string) =>
+    ({
+      matches: query.includes('1024'),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList) as typeof window.matchMedia
+  return () => {
+    window.matchMedia = original
+  }
 }
 
 beforeEach(() => vi.setSystemTime(NOW))
@@ -145,8 +198,15 @@ describe('the week board', () => {
     expect(screen.queryByRole('button', { name: /start this week/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /plan this week/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /generate|create|new plan/i })).not.toBeInTheDocument()
-    // An unplanned week is not a week of zero cooking — it says nothing instead.
-    expect(screen.queryByText('0m')).not.toBeInTheDocument()
+    // An unplanned week is not a week of zero cooking. Every cell says nothing:
+    // 21 empty meal chips + 14 figure cells = 35 dashes, and no figure anywhere.
+    // (The old assertion here looked for '0m', which no code path could ever
+    // render because LoadBar does not mount on an unplanned day — it could not
+    // fail, so it was not a test.)
+    const list = await screen.findByRole('list', { name: /day by day/i })
+    expect(within(list).getAllByText('—')).toHaveLength(35)
+    expect(screen.queryByText(/planned kcal/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/× average/i)).not.toBeInTheDocument()
   })
 
   it("puts each day's effort on that day's row", async () => {
@@ -185,9 +245,14 @@ describe('the week board', () => {
     const tuesday = within(row('Tuesday'))
     expect(await tuesday.findByText(/not counted/i)).toBeInTheDocument()
     // Not a hole and NOT a zero: a short bar reads as a light day, and a day
-    // whose lunch merely has no figure is not a light day.
-    expect(tuesday.queryByText('0')).not.toBeInTheDocument()
+    // whose lunch merely has no figure is not a light day. The regex matters —
+    // the exact string '0' could never have matched the "0 planned kcal" a
+    // zeroed bar actually renders, so it was an assertion incapable of failing.
+    expect(tuesday.queryByText(/\b0\b/)).not.toBeInTheDocument()
     expect(tuesday.queryByText(/kcal/i)).not.toBeInTheDocument()
+    // The uncounted cell still says WHICH column it is, for a reader who cannot
+    // see that it is the calorie one.
+    expect(tuesday.getByText('Planned calories')).toBeInTheDocument()
   })
 
   it('labels every calorie figure as planned', async () => {
@@ -199,7 +264,11 @@ describe('the week board', () => {
     const thursday = within(row('Thursday'))
     // 300 + 700 + 900; the thousands separator is locale-dependent.
     expect(await thursday.findByText(/1[,.\s]?900/)).toBeInTheDocument()
-    expect(thursday.getByText(/planned/i)).toBeInTheDocument()
+    expect(thursday.getByText(/planned kcal/i)).toBeInTheDocument()
+    // …and the two figure columns name themselves for assistive tech, since
+    // "140m" and "not counted" are otherwise identified by position alone.
+    expect(thursday.getByText('Time in the kitchen')).toBeInTheDocument()
+    expect(thursday.getByText('Planned calories')).toBeInTheDocument()
     // A planner, not a tracker — nothing here claims to know what was eaten.
     expect(screen.queryByText(/\beaten\b|\bate\b/i)).not.toBeInTheDocument()
   })
@@ -219,11 +288,13 @@ describe('the week board', () => {
 
     renderRoute('/plan/week/2026-07-27')
 
-    await userEvent.click(
-      await screen.findByRole('button', { name: /pasta al forno, thursday lunch/i }),
-    )
+    const chip = await screen.findByRole('button', { name: /pasta al forno, thursday lunch/i })
+    expect(chip).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(chip)
 
     const panel = await screen.findByRole('dialog')
+    expect(chip).toHaveAttribute('aria-expanded', 'true')
+    expect(chip).toHaveAttribute('aria-controls', 'week-meal-panel')
     expect(within(panel).getByRole('button', { name: /remove/i })).toBeInTheDocument()
     // The week judges, it does not edit: no picker, no search, no swap.
     expect(screen.queryByPlaceholderText(/search/i)).not.toBeInTheDocument()
@@ -314,18 +385,7 @@ describe('the week board', () => {
    * specifies for desktop, and it is otherwise unreachable under test.
    */
   it('docks the panel beside the rows on a wide screen instead of over them', async () => {
-    const original = window.matchMedia
-    window.matchMedia = ((query: string) =>
-      ({
-        matches: query.includes('1024'),
-        media: query,
-        onchange: null,
-        addEventListener: () => {},
-        removeEventListener: () => {},
-        addListener: () => {},
-        removeListener: () => {},
-        dispatchEvent: () => false,
-      }) as MediaQueryList) as typeof window.matchMedia
+    const restore = pinDesktop()
     try {
       server.use(...plannedWeek())
 
@@ -341,8 +401,160 @@ describe('the week board', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(within(dock).getByText(/planned kcal/i)).toBeInTheDocument()
     } finally {
-      window.matchMedia = original
+      restore()
     }
+  })
+
+  /**
+   * ── C1: the detail query has its own states ────────────────────────────────
+   * The week resolves in two requests. Before this the second one had no states
+   * at all, so a week that HAS meals showed the cold-start copy and seven empty
+   * rows for the whole round trip — and permanently if it failed. "Your plan is
+   * empty" when it is not is the worst thing this surface can say.
+   */
+  it('does not claim the week is empty while its meals are still loading', async () => {
+    server.use(
+      http.get('/api/meal-plans', () => HttpResponse.json({ items: [summary], nextCursor: null })),
+      // Never resolves: the detail is in flight for the whole test.
+      http.get('/api/meal-plans/:id', () => new Promise<never>(() => {})),
+    )
+
+    renderRoute('/plan/week/2026-07-27')
+
+    expect(await screen.findByText(/loading this week's meals/i)).toBeInTheDocument()
+    expect(screen.queryByText(/nothing planned yet/i)).not.toBeInTheDocument()
+    // And no rows to misread either — seven empty ones would say the same thing.
+    expect(screen.queryByRole('list', { name: /day by day/i })).not.toBeInTheDocument()
+  })
+
+  it('says the meals failed to load rather than showing the week as unplanned', async () => {
+    server.use(
+      http.get('/api/meal-plans', () => HttpResponse.json({ items: [summary], nextCursor: null })),
+      http.get('/api/meal-plans/:id', () => new HttpResponse(null, { status: 500 })),
+    )
+
+    renderRoute('/plan/week/2026-07-27')
+
+    expect(await screen.findByText(/couldn't load this week's meals/i)).toBeInTheDocument()
+    // The distinction that matters: a failed load is not an empty week, and the
+    // plan is still there.
+    expect(screen.queryByText(/nothing planned yet/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/your plan is still there/i)).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: /day by day/i })).not.toBeInTheDocument()
+  })
+
+  /** ── I1: a failed remove has no tell of its own ──────────────────────────── */
+  it('says so in the panel when the remove fails', async () => {
+    server.use(...plannedWeek({ deleteStatus: 500 }))
+
+    renderRoute('/plan/week/2026-07-27')
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /pasta al forno, thursday lunch/i }),
+    )
+    const panel = await screen.findByRole('dialog')
+    await userEvent.click(within(panel).getByRole('button', { name: /remove/i }))
+
+    // Nothing left the list, so without this the tap looks like it did nothing.
+    // `.?` for the apostrophe: the copy uses a typographic &rsquo;, which an
+    // ASCII ' in the pattern would silently miss.
+    expect(await within(panel).findByText(/couldn.?t remove that meal/i)).toBeInTheDocument()
+    // The panel stays open and the meal stays on its row — the failure is not
+    // dressed up as a success.
+    expect(within(panel).getByRole('button', { name: /remove/i })).toBeEnabled()
+    expect(within(row('Thursday')).getByText('140m')).toBeInTheDocument()
+  })
+
+  /** ── I2: the dock's keyboard contract ───────────────────────────────────── */
+  it('moves focus into the dock, closes it on Escape, and hands focus back', async () => {
+    const restore = pinDesktop()
+    try {
+      server.use(...plannedWeek())
+
+      renderRoute('/plan/week/2026-07-27')
+
+      const chip = await screen.findByRole('button', { name: /pasta al forno, thursday lunch/i })
+      await userEvent.click(chip)
+
+      // The dock is last in DOM order, after seven rows and the footer, so
+      // without this a keyboard reader is ~20 tab stops from Remove.
+      const dock = await screen.findByRole('complementary', { name: /the meal you tapped/i })
+      expect(dock).toHaveFocus()
+
+      await userEvent.keyboard('{Escape}')
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('complementary', { name: /the meal you tapped/i }),
+        ).not.toBeInTheDocument(),
+      )
+      // Back where it came from, not on <body>.
+      expect(chip).toHaveFocus()
+    } finally {
+      restore()
+    }
+  })
+
+  it('hands focus to the board heading when the chip it came from is removed', async () => {
+    const restore = pinDesktop()
+    try {
+      const withoutThursdayLunch: MealPlan = {
+        ...plan,
+        entries: entries.filter((e) => e.id !== 'entry-thu-lunch'),
+      }
+      server.use(...plannedWeek({ details: [plan, withoutThursdayLunch] }))
+
+      renderRoute('/plan/week/2026-07-27')
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: /pasta al forno, thursday lunch/i }),
+      )
+      const dock = await screen.findByRole('complementary', { name: /the meal you tapped/i })
+      await userEvent.click(within(dock).getByRole('button', { name: /remove/i }))
+
+      // The trigger chip is unmounted by its own removal, so restoring to it is
+      // a no-op and focus would otherwise land on <body>.
+      await waitFor(() =>
+        expect(screen.getByRole('heading', { name: /your week/i })).toHaveFocus(),
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  /** ── the notable-ratio threshold ────────────────────────────────────────── */
+  it('states a ratio at the threshold and stays quiet just below it', async () => {
+    // 98 and 42 average 70, so Monday is exactly 1.4× the week.
+    server.use(...plannedWeek({ details: [ratioWeek(98, 42)] }))
+
+    renderRoute('/plan/week/2026-07-27')
+    await rows()
+
+    expect(await within(row('Monday')).findByText(/1\.4× average/i)).toBeInTheDocument()
+  })
+
+  it('stays quiet about a ratio just below the threshold', async () => {
+    // 97 and 43 also average 70 — 1.386×, which is noise dressed as a finding.
+    server.use(...plannedWeek({ details: [ratioWeek(97, 43)] }))
+
+    renderRoute('/plan/week/2026-07-27')
+    await rows()
+
+    expect(await within(row('Monday')).findByText('97m')).toBeInTheDocument()
+    expect(within(row('Monday')).queryByText(/× average/i)).not.toBeInTheDocument()
+  })
+
+  /** ── the footer on an unplanned week ────────────────────────────────────── */
+  it('says there is nothing to buy rather than rendering an empty footer', async () => {
+    server.use(http.get('/api/meal-plans', () => HttpResponse.json({ items: [], nextCursor: null })))
+
+    renderRoute('/plan/week/2026-07-27')
+
+    const footer = await screen.findByRole('region', { name: /what this week costs/i })
+    // The insight query is DISABLED without a plan, so this card had no line at
+    // all to render — a heading and a link with a hole between them.
+    expect(within(footer).getByText(/nothing to buy/i)).toBeInTheDocument()
+    expect(within(footer).getByRole('link', { name: /shopping list/i })).toBeInTheDocument()
   })
 
   it('asks for the week in the URL, not the current one', async () => {

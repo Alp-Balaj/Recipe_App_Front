@@ -10,6 +10,10 @@
 // some fixed number. That is what makes "2× average" legible without a second
 // chart: the marker is already sitting there.
 //
+// The figure carries its own unit ("140m", "1,900 planned kcal") but NOT its
+// column name — a bar cannot know it is in a column. The row supplies that as
+// visually-hidden text, so "not counted" can never be read against effort.
+//
 // `unknown` is the calorie honesty rule made visible. A day with any planned
 // dish lacking a figure is NOT a short bar and NOT a hole: a short bar reads as
 // "a light day", and a day whose lunch merely has no calorie figure is not a
@@ -108,17 +112,21 @@ const hatched: CSSProperties = {
     'repeating-linear-gradient(115deg, var(--surface2) 0 4px, transparent 4px 8px)',
 }
 
+// NOT nowrap: "1,900 planned kcal" is ~125px of text in a ~112px cell, so it
+// wrapped OUT of the row instead of onto a second line. The figure wraps and the
+// cell keeps its width, which is what keeps the columns aligned row to row.
 const figure: CSSProperties = {
   fontSize: 13,
   fontWeight: 800,
   letterSpacing: '-0.01em',
+  lineHeight: 1.25,
   fontVariantNumeric: 'tabular-nums',
-  whiteSpace: 'nowrap',
+  overflowWrap: 'anywhere',
 }
 
 const notCounted: CSSProperties = {
   fontSize: 11.5,
   fontWeight: 700,
   color: 'var(--muted)',
-  whiteSpace: 'nowrap',
+  lineHeight: 1.25,
 }

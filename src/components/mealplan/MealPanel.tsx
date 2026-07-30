@@ -15,7 +15,9 @@
 // here knows what was eaten, and a bare "700 kcal" would imply it did.
 //
 // Presentational — Remove reports up, the page owns the mutation, same rule as
-// MealCard and IngredientGroup.
+// MealCard and IngredientGroup. It has no `variant` either: the CONTAINER decides
+// whether this is a docked rail or a sheet, and the only thing that ever differed
+// (a position:sticky) belonged to the rail all along.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CSSProperties } from 'react'
@@ -29,6 +31,8 @@ import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 import { mealTokens } from './MealCard'
 
 interface Props {
+  /** The element id the row's chips point at with aria-controls. */
+  id?: string
   entry: MealPlanEntry
   /** The day this entry sits on, for "Go to this day". */
   date: Date
@@ -40,12 +44,13 @@ interface Props {
   isError?: boolean
   onRemove: () => void
   isRemoving?: boolean
+  /** The remove was rejected — say so HERE, not in a page banner. */
+  removeFailed?: boolean
   onClose: () => void
-  /** Docked beside the rows on desktop, a sheet below that. */
-  variant?: 'panel' | 'sheet'
 }
 
 export default function MealPanel({
+  id,
   entry,
   date,
   recipe,
@@ -53,8 +58,8 @@ export default function MealPanel({
   isError = false,
   onRemove,
   isRemoving = false,
+  removeFailed = false,
   onClose,
-  variant = 'panel',
 }: Props) {
   const { tint, ink } = mealTokens(entry.mealType)
   // The recipe opens in the canvas BESIDE the week rather than instead of it, so
@@ -68,8 +73,11 @@ export default function MealPanel({
   const calories = recipe?.caloriesPerServing ?? entry.recipe.caloriesPerServing ?? null
 
   return (
+    // No sticky here: on desktop the RAIL is the sticky one, and nesting a second
+    // sticky inside it only makes the two fight over the same scroll.
     <section
-      style={variant === 'panel' ? { ...card, position: 'sticky', top: 0 } : card}
+      id={id}
+      style={card}
       aria-label={`${entry.recipe.title}, planned for ${entry.mealType.toLowerCase()}`}
     >
       <div style={header}>
@@ -155,6 +163,15 @@ export default function MealPanel({
           {isRemoving ? 'Removing…' : 'Remove'}
         </button>
       </div>
+
+      {/* A successful remove reports itself by closing this panel. A failed one
+          has no tell at all — the entry never left the list — so it says so
+          here, beside the button that failed. */}
+      {removeFailed && (
+        <p role="status" style={failure}>
+          Couldn&rsquo;t remove that meal. Try again.
+        </p>
+      )}
     </section>
   )
 }
@@ -290,6 +307,17 @@ const actionButton: CSSProperties = {
   background: 'var(--surface)',
   textDecoration: 'none',
   lineHeight: 1.5,
+}
+
+const failure: CSSProperties = {
+  margin: 0,
+  background: 'var(--surface2)',
+  border: '1px solid var(--border)',
+  borderRadius: 12,
+  padding: '7px 10px',
+  fontSize: 12.5,
+  fontWeight: 700,
+  color: 'var(--muted)',
 }
 
 const muted: CSSProperties = {
