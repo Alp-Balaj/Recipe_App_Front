@@ -137,4 +137,21 @@ export const queryKeys = {
     /** Recipes drawn from recent meal plans, most recently planned first. */
     history: () => ['picker', 'history'] as const,
   },
+
+  // week/shopping rework (2026-07-29 design) — SANCTIONED ADDITIVE EDIT to this frozen
+  // module, same rationale as the blocks above. Nothing already here changed.
+  //
+  // `shoppingList.list()` above is RETIRED with useShoppingList.ts: the list is no longer
+  // a single per-user keyset page. `all` stays so plan mutations can invalidate the subtree.
+  shopping: {
+    /** Everything projection-related. */
+    all: ['shopping'] as const,
+    /** One scope+week projection. `weekStart` is null for scope 'All'. */
+    week: (weekStart: string | null, scope: 'Week' | 'All') =>
+      ['shopping', 'week', weekStart, scope] as const,
+  },
+  grocery: {
+    /** One plan's grocery insight (size / overlap / outlier). */
+    insight: (planId: string) => ['grocery', 'insight', planId] as const,
+  },
 } as const

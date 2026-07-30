@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { renderRoute } from '@/test/utils'
 import * as api from '@/api/mealPlans'
+import * as shopping from '@/api/shopping'
 
 // Session stubbing follows BrowsePage.test.tsx: renderRoute mounts the real
 // route tree with a fake authenticated AuthContext, so the shell renders the
@@ -45,7 +46,8 @@ describe('meal-planning routes', () => {
   })
 
   it('/shopping-list renders the shopping-list surface', async () => {
-    vi.spyOn(api, 'getShoppingListPage').mockResolvedValue({ items: [], nextCursor: null })
+    // The list is a per-week projection now (week/shopping rework), not a page of rows.
+    vi.spyOn(shopping, 'getShoppingList').mockResolvedValue({ weeks: [], orphanedPurchasedNames: [] })
 
     renderAt('/shopping-list')
 

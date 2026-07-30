@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { getMealPlanForWeek, weekStartOf, addMealPlanEntry, setShoppingListItemPurchased } from './mealPlans'
+import { getMealPlanForWeek, weekStartOf, addMealPlanEntry, getGroceryInsight } from './mealPlans'
 
 describe('weekStartOf', () => {
   it('returns the Monday UTC midnight of the given date, as an ISO string', () => {
@@ -73,16 +73,19 @@ describe('meal plan fetchers', () => {
     })
   })
 
-  it('setShoppingListItemPurchased PATCHes an explicit isPurchased', async () => {
+  // Replaces the retired setShoppingListItemPurchased case: the /shopping-list
+  // writes moved to api/shopping.ts (week/shopping rework), and this endpoint
+  // arrived in the same plan as their replacement.
+  it('getGroceryInsight GETs one plan\'s insight', async () => {
     fetchMock.mockReturnValue(
-      Promise.resolve({ ok: true, status: 204, headers: new Headers({ 'content-length': '0' }) } as unknown as Response),
+      jsonResponse({ distinctIngredientCount: 12, sharedIngredientCount: 3, outlier: null }),
     )
 
-    await setShoppingListItemPurchased('i1', true)
+    const insight = await getGroceryInsight('p1')
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(String(url)).toContain('/api/shopping-list/i1')
-    expect((init as RequestInit).method).toBe('PATCH')
-    expect(JSON.parse(String((init as RequestInit).body))).toEqual({ isPurchased: true })
+    expect(String(url)).toContain('/api/meal-plans/p1/grocery-insight')
+    expect((init as RequestInit).method).toBe('GET')
+    expect(insight.sharedIngredientCount).toBe(3)
   })
 })

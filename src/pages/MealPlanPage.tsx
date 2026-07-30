@@ -12,24 +12,23 @@
 // failure live in useMealPlanMutations — this page only decides what a tap
 // means and shows the resulting message.
 //
-// Task 8 adds "Generate shopping list" (enabled only once the week has an
-// entry). Regenerating REPLACES this plan's generated rows, so ticks on them
-// are discarded (meal-planning-v1-semantics #5) — the confirm says so plainly
-// before anything is called, and success invalidates the shopping-list subtree.
+// "Generate shopping list" is GONE (week/shopping rework, Tasks 4–5): the list is
+// a per-request projection of this week's plan now, so there is nothing to
+// generate and nothing to regenerate — the week's meals ARE the list, and a tick
+// survives every later edit. The button and its lost-ticks confirmation went with
+// the endpoint; "View list" stays. This whole page is replaced by the days-as-rows
+// board in Task 8 of the same plan.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiConflictError } from '@/api/client'
-import { queryKeys } from '@/api/queryKeys'
-import { generateShoppingList, weekStartOf, type DayName, type MealPlanEntry, type MealTypeName } from '@/api/mealPlans'
+import { weekStartOf, type DayName, type MealPlanEntry, type MealTypeName } from '@/api/mealPlans'
 import { useCurrentWeekPlan, useEnsureWeekPlan, useMealPlanDetail } from '@/hooks/useMealPlan'
 import { useMealPlanMutations } from '@/hooks/useMealPlanMutations'
 import { shortDayLabel } from '@/hooks/usePickerCorpus'
 import { addDays, parsePlanDate, planWeekPath, todayPlanDate } from '@/lib/planDates'
 import StateBlock from '@/components/ui/StateBlock'
-import Modal from '@/components/ui/Modal'
 import WeekGrid from '@/components/mealplan/WeekGrid'
 import RecipePickerModal from '@/components/mealplan/RecipePickerModal'
 
@@ -167,21 +166,6 @@ function PlanWeek({
   const [pickerSlot, setPickerSlot] = useState<{ day: DayName; meal: MealTypeName } | null>(null)
   const [moving, setMoving] = useState<MealPlanEntry | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [confirmingGenerate, setConfirmingGenerate] = useState(false)
-
-  const queryClient = useQueryClient()
-  const generate = useMutation({
-    mutationFn: () => generateShoppingList(planId),
-    onSuccess: () => {
-      setConfirmingGenerate(false)
-      setMessage('Shopping list updated from this week.')
-      void queryClient.invalidateQueries({ queryKey: queryKeys.shoppingList.all })
-    },
-    onError: () => {
-      setConfirmingGenerate(false)
-      setMessage("Couldn't generate the shopping list. Try again.")
-    },
-  })
 
   const entryAt = (day: DayName, meal: MealTypeName) =>
     entries.find((e) => e.dayOfWeek === day && e.mealType === meal)
@@ -231,17 +215,6 @@ function PlanWeek({
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-        <button
-          type="button"
-          style={{ ...generateButton, opacity: entries.length === 0 || generate.isPending ? 0.5 : 1 }}
-          disabled={entries.length === 0 || generate.isPending}
-          onClick={() => {
-            setMessage(null)
-            setConfirmingGenerate(true)
-          }}
-        >
-          {generate.isPending ? 'Generating…' : 'Generate shopping list'}
-        </button>
         <Link to="/shopping-list" style={listLink}>
           View list
         </Link>
@@ -294,32 +267,6 @@ function PlanWeek({
             .catch(report("Couldn't add that meal. Try again."))
         }}
       />
-
-      {confirmingGenerate && (
-        <Modal onClose={() => setConfirmingGenerate(false)} label="Regenerate this week's shopping list?">
-          <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Regenerate this week's shopping list?</div>
-            <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-              Items generated from this plan will be replaced, and anything you'd already ticked off on them will be
-              unticked. Items you added yourself are not affected.
-            </div>
-            <div style={warningNote}>Purchased ticks on generated items are not kept.</div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 2 }}>
-              <button type="button" style={bannerButton} onClick={() => setConfirmingGenerate(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                style={{ ...generateButton, opacity: generate.isPending ? 0.6 : 1 }}
-                disabled={generate.isPending}
-                onClick={() => generate.mutate()}
-              >
-                {generate.isPending ? 'Generating…' : 'Generate'}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </>
   )
 }
@@ -347,19 +294,6 @@ const messageBanner: React.CSSProperties = {
   marginBottom: 12,
 }
 
-const generateButton: React.CSSProperties = {
-  flexShrink: 0,
-  cursor: 'pointer',
-  border: 'none',
-  borderRadius: 12,
-  padding: '9px 14px',
-  fontFamily: 'inherit',
-  fontSize: 13,
-  fontWeight: 700,
-  background: 'var(--accent)',
-  color: 'var(--accent-ink)',
-}
-
 const backLink: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 800,
@@ -385,15 +319,6 @@ const listLink: React.CSSProperties = {
   fontWeight: 700,
   color: 'var(--muted)',
   textDecoration: 'none',
-}
-
-const warningNote: React.CSSProperties = {
-  background: 'var(--chipbg)',
-  border: '1px solid var(--border)',
-  borderRadius: 12,
-  padding: '8px 10px',
-  fontSize: 12.5,
-  fontWeight: 600,
 }
 
 const bannerButton: React.CSSProperties = {

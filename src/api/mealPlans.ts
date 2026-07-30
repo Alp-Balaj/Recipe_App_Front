@@ -11,12 +11,15 @@
 //   GET    /meal-plans/{id}                  → 200 MealPlan | 404
 //   POST   /meal-plans/{id}/entries          → 201 MealPlanEntry | 409 (slot taken) | 404
 //   DELETE /meal-plans/{id}/entries/{entryId}→ 204 | 404
-//   POST   /meal-plans/{id}/generate-shopping-list → 200 ShoppingListItem[] | 404
-//   GET    /shopping-list                    → 200 ShoppingListResponse
-//   POST   /shopping-list                    → 201 ShoppingListItem
-//   PATCH  /shopping-list/{id}               → 204 | 404   (explicit set, idempotent)
-//   DELETE /shopping-list/{id}               → 204 | 404
+//   GET    /meal-plans/{id}/grocery-insight  → 200 GroceryInsight | 404
 // All list endpoints: ?cursor&limit (default 20, cap 50, <=0 → 400).
+//
+// week/shopping rework (2026-07-29 design), Tasks 4–5: the shopping half of this
+// module is GONE. `POST /meal-plans/{id}/generate-shopping-list` no longer exists
+// — the list is a per-request PROJECTION now, so there is nothing to generate —
+// and the /shopping-list row endpoints moved to api/shopping.ts along with their
+// wire shapes. `weekStartOf` stays here: it is plan-week arithmetic that both
+// surfaces share, and both APIs 400 on anything but a UTC-midnight Monday.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch } from './client'
@@ -87,18 +90,26 @@ export interface MealPlanListResponse {
   nextCursor?: string | null
 }
 
-export interface ShoppingListItem {
-  id: string
-  ingredient: string
-  quantity: string
-  isPurchased: boolean
-  createdAt: string
-  mealPlanId?: string | null
+/**
+ * The dish carrying the most ingredients nothing else in the week uses — the one
+ * whose removal shortens the shop most. Null when the week has no plan, no
+ * entries, or no dish with any unique ingredient at all.
+ */
+export interface GroceryOutlier {
+  recipeId: string
+  title: string
+  uniqueIngredientCount: number
 }
 
-export interface ShoppingListResponse {
-  items: ShoppingListItem[]
-  nextCursor?: string | null
+/**
+ * What a week's plan costs at the shop, in ingredients rather than money:
+ * how many distinct things it needs, how many of those more than one dish wants
+ * (the overlap that makes a week cheap to shop for), and the outlier.
+ */
+export interface GroceryInsight {
+  distinctIngredientCount: number
+  sharedIngredientCount: number
+  outlier?: GroceryOutlier | null
 }
 
 /**
@@ -158,34 +169,14 @@ export function removeMealPlanEntry(planId: string, entryId: string): Promise<vo
   return apiFetch<void>(`/meal-plans/${planId}/entries/${entryId}`, { method: 'DELETE' })
 }
 
+// ── Grocery insight ─────────────────────────────────────────────────────────
+
 /**
- * POST /meal-plans/{id}/generate-shopping-list → 200 with the fresh items (a bare
- * array, no paging). REPLACES this plan's generated rows — purchased ticks on them
- * are lost (meal-planning-v1-semantics #5). Manual items are never touched.
+ * GET /meal-plans/{id}/grocery-insight → 200. Read-only, computed from the plan's
+ * entries' structured ingredients on the same normalised key the shopping-list
+ * projection groups on, so the two surfaces can never disagree about what "one
+ * ingredient" means.
  */
-export function generateShoppingList(planId: string): Promise<ShoppingListItem[]> {
-  return apiFetch<ShoppingListItem[]>(`/meal-plans/${planId}/generate-shopping-list`, { method: 'POST' })
-}
-
-// ── Shopping list ───────────────────────────────────────────────────────────
-
-/** GET /shopping-list — one keyset page, CreatedAt DESC. Single per-user list. */
-export function getShoppingListPage(params: { cursor?: string; limit?: number; signal?: AbortSignal } = {}): Promise<ShoppingListResponse> {
-  const { cursor, limit, signal } = params
-  return apiFetch<ShoppingListResponse>('/shopping-list', { query: { cursor, limit }, signal })
-}
-
-/** POST /shopping-list → 201. Manual items always have mealPlanId null. */
-export function addShoppingListItem(item: { ingredient: string; quantity: string }): Promise<ShoppingListItem> {
-  return apiFetch<ShoppingListItem>('/shopping-list', { method: 'POST', body: item })
-}
-
-/** PATCH /shopping-list/{id} → 204. Explicit set, not a toggle — idempotent by construction. */
-export function setShoppingListItemPurchased(id: string, isPurchased: boolean): Promise<void> {
-  return apiFetch<void>(`/shopping-list/${id}`, { method: 'PATCH', body: { isPurchased } })
-}
-
-/** DELETE /shopping-list/{id} → 204. */
-export function deleteShoppingListItem(id: string): Promise<void> {
-  return apiFetch<void>(`/shopping-list/${id}`, { method: 'DELETE' })
+export function getGroceryInsight(planId: string, signal?: AbortSignal): Promise<GroceryInsight> {
+  return apiFetch<GroceryInsight>(`/meal-plans/${planId}/grocery-insight`, { signal })
 }

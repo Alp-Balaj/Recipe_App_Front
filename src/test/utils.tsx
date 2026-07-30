@@ -46,10 +46,17 @@ export function renderGuestRoute(path: string) {
  * Render the real route tree with a FAKE auth context — for shell/router tests
  * that shouldn't exercise the network. Authenticated by default.
  */
-export function renderRoute(path: string, opts: { auth?: AuthContextValue } = {}) {
+export function renderRoute(
+  path: string,
+  // `client` (week/shopping rework, Task 6): this function returns the ROUTER, so
+  // there is otherwise no handle on the cache — and a surface that renders stale
+  // data while offline can only be tested by seeding that cache first. Optional
+  // and defaulted, so nothing existing changes.
+  opts: { auth?: AuthContextValue; client?: QueryClient } = {},
+) {
   const router = createMemoryRouter(routes, { initialEntries: [path] })
   render(
-    <QueryClientProvider client={newClient()}>
+    <QueryClientProvider client={opts.client ?? newClient()}>
       <AuthContext.Provider value={opts.auth ?? makeAuthValue()}>
         <RouterProvider router={router} />
       </AuthContext.Provider>
