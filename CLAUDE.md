@@ -45,8 +45,8 @@ page files they own.
 **Additive routes are the one sanctioned edit.** A plan may register a NEW path
 pointing at a NEW page, with a comment naming the plan — nothing existing may be
 changed or reordered. `/feed`, `/users/:id`, `/chat/:conversationId`, `/plan`,
-`/shopping-list` and `/plan/:date` all landed this way. Anything else in this
-file still stops and goes through an explicit reviewed commit.
+`/shopping-list`, `/plan/:date` and `/plan/week` all landed this way. Anything
+else in this file still stops and goes through an explicit reviewed commit.
 
 | Route | Page file | Filled by |
 |---|---|---|
@@ -58,11 +58,19 @@ file still stops and goes through an explicit reviewed commit.
 | /recipes/new | `RecipeFormPage.tsx` | lane B (05) |
 | /recipes/mine | `MyRecipesPage.tsx` | lane B (06) |
 | /recipes/:id | `RecipeDetailPage.tsx` | lane A (03) |
-| /plan | `MealPlanMonthPage.tsx` | meal-plan redesign (month — the front door) |
-| /plan/week/:start | `MealPlanPage.tsx` | meal-planning-ui, rehomed by the redesign |
+| /plan | `MealPlanMonthPage.tsx` | meal-plan redesign (month calendar) |
+| /plan/week | `PlanWeekIndex.tsx` | week/shopping rework — redirects to `/plan/week/:start` for the current week |
+| /plan/week/:start | `MealPlanWeekPage.tsx` | meal-planning-ui, rehomed by the redesign, rebuilt days-as-rows by the week/shopping rework |
 | /plan/:date | `MealPlanDayPage.tsx` | meal-plan redesign (one day) |
 | /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui |
 | / and unknown | redirect → /discover | — |
+
+The Plan tab lands on `/plan/week` (the current week — where planning time is
+actually spent), not `/plan`; the month is one tap away via the week page's own
+"Month" link. `/shopping-list` has its own Shop tab — it no longer shares the
+Plan tab with the meal-planning surfaces (that was a data relationship, the
+list is generated from the week, not a usage one: planning happens at a table,
+shopping happens one-handed in an aisle).
 
 Shell internals (also frozen): `ThemeRoot.tsx` (theme + outlet context),
 `AppShell.tsx` (sidebar/bottom-nav chrome; renders `/recipes/:id` in the
