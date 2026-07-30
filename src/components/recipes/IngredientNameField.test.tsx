@@ -1,34 +1,34 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { useForm } from 'react-hook-form'
 import { server } from '@/test/msw/server'
 import { IngredientNameField } from './IngredientNameField'
 
-// Real timers throughout (see IngredientNameField.tsx header on this test file's
-// approach): vitest 4's fake timers + @testing-library/user-event's own internal
-// scheduling hang indefinitely together (confirmed by a minimal repro outside
-// this component — unrelated to the field itself). debounceMs is instead an
-// overridable prop, defaulting to 300ms in production; tests use a small real
-// value and assert on real elapsed time.
-const TEST_DEBOUNCE_MS = 40
-
+// fix round 1, F2: fake timers + @testing-library/user-event's own internal
+// scheduling hang indefinitely together (confirmed with a minimal repro outside
+// this component — a vitest 4.1.10 / user-event 14.6.1 interaction issue, not
+// specific to this field). fireEvent.change sidesteps user-event's scheduling
+// entirely, so `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync` work fine
+// with it — no need for a test-only debounceMs seam on the component; the
+// production 300ms interval (IngredientNameField.tsx's DEBOUNCE_MS) is what
+// every test below actually exercises.
 function Harness() {
   const { register } = useForm<{ name: string }>({ defaultValues: { name: '' } })
-  return (
-    <IngredientNameField
-      label="Name"
-      aria-label="Ingredient name"
-      registration={register('name')}
-      debounceMs={TEST_DEBOUNCE_MS}
-    />
-  )
+  return <IngredientNameField label="Name" aria-label="Ingredient name" registration={register('name')} />
 }
 
 describe('IngredientNameField', () => {
+  beforeEach(() => {
+    // Fake only setTimeout/clearTimeout — faking everything (Date, fetch's own
+    // internal scheduling via undici) hangs MSW's real network layer forever.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('debounces the query — typing does not fire a request per keystroke', async () => {
-    const user = userEvent.setup()
     const requestedQueries: string[] = []
     server.use(
       http.get('*/ingredients/names', ({ request }) => {
@@ -41,17 +41,21 @@ describe('IngredientNameField', () => {
     render(<Harness />)
     const input = screen.getByLabelText('Ingredient name')
 
-    await user.type(input, 'fl')
+    // Two keystrokes, each resetting the debounce timer.
+    fireEvent.change(input, { target: { value: 'f' } })
+    fireEvent.change(input, { target: { value: 'fl' } })
 
-    // Give the debounce window a chance to settle, then assert only ONE
-    // request went out — for the final settled value, not one per keystroke
+    // Nothing has fired yet — still within the debounce window.
+    expect(requestedQueries).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(300)
+
+    // Exactly one request, for the settled value — not one per keystroke
     // (which would have produced two: "f" then "fl").
-    await waitFor(() => expect(requestedQueries.length).toBeGreaterThan(0))
     expect(requestedQueries).toEqual(['fl'])
   })
 
   it('requests the typed prefix as ?q= and shows results as datalist options', async () => {
-    const user = userEvent.setup()
     server.use(
       http.get('*/ingredients/names', ({ request }) => {
         const url = new URL(request.url)
@@ -62,20 +66,19 @@ describe('IngredientNameField', () => {
 
     render(<Harness />)
     const input = screen.getByLabelText('Ingredient name') as HTMLInputElement
-    await user.type(input, 'fl')
+    fireEvent.change(input, { target: { value: 'fl' } })
 
-    await waitFor(() => {
-      // useId() ids contain colons, which aren't valid unescaped in a CSS
-      // selector — look the <datalist> up by id directly instead.
-      const listId = input.getAttribute('list')!
-      const datalist = document.getElementById(listId) as HTMLDataListElement
-      const options = Array.from(datalist.options).map((o) => o.value)
-      expect(options).toEqual(['Flour', 'Flaked almonds'])
-    })
+    await vi.advanceTimersByTimeAsync(300)
+
+    // useId() ids contain colons, which aren't valid unescaped in a CSS
+    // selector — look the <datalist> up by id directly instead.
+    const listId = input.getAttribute('list')!
+    const datalist = document.getElementById(listId) as HTMLDataListElement
+    const options = Array.from(datalist.options).map((o) => o.value)
+    expect(options).toEqual(['Flour', 'Flaked almonds'])
   })
 
   it('stays a plain text input — a brand-new ingredient not in the suggestions is always enterable', async () => {
-    const user = userEvent.setup()
     server.use(http.get('*/ingredients/names', () => HttpResponse.json(['Flour', 'Flaked almonds'])))
 
     render(<Harness />)
@@ -83,8 +86,8 @@ describe('IngredientNameField', () => {
     expect(input.tagName).toBe('INPUT')
     expect(input.getAttribute('type')).not.toBe('select')
 
-    await user.type(input, 'Unobtainium root')
-    await waitFor(() => expect(input).toHaveAttribute('list'))
+    fireEvent.change(input, { target: { value: 'Unobtainium root' } })
+    await vi.advanceTimersByTimeAsync(300)
 
     // Nothing constrains the typed value — it isn't one of the returned suggestions.
     expect(input.value).toBe('Unobtainium root')

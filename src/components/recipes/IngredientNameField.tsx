@@ -25,7 +25,7 @@ import type { UseFormRegisterReturn } from 'react-hook-form'
 import { getIngredientNames } from '@/api/recipes'
 import TextField from '@/components/ui/TextField'
 
-const DEFAULT_DEBOUNCE_MS = 300
+const DEBOUNCE_MS = 300
 
 export interface IngredientNameFieldProps {
   label: string
@@ -34,8 +34,6 @@ export interface IngredientNameFieldProps {
   error?: string
   'aria-label'?: string
   autoFocus?: boolean
-  /** Overridable for tests only — production always uses the 300ms default. */
-  debounceMs?: number
 }
 
 export function IngredientNameField({
@@ -43,7 +41,6 @@ export function IngredientNameField({
   registration,
   error,
   autoFocus,
-  debounceMs = DEFAULT_DEBOUNCE_MS,
   ...rest
 }: IngredientNameFieldProps) {
   const listId = useId()
@@ -78,7 +75,7 @@ export function IngredientNameField({
           // Best-effort: a failed suggestion lookup must never block typing a
           // brand-new ingredient, so a rejected/aborted fetch is silently dropped.
         })
-    }, debounceMs)
+    }, DEBOUNCE_MS)
   }
 
   return (
