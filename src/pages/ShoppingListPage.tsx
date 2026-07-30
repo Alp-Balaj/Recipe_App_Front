@@ -1,23 +1,218 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Shopping-list surface (/shopping-list) — meal-planning-ui plan, Task 7.
+// Shopping-list surface (/shopping-list) — week/shopping rework, Task 6.
 //
-// The single per-user list (meal-planning-v1-semantics #3): one keyset-paged
-// column of rows, each a checkbox whose accessible name is the ingredient, plus
-// a manual-add form and a per-row delete. Ticking PATCHes an explicit true or
-// false — never a toggle — so a double-tap can't corrupt anything; the optimism
-// lives in useShoppingListMutations, this page only renders the cache.
+// The list is a PROJECTION of a week now, not a table of rows, and that changes
+// what this page is. It used to be a keyset-paged column of generated rows whose
+// ticks a regenerate could throw away. It is one week's ingredients, computed per
+// request, with ticks held in a mark overlay keyed by week + ingredient — so a
+// tick survives every later edit to the plan, and there is nothing to generate.
 //
-// Paging follows the BrowsePage idiom: a "Load more" button while hasNextPage,
-// and "That's everything." once the last page is in.
+// What that buys, and what this page therefore shows:
+//  · one row per INGREDIENT, naming the dishes it serves (you buy flour once);
+//  · a scope control — this week, or every week still owing something;
+//  · a progress read for the visible scope, with its denominator ("1 of 3");
+//  · ticked rows that DIM IN PLACE. Nothing rearranges unless asked, and asking
+//    is "Hide bought (n)" — a list that reorders itself while you read it in a
+//    shop is worse than one with a few grey lines in it;
+//  · the orphan notice as a dismissible banner, never as ghost rows: the item
+//    left your plan, you just want to know it went;
+//  · while offline, the CACHE plus a banner. You are standing in a shop; a
+//    slightly stale list beats an error page, and the ticks queue behind it.
 //
-// Task 8 adds generate-from-plan above the list. Reachable by URL only until
-// Task 9 adds the nav entry.
+// The paging is gone with the rows — no cursor, no "Load more", no "That's
+// everything". A week's list is bounded by the plan that produced it.
+//
+// Delete is two verbs and the difference is not cosmetic: a Derived group is
+// HIDDEN for the week (a suppression mark) because it will be recomputed from
+// the plan on the next read, while a Manual row is DELETED because nothing would
+// recreate it. Sending a suppression for a `manual:` key is a 400 server-side.
+// The page reads `origin` to choose — never the key's shape.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useState, type CSSProperties, type FormEvent } from 'react'
-import type { ShoppingListItem } from '@/api/mealPlans'
-import { useShoppingList, useShoppingListMutations } from '@/hooks/useShoppingList'
+import { useMemo, useState, type CSSProperties } from 'react'
+import { weekStartOf } from '@/api/mealPlans'
+import type { ShoppingGroup, ShoppingScope, ShoppingWeek } from '@/api/shopping'
+import { useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
+import BoughtSection from '@/components/shopping/BoughtSection'
+import IngredientGroup from '@/components/shopping/IngredientGroup'
+import ManualAddForm from '@/components/shopping/ManualAddForm'
 import StateBlock from '@/components/ui/StateBlock'
+
+const SCOPES: { value: ShoppingScope; label: string }[] = [
+  { value: 'Week', label: 'This week' },
+  { value: 'All', label: 'All' },
+]
+
+/** "Mon 27 Jul – Sun 2 Aug" — only needed when several weeks share the page. */
+function weekHeading(weekStartIso: string): string {
+  const start = new Date(weekStartIso)
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 6)
+  const fmt = (date: Date) =>
+    date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+  return `${fmt(start)} – ${fmt(end)}`
+}
+
+export default function ShoppingListPage() {
+  const [scope, setScope] = useState<ShoppingScope>('Week')
+  const [hideBought, setHideBought] = useState(false)
+  /** The exact orphan set the reader has already dismissed — a new one banners again. */
+  const [dismissedOrphans, setDismissedOrphans] = useState<string | null>(null)
+
+  // This route has no week parameter, so "this week" means the current one. It is
+  // also the week a manual row goes to under either scope: under 'All' there is no
+  // single scoped week, and the week you are shopping for is this one.
+  const currentWeek = useMemo(() => weekStartOf(new Date()), [])
+  // scope 'All' IGNORES weekStart server-side, and the cache key says so by
+  // holding null — the two scopes are genuinely different projections.
+  const scopedWeek = scope === 'Week' ? currentWeek : null
+
+  const { data, isLoading, isError } = useShoppingWeek(scopedWeek, scope)
+  const { setPurchased, suppress, addItem, removeItem } = useShoppingMutations(scopedWeek, scope)
+
+  const weeks = data?.weeks ?? []
+  const purchased = weeks.reduce((sum, week) => sum + week.purchasedCount, 0)
+  const total = weeks.reduce((sum, week) => sum + week.totalCount, 0)
+
+  const orphans = data?.orphanedPurchasedNames ?? []
+  const showOrphans = orphans.length > 0 && orphans.join('|') !== dismissedOrphans
+
+  const visibleGroups = (week: ShoppingWeek) =>
+    hideBought ? week.groups.filter((group) => !group.isPurchased) : week.groups
+  const rendered = weeks.filter((week) => visibleGroups(week).length > 0)
+
+  /**
+   * Suppress a Derived group, delete a Manual one. The tick rides along on the
+   * suppression because the mark is an explicit full set of both flags — dropping
+   * it would untick something on its way out.
+   */
+  const onRemove = (weekStartDate: string, group: ShoppingGroup) => {
+    if (group.origin === 'Manual') {
+      // A Manual group without its row id can only be a server bug; a suppression
+      // for its `manual:` key is a guaranteed 400, so send nothing at all.
+      if (group.manualItemId) removeItem.mutate({ weekStartDate, manualItemId: group.manualItemId })
+      return
+    }
+    suppress.mutate({ weekStartDate, key: group.key, isPurchased: group.isPurchased })
+  }
+
+  // Offline is "the fetch failed but we still hold a list". With nothing cached
+  // there is nothing to be stale about, so that is a plain error instead.
+  const offline = isError && data !== undefined
+
+  return (
+    <div className="scroll" style={pageStyle}>
+      <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>Shopping list</h1>
+      <div style={{ fontSize: 13, color: 'var(--muted)', margin: '6px 0 14px' }}>
+        Everything this week's meals need, one row per ingredient.
+      </div>
+
+      <div style={controls}>
+        <div style={{ display: 'flex', gap: 6 }} role="group" aria-label="Which weeks to show">
+          {SCOPES.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={scope === value}
+              onClick={() => setScope(value)}
+              style={scope === value ? scopeTabOn : scopeTab}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {total > 0 && (
+          <span style={progress} aria-label="Bought so far">
+            {purchased} of {total}
+          </span>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <ManualAddForm
+          onAdd={(item) => addItem.mutateAsync({ ...item, weekStartDate: currentWeek })}
+          isPending={addItem.isPending}
+          isError={addItem.isError}
+        />
+      </div>
+
+      {showOrphans && (
+        <div style={banner}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontWeight: 700 }}>
+              {orphans.length === 1
+                ? "1 thing you'd already bought is no longer in your plan."
+                : `${orphans.length} things you'd already bought are no longer in your plan.`}
+            </span>{' '}
+            <span style={{ color: 'var(--muted)' }}>{orphans.join(', ')}</span>
+          </span>
+          <button type="button" style={bannerButton} onClick={() => setDismissedOrphans(orphans.join('|'))}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {offline && (
+        <div style={banner}>
+          <span>You're offline — your ticks will sync when you're back.</span>
+        </div>
+      )}
+
+      {isLoading && <StateBlock title="Loading your list…" />}
+
+      {!isLoading && isError && !offline && (
+        <StateBlock title="Couldn't load your list" body="Check your connection and try again." />
+      )}
+
+      {!isLoading && !(isError && !offline) && total === 0 && (
+        <StateBlock
+          title="Nothing on your list yet."
+          body="Plan some meals for this week, or add something of your own above."
+        />
+      )}
+
+      {total > 0 && (
+        <>
+          <div style={{ marginBottom: 10 }}>
+            <BoughtSection
+              count={purchased}
+              collapsed={hideBought}
+              onToggle={() => setHideBought((collapsed) => !collapsed)}
+            />
+          </div>
+
+          {rendered.map((week) => (
+            <section key={week.weekStartDate} style={{ marginBottom: 14 }}>
+              {/* One week needs no label — the scope control already said which. */}
+              {scope === 'All' && (
+                <h2 style={weekLabel}>
+                  {weekHeading(week.weekStartDate)}
+                  <span style={{ fontWeight: 600, color: 'var(--muted)' }}>
+                    {' '}
+                    · {week.purchasedCount} of {week.totalCount}
+                  </span>
+                </h2>
+              )}
+              <div style={listCard}>
+                {visibleGroups(week).map((group, index) => (
+                  <IngredientGroup
+                    key={group.key}
+                    group={group}
+                    divided={index > 0}
+                    onToggle={(isPurchased) =>
+                      setPurchased.mutate({ weekStartDate: week.weekStartDate, key: group.key, isPurchased })
+                    }
+                    onRemove={() => onRemove(week.weekStartDate, group)}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
 
 const pageStyle: CSSProperties = {
   position: 'absolute',
@@ -27,220 +222,80 @@ const pageStyle: CSSProperties = {
   padding: '54px 18px 24px',
 }
 
-const cardStyle: CSSProperties = {
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  boxShadow: 'var(--cardsh)',
-  borderRadius: 20,
-  padding: 14,
+const controls: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  flexWrap: 'wrap',
+  marginBottom: 14,
 }
 
-const inputStyle: CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  padding: '10px 12px',
-  borderRadius: 12,
-  border: '1px solid var(--border)',
-  background: 'var(--inputbg)',
-  color: 'var(--text)',
-  fontSize: 14,
-  fontFamily: 'inherit',
-  outline: 'none',
-}
-
-const addButtonStyle: CSSProperties = {
-  flexShrink: 0,
-  cursor: 'pointer',
-  border: 'none',
-  borderRadius: 12,
-  padding: '10px 16px',
-  fontFamily: 'inherit',
-  fontSize: 13.5,
-  fontWeight: 700,
-  background: 'var(--accent)',
-  color: 'var(--accent-ink)',
-}
-
-const loadMoreBtn: CSSProperties = {
+const scopeTab: CSSProperties = {
   cursor: 'pointer',
   border: '1px solid var(--border)',
-  borderRadius: 13,
-  padding: '10px 18px',
+  borderRadius: 11,
+  padding: '6px 12px',
   fontFamily: 'inherit',
-  fontSize: 13.5,
-  fontWeight: 700,
-  background: 'var(--surface2)',
-  color: 'var(--text)',
-}
-
-const deleteBtn: CSSProperties = {
-  flexShrink: 0,
-  cursor: 'pointer',
-  border: '1px solid var(--border)',
-  borderRadius: 10,
-  width: 28,
-  height: 28,
-  lineHeight: 1,
-  fontFamily: 'inherit',
-  fontSize: 13,
+  fontSize: 12.5,
   fontWeight: 700,
   background: 'var(--surface)',
   color: 'var(--muted)',
 }
 
-export default function ShoppingListPage() {
-  const { data, isLoading, error, hasNextPage, fetchNextPage, isFetchingNextPage, isFetching } = useShoppingList()
-  const { setPurchased, addItem, removeItem } = useShoppingListMutations()
-
-  const [ingredient, setIngredient] = useState('')
-  const [quantity, setQuantity] = useState('')
-
-  const items = data?.pages.flatMap((page) => page.items) ?? []
-  const canAdd = ingredient.trim().length > 0 && quantity.trim().length > 0 && !addItem.isPending
-
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault()
-    if (!canAdd) return
-    addItem.mutate(
-      { ingredient: ingredient.trim(), quantity: quantity.trim() },
-      {
-        onSuccess: () => {
-          setIngredient('')
-          setQuantity('')
-        },
-      },
-    )
-  }
-
-  return (
-    <div className="scroll" style={pageStyle}>
-      <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>Shopping list</h1>
-      <div style={{ fontSize: 13, color: 'var(--muted)', margin: '6px 0 18px' }}>
-        Everything you still need to buy, in one place.
-      </div>
-
-      <form onSubmit={onSubmit} style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input
-          aria-label="Ingredient"
-          placeholder="Ingredient"
-          value={ingredient}
-          onChange={(e) => setIngredient(e.target.value)}
-          style={inputStyle}
-        />
-        <input
-          aria-label="Quantity"
-          placeholder="Quantity"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          style={{ ...inputStyle, flex: '0 1 110px' }}
-        />
-        <button type="submit" disabled={!canAdd} style={{ ...addButtonStyle, opacity: canAdd ? 1 : 0.5 }}>
-          {addItem.isPending ? 'Adding…' : 'Add'}
-        </button>
-      </form>
-
-      {addItem.isError && (
-        <div role="status" style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
-          Couldn't add that item. Try again.
-        </div>
-      )}
-
-      {isLoading && <StateBlock title="Loading your list…" />}
-
-      {!isLoading && error && (
-        <StateBlock title="Couldn't load your list" body="Check your connection and try again." />
-      )}
-
-      {!isLoading && !error && items.length === 0 && (
-        <StateBlock
-          title="Nothing on your list yet."
-          body="Add items by hand, or generate them from a week's meal plan."
-        />
-      )}
-
-      {!isLoading && !error && items.length > 0 && (
-        <>
-          <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {items.map((item) => (
-              <Row
-                key={item.id}
-                item={item}
-                onToggle={(isPurchased) => setPurchased.mutate({ id: item.id, isPurchased })}
-                onRemove={() => removeItem.mutate(item.id)}
-              />
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
-            {hasNextPage ? (
-              <button
-                type="button"
-                onClick={() => fetchNextPage()}
-                disabled={isFetchingNextPage}
-                style={{ ...loadMoreBtn, opacity: isFetchingNextPage ? 0.6 : 1 }}
-              >
-                {isFetchingNextPage ? 'Loading…' : 'Load more'}
-              </button>
-            ) : (
-              <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>
-                {isFetching ? 'Loading…' : "That's everything."}
-              </span>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  )
+const scopeTabOn: CSSProperties = {
+  ...scopeTab,
+  border: '1px solid transparent',
+  background: 'var(--accent)',
+  color: 'var(--accent-ink)',
 }
 
-/**
- * One row. The checkbox carries the ingredient as its accessible name — the
- * visible name sits in a sibling span, so a label wrapper would fold the
- * quantity into that name too.
- */
-function Row({
-  item,
-  onToggle,
-  onRemove,
-}: {
-  item: ShoppingListItem
-  onToggle: (isPurchased: boolean) => void
-  onRemove: () => void
-}) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 4px' }}>
-      <input
-        type="checkbox"
-        aria-label={item.ingredient}
-        checked={item.isPurchased}
-        onChange={(e) => onToggle(e.target.checked)}
-        style={{ width: 17, height: 17, flexShrink: 0, accentColor: 'var(--accent)', cursor: 'pointer' }}
-      />
-      <span
-        style={{
-          flex: 1,
-          minWidth: 0,
-          fontSize: 14,
-          fontWeight: 600,
-          color: item.isPurchased ? 'var(--muted)' : 'var(--text)',
-          textDecoration: item.isPurchased ? 'line-through' : 'none',
-        }}
-      >
-        {item.ingredient}
-      </span>
-      <span
-        style={{
-          flexShrink: 0,
-          fontSize: 12.5,
-          color: 'var(--muted)',
-          textDecoration: item.isPurchased ? 'line-through' : 'none',
-        }}
-      >
-        {item.quantity}
-      </span>
-      <button type="button" aria-label={`Remove ${item.ingredient}`} onClick={onRemove} style={deleteBtn}>
-        ×
-      </button>
-    </div>
-  )
+// The number and its denominator, tabular so it doesn't jitter as you tick.
+const progress: CSSProperties = {
+  marginLeft: 'auto',
+  fontSize: 15,
+  fontWeight: 800,
+  letterSpacing: '-0.01em',
+  color: 'var(--accent)',
+  fontVariantNumeric: 'tabular-nums',
+}
+
+const listCard: CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  boxShadow: 'var(--cardsh)',
+  borderRadius: 20,
+  padding: '4px 14px 10px',
+}
+
+const banner: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  background: 'var(--chipbg)',
+  border: '1px solid var(--border)',
+  borderRadius: 14,
+  padding: '10px 12px',
+  fontSize: 13,
+  lineHeight: 1.45,
+  marginBottom: 12,
+  overflowWrap: 'anywhere',
+}
+
+const bannerButton: CSSProperties = {
+  flexShrink: 0,
+  cursor: 'pointer',
+  border: '1px solid var(--border)',
+  borderRadius: 10,
+  padding: '5px 11px',
+  fontFamily: 'inherit',
+  fontSize: 12,
+  fontWeight: 700,
+  background: 'var(--surface)',
+}
+
+const weekLabel: CSSProperties = {
+  margin: '0 0 6px',
+  fontSize: 12.5,
+  fontWeight: 800,
+  letterSpacing: '0.02em',
 }
