@@ -95,6 +95,18 @@ export interface RecipeResponse {
   steps: RecipeStep[]
   tags: string[]
   createdByUserId: string
+  // stream E (AI recipe generator) — SANCTIONED ADDITIVE EDIT to this frozen module,
+  // landing as its own reviewed commit per the rule. Both fields are APPENDED and optional
+  // in shape, so every existing consumer and every test fixture keeps compiling; the
+  // backend always sends them.
+  /**
+   * Decision D1: a generated recipe is user-owned and FLAGGED rather than system-owned, so
+   * it behaves like any other recipe everywhere (owner-only edit/delete, feed, planner) and
+   * the flag is the only thing that marks it. It is also why generating awards no rank.
+   */
+  isAiGenerated?: boolean
+  /** The chat thread the recipe was generated from; null for hand-written recipes. */
+  sourceConversationId?: string | null
 }
 
 /**

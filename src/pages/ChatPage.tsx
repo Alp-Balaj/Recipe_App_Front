@@ -15,6 +15,7 @@ import { useChatApi } from '@/components/chat/ChatApiContext'
 import ConversationDrawer from '@/components/chat/ConversationDrawer'
 import { flattenConversations, useConversations } from '@/components/chat/useConversations'
 import MessageBubble, { TypingBubble } from '@/components/chat/MessageBubble'
+import GenerateRecipeCard from '@/components/chat/GenerateRecipeCard'
 import StateBlock from '@/components/ui/StateBlock'
 
 const PAGE_LIMIT = 20
@@ -307,6 +308,13 @@ export default function ChatPage() {
           </div>
         )}
         {send.isPending && <TypingBubble />}
+
+        {/* Stream E: the generator sits at the FOOT of the thread, after whatever
+            the (grounded) assistant just suggested — "none of these? then write me
+            a new one" is the moment it belongs to, and the two modes of generation
+            end up on one screen. Hidden while a turn is in flight so the two AI
+            actions can't be fired at each other. */}
+        {!send.isPending && <GenerateRecipeCard conversationId={conversationId} />}
       </div>
 
       {/* Input bar */}
