@@ -167,6 +167,21 @@ export default function RecipeDetailPage() {
             <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.01em', flex: 1 }}>
               {recipe.title}
             </div>
+            {/* Stream E (decision D1): a generated recipe is an ordinary user-owned
+                recipe in every mechanism — the flag is the ONLY thing that marks it,
+                so this badge is where the provenance claim is actually kept. Shown to
+                every reader, not just the owner: who wrote a recipe is the reader's
+                business, and the badge is why the app can be honest about it. */}
+            {recipe.isAiGenerated && (
+              <Badge
+                variant="outline"
+                className="text-[11px] font-bold shrink-0 mt-1"
+                style={{ background: 'var(--chipbg)', borderColor: 'transparent', color: 'var(--chipcol)' }}
+                title="Written by the AI assistant and saved by its owner"
+              >
+                AI-generated
+              </Badge>
+            )}
             {isOwn && (
               <Badge
                 variant="outline"
