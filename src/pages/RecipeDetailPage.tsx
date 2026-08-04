@@ -20,6 +20,8 @@ import {
   gradientFor,
   visibilityLabel,
 } from './recipeVisuals'
+import RecipeInsights from '@/components/recipes/RecipeInsights'
+import { label } from '@/api/vocabulary'
 
 export default function RecipeDetailPage() {
   const { id } = useParams()
@@ -213,7 +215,7 @@ export default function RecipeDetailPage() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 12, fontSize: 12.5, color: 'var(--muted)' }}>
             <span>Prep {formatMinutes(recipe.prepTimeMinutes)}</span>
             <span>Cook {formatMinutes(recipe.cookTimeMinutes)}</span>
-            {recipe.cuisineType && <span>{recipe.cuisineType}</span>}
+            {recipe.cuisineType && <span>{label(recipe.cuisineType)}</span>}
           </div>
 
           {/* Nutrition — caloriesPerServing only (macro tiles removed, Decision 6). */}
@@ -234,6 +236,12 @@ export default function RecipeDetailPage() {
             </div>
           )}
 
+          {/* Computed nutrition + dietary checks (stream G, slice G4). Sits BESIDE
+              the author's hand-typed caloriesPerServing above rather than replacing
+              it: the two answer different questions — what the author said, and what
+              the ingredients add up to. */}
+          <RecipeInsights recipeId={recipe.id} />
+
           {/* Tags. */}
           {recipe.tags.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 14 }}>
@@ -244,7 +252,7 @@ export default function RecipeDetailPage() {
                   className="text-[11.5px] font-normal"
                   style={{ background: 'var(--tagbg)', borderColor: 'var(--tagborder)', color: 'var(--tagcol)' }}
                 >
-                  {t}
+                  {label(t)}
                 </Badge>
               ))}
             </div>

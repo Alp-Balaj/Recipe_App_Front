@@ -17,6 +17,7 @@ import type { RecipeResponse } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { resolveImageUrl } from '@/lib/images'
 import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
+import { label } from '@/api/vocabulary'
 
 type RecipeCardVariant = 'browse' | 'mine' | 'suggestion'
 
@@ -165,7 +166,7 @@ function BannerCardBody({
           >
             <span>◷ {formatMinutes(recipe.totalTimeMinutes)}</span>
             {recipe.caloriesPerServing != null && <span>♨ {recipe.caloriesPerServing} kcal</span>}
-            {isMine ? <span>▤ {recipe.ingredients.length}</span> : recipe.cuisineType && <span>{recipe.cuisineType}</span>}
+            {isMine ? <span>▤ {recipe.ingredients.length}</span> : recipe.cuisineType && <span>{label(recipe.cuisineType)}</span>}
           </div>
 
           {/* Browse only: up to 3 tags + a "View ›" affordance. */}
@@ -174,7 +175,7 @@ function BannerCardBody({
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', minWidth: 0 }}>
                 {recipe.tags.slice(0, 3).map((t) => (
                   <Badge key={t} variant="outline" className="text-[11.5px] font-normal" style={tagBadgeStyle}>
-                    {t}
+                    {label(t)}
                   </Badge>
                 ))}
               </div>
@@ -299,7 +300,7 @@ function SuggestionCardBody({ recipe, onOpen }: { recipe: RecipeResponse; onOpen
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {recipe.tags.slice(0, 3).map((tag) => (
               <Badge key={tag} variant="outline" className="text-[11px] font-normal py-0.5 px-2.5" style={tagBadgeStyle}>
-                {tag}
+                {label(tag)}
               </Badge>
             ))}
           </div>
@@ -316,6 +317,6 @@ function dietLine(recipe: RecipeResponse): string {
   if (recipe.totalTimeMinutes) parts.push(formatMinutes(recipe.totalTimeMinutes))
   if (recipe.caloriesPerServing != null) parts.push(`${recipe.caloriesPerServing} kcal`)
   parts.push(recipe.difficulty)
-  if (recipe.cuisineType) parts.push(recipe.cuisineType)
+  if (recipe.cuisineType) parts.push(label(recipe.cuisineType))
   return parts.join(' · ')
 }
