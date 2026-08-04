@@ -121,6 +121,16 @@ export interface RecipeIngredient {
   name: string
   quantity: number
   unit: UnitOfMeasure
+  /**
+   * stream G slice G2 — the catalogue entry this line resolved to, or null.
+   *
+   * APPENDED and optional in shape, so every existing consumer and test
+   * fixture keeps compiling; the backend always sends it. Null is a legal,
+   * expected, permanent state, not a loading value: the resolver runs on
+   * write, and per D8 a name it does not recognise saves anyway. Do not
+   * render an unresolved line as an error.
+   */
+  ingredientId?: string | null
 }
 
 /** RecipeApp.Domain.ValueObjects.RecipeStep — timerSeconds is null when unset. */
