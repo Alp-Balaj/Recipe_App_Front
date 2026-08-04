@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { useForm, useFieldArray, Controller, type UseFormSetError } from 'react-hook-form'
+import { useForm, useFieldArray, useWatch, Controller, type UseFormSetError } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { ApiError, ApiUnauthorizedError, ApiValidationError } from '@/api/client'
@@ -29,7 +29,7 @@ import {
 import { useAuth } from '@/auth/AuthContext'
 import { resolveImageUrl } from '@/lib/images'
 import TextField from '@/components/ui/TextField'
-import { IngredientNameField } from '@/components/recipes/IngredientNameField'
+import { IngredientPicker } from '@/components/recipes/IngredientPicker'
 import { TagPicker } from '@/components/recipes/TagPicker'
 
 // ── Schema (mirrors the backend CreateRecipeRequestValidator) ───────────────
@@ -425,6 +425,9 @@ export function RecipeForm({
   }, [applyDefaultVisibility, isDirty, setValue])
 
   const ingredients = useFieldArray({ control, name: 'ingredients' })
+  // Watched only for the picker's matched/unmatched readout. The inputs stay
+  // UNCONTROLLED — this reads their values, it does not drive them.
+  const watchedIngredients = useWatch({ control, name: 'ingredients' })
   const steps = useFieldArray({ control, name: 'steps' })
 
   // ── Photo upload (social-feed cp07) ──────────────────────────────────────
@@ -713,11 +716,16 @@ export function RecipeForm({
               )}
             </div>
             <div style={{ flex: 1 }}>
-              <IngredientNameField
+              {/* Stream G, slice G3: suggestions come from the CATALOGUE now, not
+                  from what other people have typed — so picking one means the saved
+                  recipe carries that ingredient's id. Still a plain text input:
+                  D8 requires that a brand-new ingredient is always enterable. */}
+              <IngredientPicker
                 label={idx === 0 ? 'Name' : ''}
                 aria-label={`Ingredient ${idx + 1} name`}
                 error={errors.ingredients?.[idx]?.name?.message}
                 registration={register(`ingredients.${idx}.name` as const)}
+                value={watchedIngredients?.[idx]?.name ?? ''}
               />
             </div>
             <button
