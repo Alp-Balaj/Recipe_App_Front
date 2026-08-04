@@ -52,8 +52,22 @@ export default function IngredientGroup({ group, onToggle, onRemove, divided = t
         style={checkbox}
       />
       <span style={body}>
-        <span style={{ ...name, textDecoration: bought ? 'line-through' : 'none' }}>
-          {group.displayName}
+        <span style={nameRow}>
+          <span style={{ ...name, textDecoration: bought ? 'line-through' : 'none' }}>
+            {group.displayName}
+          </span>
+          {/* Stream G's payoff, and it belongs BESIDE the name rather than in the
+              parts list below: the total is the number you act on in the aisle
+              ("1.5 kg"), while the parts are the explanation ("500 g — Bread").
+              Reading order follows that — what to buy, then what it is for.
+
+              Usually one, sometimes two (an ingredient measured by both weight
+              and volume), sometimes none (a group of nothing but pinches). Joined
+              with "+" rather than stacked, because two totals are two things to
+              buy in one trip, not two rows. */}
+          {group.totals.length > 0 && (
+            <span style={total}>{group.totals.map((t) => t.display).join(' + ')}</span>
+          )}
         </span>
         <span style={parts}>
           {group.parts.map((part, index) => (
@@ -100,11 +114,30 @@ const body: CSSProperties = {
   gap: 2,
 }
 
+const nameRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  justifyContent: 'space-between',
+  gap: 10,
+}
+
 const name: CSSProperties = {
   fontSize: 14.5,
   fontWeight: 700,
   letterSpacing: '-0.005em',
   overflowWrap: 'anywhere',
+}
+
+// Same weight as the name it sits beside — the total is the other half of "what
+// to buy", not a subtitle. Tabular numerals keep a column of totals aligned down
+// the list, which is what makes it scannable one-handed in a shop.
+const total: CSSProperties = {
+  fontSize: 13.5,
+  fontWeight: 700,
+  color: 'var(--accent)',
+  fontVariantNumeric: 'tabular-nums',
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
 }
 
 const parts: CSSProperties = {

@@ -33,9 +33,9 @@ function makeRecipe(over: Partial<RecipeResponse> = {}): RecipeResponse {
     visibility: 'Public',
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: null,
-    ingredients: [{ name: 'noodles', quantity: 200, unit: 'g' }],
+    ingredients: [{ name: 'noodles', quantity: 200, unit: 'Gram' }],
     steps: [{ stepNumber: 1, description: 'Simmer.', timerSeconds: null }],
-    tags: ['warm'],
+    tags: ['Comfort'],
     createdByUserId: 'author-1',
     ...over,
   } as RecipeResponse

@@ -31,7 +31,7 @@ function makeRecipe(over: Partial<RecipeResponse> = {}): RecipeResponse {
     visibility: 'Public',
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: null,
-    ingredients: [{ name: 'salt', quantity: 1, unit: 'tsp' }],
+    ingredients: [{ name: 'salt', quantity: 1, unit: 'Teaspoon' }],
     steps: [],
     tags: [],
     createdByUserId: 'author-1',

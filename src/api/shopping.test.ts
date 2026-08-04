@@ -20,6 +20,7 @@ describe('shopping api', () => {
               isPurchased: false,
               origin: 'Derived',
               manualItemId: null,
+              totals: [{ quantity: 480, unit: 'Millilitre', display: '480 ml' }],
             }],
             purchasedCount: 0,
             totalCount: 1,

@@ -30,6 +30,7 @@ export function makeUserProfile(over: Partial<UserProfileResponse> = {}): UserPr
     recipeCount: 0,
     followedByMe: false,
     defaultRecipeVisibility: 'Public',
+    dietaryRestrictions: [],
     ...over,
   }
 }

@@ -1,12 +1,15 @@
 import { queryKeys } from '@/api/queryKeys'
-import type { Difficulty } from '@/api/types'
+import type { Difficulty, Cuisine, RecipeTag } from '@/api/types'
 import { useInfiniteRecipes } from './useInfiniteRecipes'
 
 /** Browse filters the UI drives; a subset of RecipeListQuery (no cursor/limit). */
 export interface BrowseFilters {
-  cuisine?: string
+  // Stream G: typed, because an unrecognised cuisine or tag is now a 400 rather
+  // than a 200 with no results. The controls are a select and a chip list, so
+  // there is no free text left to reach the query string.
+  cuisine?: Cuisine
   difficulty?: Difficulty
-  tags?: string[]
+  tags?: RecipeTag[]
   /**
    * Free-text search (open-loops slice 2) — title, description and ingredient
    * names, matched server-side against a Postgres tsvector. Deliberately NOT
@@ -22,20 +25,22 @@ export interface BrowseFilters {
 export const BROWSE_PAGE_SIZE = 12
 
 /**
- * Trim/lowercase-normalize the filters so (a) the query key is stable and
- * (b) tag values match the case-SENSITIVE backend storage (the create form
- * trims + lowercases on write, so filters and stored tags agree). Empty
- * values collapse to undefined so they're omitted from the request + key.
+ * Normalize the filters so the query key is stable and empty values collapse to
+ * undefined (omitted from both the request and the key).
+ *
+ * Stream G removed the tag trim/lowercase that used to live here. It existed to
+ * make a free-text filter agree with the case-SENSITIVE backend storage, and a
+ * closed vocabulary settles that at the type level — a RecipeTag is already in
+ * its canonical form, and lowercasing one would now BREAK the match rather than
+ * fix it. De-duping stays: the same chip can still be added twice.
  */
 export function normalizeFilters(filters: BrowseFilters): BrowseFilters {
-  const cuisine = filters.cuisine?.trim()
+  const cuisine = filters.cuisine
   const tags = filters.tags
-    ?.map((t) => t.trim().toLowerCase())
-    .filter((t) => t.length > 0)
   const uniqueTags = tags && tags.length ? Array.from(new Set(tags)) : undefined
   const search = filters.search?.trim()
   return {
-    cuisine: cuisine ? cuisine : undefined,
+    cuisine: cuisine || undefined,
     difficulty: filters.difficulty,
     tags: uniqueTags,
     // Trimmed only — case and punctuation are the tsquery parser's business.

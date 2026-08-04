@@ -222,23 +222,23 @@ describe('the recipe picker', () => {
           id: 'r-shak',
           title: 'Shakshuka',
           ingredients: [
-            { name: 'Eggs', quantity: 6, unit: '' },
-            { name: 'Garlic', quantity: 2, unit: 'cloves' },
+            { name: 'Eggs', quantity: 6, unit: 'Piece' },
+            { name: 'Garlic', quantity: 2, unit: 'Clove' },
           ],
         }),
         makeRecipe({
           id: 'r-aioli',
           title: 'Garlic aioli',
           totalTimeMinutes: 10,
-          ingredients: [{ name: 'Garlic', quantity: 4, unit: 'cloves' }],
+          ingredients: [{ name: 'Garlic', quantity: 4, unit: 'Clove' }],
         }),
         makeRecipe({
           id: 'r-ramen',
           title: 'Quick ramen',
           totalTimeMinutes: 30,
           ingredients: [
-            { name: 'Noodles', quantity: 2, unit: 'nests' },
-            { name: 'Stock', quantity: 500, unit: 'ml' },
+            { name: 'Noodles', quantity: 2, unit: 'Piece' },
+            { name: 'Stock', quantity: 500, unit: 'Millilitre' },
           ],
         }),
       ],
@@ -253,8 +253,8 @@ describe('the recipe picker', () => {
             id: 'r-shak',
             title: 'Shakshuka',
             ingredients: [
-              { name: 'Eggs', quantity: 6, unit: '' },
-              { name: 'Garlic', quantity: 2, unit: 'cloves' },
+              { name: 'Eggs', quantity: 6, unit: 'Piece' },
+              { name: 'Garlic', quantity: 2, unit: 'Clove' },
             ],
           }),
         )

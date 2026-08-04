@@ -77,8 +77,8 @@ const shakshuka = makeRecipe({
   title: 'Shakshuka',
   servings: 2,
   ingredients: [
-    { name: 'Eggs', quantity: 6, unit: '' },
-    { name: 'Garlic', quantity: 2, unit: 'cloves' },
+    { name: 'Eggs', quantity: 6, unit: 'Piece' },
+    { name: 'Garlic', quantity: 2, unit: 'Clove' },
   ],
 })
 
@@ -87,8 +87,8 @@ const cornSalad = makeRecipe({
   title: 'Charred corn salad',
   servings: 4,
   ingredients: [
-    { name: 'Corn cobs', quantity: 4, unit: '' },
-    { name: 'Garlic', quantity: 1, unit: 'clove' },
+    { name: 'Corn cobs', quantity: 4, unit: 'Piece' },
+    { name: 'Garlic', quantity: 1, unit: 'Clove' },
   ],
 })
 
@@ -195,7 +195,10 @@ describe('the day page', () => {
     await waitFor(() => expect(within(panel).getByText('Eggs')).toBeInTheDocument())
 
     expect(within(panel).getByText('Corn cobs')).toBeInTheDocument()
-    expect(within(panel).getByText('6')).toBeInTheDocument()
+    // "6 pcs", not a bare "6": the fixture's unit used to be an empty string,
+    // which formatQuantity rendered as nothing. A closed vocabulary has no empty
+    // member — Piece is the neutral count — so the unit always renders now.
+    expect(within(panel).getByText('6 pcs')).toBeInTheDocument()
     expect(within(panel).getByText('2 cloves')).toBeInTheDocument()
     // Grouped, not merged: garlic stays as two separate rows.
     expect(within(panel).getAllByText('Garlic')).toHaveLength(2)

@@ -29,6 +29,7 @@ import { resolveImageUrl } from '@/lib/images'
 import { planDayPath } from '@/lib/planDates'
 import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 import { mealTokens } from './MealCard'
+import { formatQuantity } from '@/pages/recipeVisuals'
 
 interface Props {
   /** The element id the row's chips point at with aria-controls. */
@@ -137,10 +138,9 @@ export default function MealPanel({
               // wholesale on every load — there is no reorder to preserve.
               <span key={index} style={ingredientRow}>
                 <span style={{ overflowWrap: 'anywhere' }}>{ingredient.name}</span>
-                <span style={quantity}>
-                  {ingredient.quantity}
-                  {ingredient.unit ? ` ${ingredient.unit}` : ''}
-                </span>
+                {/* Stream G: through formatQuantity like the other two ingredient
+                    lists, so "Cup" renders as "cups" rather than as its enum name. */}
+                <span style={quantity}>{formatQuantity(ingredient.quantity, ingredient.unit)}</span>
               </span>
             ))}
           </div>

@@ -311,7 +311,7 @@ describe('RecipeForm photo upload (cp07)', () => {
               id: 'mine-1',
               title: 'Seeded',
               imageUrl: '/images/seeded.webp',
-              ingredients: [{ name: 'Salt', quantity: 1, unit: 'tsp' }],
+              ingredients: [{ name: 'Salt', quantity: 1, unit: 'Teaspoon' }],
               steps: [{ stepNumber: 1, description: 'Mix', timerSeconds: null }],
             }),
           ],

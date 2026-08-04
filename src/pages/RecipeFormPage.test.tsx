@@ -39,11 +39,16 @@ async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Cook (min)'), '25')
   await user.type(screen.getByLabelText('Servings'), '2')
   await user.type(screen.getByLabelText('Ingredient 1 quantity'), '1.5')
-  await user.type(screen.getByLabelText('Ingredient 1 unit'), 'cup')
+  await user.selectOptions(screen.getByLabelText('Ingredient 1 unit'), 'Cup')
   await user.type(screen.getByLabelText('Ingredient 1 name'), 'Miso paste')
   await user.type(screen.getByLabelText('Step 1 instruction'), 'Simmer the broth')
   await user.type(screen.getByLabelText('Step 1 timer in seconds'), '90')
-  await user.type(screen.getByLabelText('Tags'), 'Vegan, QUICK, vegan')
+  // Stream G: chips, not a comma-separated field. Clicking the same chip twice
+  // would DESELECT it, so the old input's "Vegan, QUICK, vegan" (which tested the
+  // trim/lowercase/de-dupe the free-text field needed) has no analogue — a chip
+  // cannot be selected twice.
+  await user.click(screen.getByRole('checkbox', { name: 'Vegan' }))
+  await user.click(screen.getByRole('checkbox', { name: 'Quick' }))
 }
 
 describe('RecipeFormPage (create)', () => {
@@ -68,12 +73,13 @@ describe('RecipeFormPage (create)', () => {
     expect(body.steps).toEqual([
       { stepNumber: 1, description: 'Simmer the broth', timerSeconds: 90 },
     ])
-    // Tags trimmed + lowercased + de-duped.
-    expect(body.tags).toEqual(['vegan', 'quick'])
+    // Sent verbatim as vocabulary members, and in TAG_GROUPS order rather than
+    // click order — Quick sits in "Occasion", ahead of Vegan in "Diet & character".
+    expect(body.tags).toEqual(['Quick', 'Vegan'])
     // Numeric coercion.
     expect(body.prepTimeMinutes).toBe(15)
     expect(body.servings).toBe(2)
-    expect(body.ingredients).toEqual([{ name: 'Miso paste', quantity: 1.5, unit: 'cup' }])
+    expect(body.ingredients).toEqual([{ name: 'Miso paste', quantity: 1.5, unit: 'Cup' }])
     // Blank optionals become null, not '' or 0.
     expect(body.caloriesPerServing).toBeNull()
     expect(body.cuisineType).toBeNull()

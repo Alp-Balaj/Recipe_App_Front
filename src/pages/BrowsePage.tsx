@@ -5,6 +5,8 @@ import StateBlock from '@/components/ui/StateBlock'
 import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useRecipeList, type BrowseFilters } from '@/hooks/useRecipeList'
+import type { Cuisine, RecipeTag } from '@/api/types'
+import { CUISINES, TAGS, label } from '@/api/vocabulary'
 import type { Difficulty, RecipeResponse } from '@/api/types'
 
 const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
@@ -24,9 +26,9 @@ export default function BrowsePage() {
 
   // Committed filter state — each change produces a new query key, which resets
   // useInfiniteQuery pagination back to the first page automatically.
-  const [cuisine, setCuisine] = useState('')
+  const [cuisine, setCuisine] = useState<Cuisine | ''>('')
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>(undefined)
-  const [tags, setTags] = useState<string[]>([])
+  const [tags, setTags] = useState<RecipeTag[]>([])
   const [search, setSearch] = useState('')
   const [showFilters, setShowFilters] = useState(true)
 
@@ -45,7 +47,7 @@ export default function BrowsePage() {
   }, [search])
 
   const filters: BrowseFilters = useMemo(
-    () => ({ cuisine, difficulty, tags, search: debouncedSearch }),
+    () => ({ cuisine: cuisine || undefined, difficulty, tags, search: debouncedSearch }),
     [cuisine, difficulty, tags, debouncedSearch],
   )
 
@@ -83,8 +85,8 @@ export default function BrowsePage() {
     setSearch('')
   }
 
-  const addTag = (t: string) => setTags((prev) => (prev.includes(t) ? prev : [...prev, t]))
-  const removeTag = (t: string) => setTags((prev) => prev.filter((x) => x !== t))
+  const addTag = (t: RecipeTag) => setTags((prev) => (prev.includes(t) ? prev : [...prev, t]))
+  const removeTag = (t: RecipeTag) => setTags((prev) => prev.filter((x) => x !== t))
 
   const pageStyle: CSSProperties = {
     position: 'absolute',
@@ -325,6 +327,12 @@ export default function BrowsePage() {
 
 // ── Advanced filters (cuisine + tags) ────────────────────────────────────────
 
+// Stream G: both controls were free-text inputs. They are a select and a chip
+// list now for a reason beyond tidiness — an unrecognised cuisine or tag is a
+// 400 from the backend since the vocabularies closed, so a text field here
+// would let a user type their way into an error page. It also ends the older,
+// quieter failure: "Italian" typed into the tag box matched nothing and looked
+// like an empty catalogue rather than a mistake.
 function AdvancedFilters({
   cuisine,
   tags,
@@ -332,66 +340,51 @@ function AdvancedFilters({
   onAddTag,
   onRemoveTag,
 }: {
-  cuisine: string
-  tags: string[]
-  onCuisine: (v: string) => void
-  onAddTag: (t: string) => void
-  onRemoveTag: (t: string) => void
+  cuisine: Cuisine | ''
+  tags: RecipeTag[]
+  onCuisine: (v: Cuisine | '') => void
+  onAddTag: (t: RecipeTag) => void
+  onRemoveTag: (t: RecipeTag) => void
 }) {
-  const [cuisineDraft, setCuisineDraft] = useState(cuisine)
-  const [tagDraft, setTagDraft] = useState('')
-
-  const commitCuisine = () => {
-    const v = cuisineDraft.trim()
-    if (v !== cuisine) onCuisine(v)
-  }
-  const commitTag = () => {
-    const v = tagDraft.trim().toLowerCase()
-    if (v) onAddTag(v)
-    setTagDraft('')
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 4 }}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <input
-          value={cuisineDraft}
-          onChange={(e) => setCuisineDraft(e.target.value)}
-          onBlur={commitCuisine}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              commitCuisine()
-            }
-          }}
-          placeholder="Cuisine (e.g. italian)"
-          aria-label="Filter by cuisine"
-          style={inputStyle}
-        />
-        <input
-          value={tagDraft}
-          onChange={(e) => setTagDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              commitTag()
-            }
-          }}
-          placeholder="Add a tag + Enter"
-          aria-label="Filter by tag"
-          style={inputStyle}
-        />
-      </div>
+      <select
+        value={cuisine}
+        onChange={(e) => onCuisine(e.target.value as Cuisine | '')}
+        aria-label="Filter by cuisine"
+        style={{ ...inputStyle, minWidth: 180 }}
+      >
+        <option value="">Any cuisine</option>
+        {CUISINES.map((c) => (
+          <option key={c} value={c}>
+            {label(c)}
+          </option>
+        ))}
+      </select>
 
-      {tags.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-          {tags.map((t) => (
-            <button key={t} onClick={() => onRemoveTag(t)} style={tagChip} aria-label={`Remove tag ${t}`}>
-              {t} ✕
+      {/* Every tag, always visible. The picker in the authoring form groups
+          them because an author is composing; here the user is scanning for
+          one they already have in mind, so a single flat set reads faster. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+        {TAGS.map((t) => {
+          const active = tags.includes(t)
+          return (
+            <button
+              key={t}
+              onClick={() => (active ? onRemoveTag(t) : onAddTag(t))}
+              aria-pressed={active}
+              aria-label={active ? `Remove tag ${label(t)}` : `Filter by tag ${label(t)}`}
+              style={
+                active
+                  ? { ...tagChip, background: 'var(--accent)', color: 'var(--accent-ink)', borderColor: 'var(--accent)' }
+                  : tagChip
+              }
+            >
+              {label(t)}
             </button>
-          ))}
-        </div>
-      )}
+          )
+        })}
+      </div>
     </div>
   )
 }
