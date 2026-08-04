@@ -27,7 +27,7 @@ function makeRecipe(over: Partial<RecipeResponse> = {}): RecipeResponse {
     updatedAt: null,
     ingredients: [],
     steps: [],
-    tags: ['weeknight'],
+    tags: ['Quick'],
     createdByUserId: 'author-1',
     ...over,
   }

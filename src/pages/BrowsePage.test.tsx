@@ -26,7 +26,7 @@ function makeRecipe(over: Partial<RecipeResponse> = {}): RecipeResponse {
     updatedAt: null,
     ingredients: [],
     steps: [],
-    tags: ['quick'],
+    tags: ['Quick'],
     createdByUserId: 'someone',
     ...over,
   }
@@ -85,10 +85,12 @@ describe('BrowsePage', () => {
     await userEvent.click(screen.getByText('Medium'))
     await waitFor(() => expect(urls.some((u) => u.includes('difficulty=Medium'))).toBe(true))
 
-    // Tag input, lowercased, sent as repeated tags param.
-    const tagInput = screen.getByLabelText('Filter by tag')
-    await userEvent.type(tagInput, 'Vegan{Enter}')
-    await waitFor(() => expect(urls.some((u) => u.includes('tags=vegan'))).toBe(true))
+    // Stream G: the tag filter is a chip set, not a text input, and the value it
+    // sends is the vocabulary member VERBATIM. It used to be lowercased here to
+    // agree with a case-sensitive backend comparison over free text; lowercasing
+    // a RecipeTag would now break the match instead of fixing it.
+    await userEvent.click(screen.getByLabelText('Filter by tag Vegan'))
+    await waitFor(() => expect(urls.some((u) => u.includes('tags=Vegan'))).toBe(true))
 
     // Every request starts a fresh page (no cursor carried across filter changes).
     expect(urls.every((u) => !u.includes('cursor='))).toBe(true)

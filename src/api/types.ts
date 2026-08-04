@@ -16,6 +16,55 @@ export type Difficulty = 'Easy' | 'Medium' | 'Hard'
 /** RecipeApp.Domain.Enums.RecipeVisibility */
 export type Visibility = 'Public' | 'Private' | 'FriendsOnly'
 
+// stream G (ingredient typing, decision D10) — SANCTIONED ADDITIVE EDIT to this
+// frozen module, landing as its own reviewed commit per the rule.
+//
+// Four fields that were free-text strings on the wire become closed vocabularies.
+// These unions are NOT additive in the way stream D's and stream E's edits were:
+// `unit`, `cuisineType`, `tags` and the profile's `dietaryRestrictions` change
+// TYPE, from `string` to a union. That is the point of the change — the compiler
+// now rejects the "cups" / "Cups" / "cup" divergence the backend used to store —
+// and it is why this commit is separate and reviewed rather than an in-lane edit.
+//
+// Each mirrors a C# enum by member name; the wire format is unchanged (the global
+// JsonStringEnumConverter already sent PascalCase names for Difficulty and
+// Visibility). Keep them in the SAME ORDER as the C# enums: the pickers render
+// straight from these arrays, so the order is user-visible.
+
+/** RecipeApp.Domain.Enums.UnitOfMeasure */
+export type UnitOfMeasure =
+  | 'Gram' | 'Kilogram' | 'Ounce' | 'Pound' | 'Millilitre' | 'Litre'
+  | 'Teaspoon' | 'Tablespoon' | 'Cup' | 'FluidOunce' | 'Piece' | 'Clove'
+  | 'Slice' | 'Can' | 'Package' | 'Bunch' | 'Pinch' | 'Dash' | 'Splash'
+  | 'Handful' | 'ToTaste'
+
+/** RecipeApp.Domain.Enums.UnitDimension — what a unit measures. */
+export type UnitDimension = 'Mass' | 'Volume' | 'Count' | 'Imprecise'
+
+/** RecipeApp.Domain.Enums.Cuisine */
+export type Cuisine =
+  | 'American' | 'British' | 'Caribbean' | 'Chinese' | 'EasternEuropean'
+  | 'French' | 'German' | 'Greek' | 'Indian' | 'Italian' | 'Japanese'
+  | 'Korean' | 'Mediterranean' | 'Mexican' | 'MiddleEastern' | 'NorthAfrican'
+  | 'Nordic' | 'Portuguese' | 'Spanish' | 'Thai' | 'Turkish' | 'Vietnamese'
+  | 'Other'
+
+/** RecipeApp.Domain.Enums.RecipeTag — the curated tag vocabulary. */
+export type RecipeTag =
+  | 'Breakfast' | 'Brunch' | 'Lunch' | 'Dinner' | 'Appetizer' | 'SideDish'
+  | 'Dessert' | 'Snack' | 'Drink' | 'Salad' | 'Soup' | 'Stew' | 'Sandwich'
+  | 'Pasta' | 'Pizza' | 'Curry' | 'Bread' | 'Cake' | 'Baking' | 'Grilling'
+  | 'Roasting' | 'Frying' | 'SlowCooker' | 'OnePot' | 'NoCook' | 'MealPrep'
+  | 'Quick' | 'Budget' | 'Comfort' | 'KidFriendly' | 'PartyFood' | 'Holiday'
+  | 'Leftovers' | 'Vegetarian' | 'Vegan' | 'HighProtein' | 'LowCalorie'
+  | 'Spicy' | 'Healthy'
+
+/** RecipeApp.Domain.Enums.DietaryRestriction */
+export type DietaryRestriction =
+  | 'Vegetarian' | 'Vegan' | 'Pescatarian' | 'GlutenFree' | 'DairyFree'
+  | 'NutFree' | 'PeanutFree' | 'EggFree' | 'SoyFree' | 'ShellfishFree'
+  | 'Halal' | 'Kosher' | 'LowCarb' | 'LowSodium'
+
 // ── Auth ──────────────────────────────────────────────────────────────────
 
 // stream D (governor) — SANCTIONED ADDITIVE EDIT to this frozen module: the
@@ -61,11 +110,17 @@ export interface MeResponse {
 
 // ── Recipes ───────────────────────────────────────────────────────────────
 
-/** RecipeApp.Domain.ValueObjects.RecipeIngredient */
+/**
+ * RecipeApp.Domain.ValueObjects.RecipeIngredient
+ *
+ * `name` stays a free-text string on purpose (decision D8, "resolve, don't
+ * constrain"): a brand-new ingredient must always be enterable. Only `unit` is
+ * constrained.
+ */
 export interface RecipeIngredient {
   name: string
   quantity: number
-  unit: string
+  unit: UnitOfMeasure
 }
 
 /** RecipeApp.Domain.ValueObjects.RecipeStep — timerSeconds is null when unset. */
@@ -85,7 +140,8 @@ export interface RecipeResponse {
   totalTimeMinutes: number
   servings: number
   difficulty: Difficulty
-  cuisineType?: string | null
+  /** null means "no particular cuisine", which is different from 'Other'. */
+  cuisineType?: Cuisine | null
   caloriesPerServing?: number | null
   imageUrl?: string | null
   visibility: Visibility
@@ -93,7 +149,7 @@ export interface RecipeResponse {
   updatedAt?: string | null
   ingredients: RecipeIngredient[]
   steps: RecipeStep[]
-  tags: string[]
+  tags: RecipeTag[]
   createdByUserId: string
   // stream E (AI recipe generator) — SANCTIONED ADDITIVE EDIT to this frozen module,
   // landing as its own reviewed commit per the rule. Both fields are APPENDED and optional
@@ -121,24 +177,27 @@ export interface CreateRecipeRequest {
   cookTimeMinutes: number
   servings: number
   difficulty: Difficulty
-  cuisineType?: string | null
+  cuisineType?: Cuisine | null
   caloriesPerServing?: number | null
   imageUrl?: string | null
   visibility: Visibility
   ingredients: RecipeIngredient[]
   steps: RecipeStep[]
-  tags: string[]
+  tags: RecipeTag[]
 }
 
 /**
  * Query params for GET /recipes. tags is sent as repeated ?tags=a&tags=b
- * (match-ALL, case-SENSITIVE on the backend); cuisine is case-insensitive.
+ * (match-ALL); both cuisine and tags parse case-insensitively.
  * limit defaults to 20, is clamped to 50, and <= 0 → 400.
+ *
+ * stream G: a cuisine or tag the backend does not recognise is now a 400 rather
+ * than a 200 with an empty list, so these two must come from the unions.
  */
 export interface RecipeListQuery {
-  cuisine?: string
+  cuisine?: Cuisine
   difficulty?: Difficulty
-  tags?: string[]
+  tags?: RecipeTag[]
   cursor?: string
   limit?: number
 }

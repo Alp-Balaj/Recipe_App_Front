@@ -111,8 +111,8 @@ function makeRecipe(over: Partial<RecipeResponse> & Pick<RecipeResponse, 'id' | 
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: null,
     ingredients: [
-      { name: 'Rigatoni', quantity: 500, unit: 'g' },
-      { name: 'Tomato passata', quantity: 700, unit: 'g' },
+      { name: 'Rigatoni', quantity: 500, unit: 'Gram' },
+      { name: 'Tomato passata', quantity: 700, unit: 'Gram' },
     ],
     steps: [],
     tags: [],
@@ -602,6 +602,7 @@ describe('the week board', () => {
       isPurchased: false,
       origin: 'Derived' as const,
       manualItemId: null,
+      totals: [{ quantity: 1, unit: 'Piece' as const, display: '1 pc' }],
     })
     let shoppingFetches = 0
     server.use(

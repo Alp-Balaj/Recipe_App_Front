@@ -32,7 +32,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch } from './client'
-import type { RecipeListResponse, RecipeResponse, Visibility } from './types'
+import type { DietaryRestriction, RecipeListResponse, RecipeResponse, Visibility } from './types'
 
 /** UserSummaryResponse — the compact author block on feed items + follow lists. */
 export interface UserSummaryResponse {
@@ -260,6 +260,15 @@ export interface UserProfileResponse {
   followedByMe: boolean
   /** The caller-chosen default visibility applied to new recipes (edited on /profile → Settings). */
   defaultRecipeVisibility: Visibility
+  /**
+   * Stream G (D10). The field existed on User since the initial migration and
+   * reached all three AI system prompts as an absolute constraint, but no
+   * endpoint ever read or wrote it — so in practice it was empty for everyone
+   * and "your restrictions are absolute" was addressing an empty list. G typed
+   * it and gave it this read/write path on the profile pair, beside the other
+   * account-level setting.
+   */
+  dietaryRestrictions: DietaryRestriction[]
 }
 
 /**
@@ -271,6 +280,8 @@ export interface UpdateProfileRequest {
   bio?: string | null
   profileImageUrl?: string | null
   defaultRecipeVisibility: Visibility
+  /** PUT is a full replace here, like every other field: an empty array clears them. */
+  dietaryRestrictions: DietaryRestriction[]
 }
 
 /** GET /users/{id}/followers | /following → 200 body (FollowedAt DESC keyset). */

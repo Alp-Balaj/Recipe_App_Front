@@ -25,14 +25,14 @@ function makeRecipe(overrides: Partial<RecipeResponse> = {}): RecipeResponse {
     createdAt: '2026-07-01T00:00:00Z',
     updatedAt: null,
     ingredients: [
-      { name: 'white miso paste', quantity: 3, unit: 'tbsp' },
-      { name: 'ramen noodles', quantity: 150, unit: 'g' },
+      { name: 'white miso paste', quantity: 3, unit: 'Tablespoon' },
+      { name: 'ramen noodles', quantity: 150, unit: 'Gram' },
     ],
     steps: [
       { stepNumber: 1, description: 'Simmer the dashi.', timerSeconds: 300 },
       { stepNumber: 2, description: 'Whisk in the miso paste.', timerSeconds: null },
     ],
-    tags: ['warm', 'umami'],
+    tags: ['Comfort', 'Comfort'],
     createdByUserId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
     ...overrides,
   }

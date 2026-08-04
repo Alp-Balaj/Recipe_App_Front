@@ -25,9 +25,9 @@ function makeRecipe(overrides: Partial<RecipeResponse> = {}): RecipeResponse {
     visibility: 'Public',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: null,
-    ingredients: [{ name: 'Salt', quantity: 1, unit: 'tsp' }],
+    ingredients: [{ name: 'Salt', quantity: 1, unit: 'Teaspoon' }],
     steps: [{ stepNumber: 1, description: 'Mix', timerSeconds: null }],
-    tags: ['savory'],
+    tags: ['Comfort'],
     createdByUserId: ME,
     ...overrides,
   }

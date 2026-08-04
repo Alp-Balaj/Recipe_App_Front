@@ -112,7 +112,7 @@ export const FALLBACK_RECIPES: RecipeResponse[] = [
       cookTimeMinutes: 15,
       caloriesPerServing: 420,
       cuisineType: 'Japanese',
-      tags: ['warm', 'umami', 'filling', 'vegetarian'],
+      tags: ['Comfort', 'Comfort', 'Vegetarian'],
     },
   ),
   fixtureRecipe(
@@ -123,8 +123,8 @@ export const FALLBACK_RECIPES: RecipeResponse[] = [
       totalTimeMinutes: 30,
       caloriesPerServing: 340,
       difficulty: 'Easy',
-      cuisineType: 'Middle Eastern',
-      tags: ['hearty', 'protein', 'vegan'],
+      cuisineType: 'MiddleEastern',
+      tags: ['Comfort', 'HighProtein', 'Vegan'],
     },
   ),
   fixtureRecipe(
@@ -135,8 +135,8 @@ export const FALLBACK_RECIPES: RecipeResponse[] = [
       totalTimeMinutes: 20,
       caloriesPerServing: 310,
       difficulty: 'Easy',
-      cuisineType: 'North African',
-      tags: ['spiced', 'eggs', 'vegetarian'],
+      cuisineType: 'NorthAfrican',
+      tags: ['Spicy', 'Breakfast', 'Vegetarian'],
     },
   ),
 ]

@@ -11,16 +11,26 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { useForm, useFieldArray, type UseFormSetError } from 'react-hook-form'
+import { useForm, useFieldArray, Controller, type UseFormSetError } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { ApiError, ApiUnauthorizedError, ApiValidationError } from '@/api/client'
 import { uploadImage, IMAGE_ACCEPT, IMAGE_ALLOWED_TYPES, IMAGE_MAX_BYTES } from '@/api/images'
-import type { CreateRecipeRequest, RecipeResponse } from '@/api/types'
+import type { CreateRecipeRequest, Cuisine, RecipeResponse, RecipeTag, UnitOfMeasure } from '@/api/types'
+import {
+  CUISINES,
+  MAX_TAGS,
+  TAGS,
+  UNIT_GROUPS,
+  UNITS,
+  label,
+  unitLabel,
+} from '@/api/vocabulary'
 import { useAuth } from '@/auth/AuthContext'
 import { resolveImageUrl } from '@/lib/images'
 import TextField from '@/components/ui/TextField'
 import { IngredientNameField } from '@/components/recipes/IngredientNameField'
+import { TagPicker } from '@/components/recipes/TagPicker'
 
 // ── Schema (mirrors the backend CreateRecipeRequestValidator) ───────────────
 
@@ -49,7 +59,11 @@ const ingredientSchema = z.object({
     .trim()
     .min(1, 'Qty is required')
     .refine((v) => Number.isFinite(Number(v)) && Number(v) > 0, 'Must be greater than 0'),
-  unit: z.string().trim().min(1, 'Unit is required'),
+  // Stream G: a closed vocabulary, so this is membership rather than
+  // non-emptiness. The control is a <select> whose options come from the same
+  // list, so the only way to fail this is a tampered DOM — which is exactly the
+  // case a schema should still catch.
+  unit: z.enum(UNITS as [UnitOfMeasure, ...UnitOfMeasure[]]),
 })
 
 const stepSchema = z.object({
@@ -69,7 +83,9 @@ export const recipeFormSchema = z.object({
   servings: positiveIntField('Servings'),
   difficulty: z.enum(['Easy', 'Medium', 'Hard']),
   visibility: z.enum(['Public', 'Private', 'FriendsOnly']),
-  cuisineType: z.string().trim().max(100, 'Keep it short').optional(),
+  // '' is the "no particular cuisine" option and becomes null on the wire —
+  // distinct from 'Other', which claims a real cuisine that is not on the list.
+  cuisineType: z.union([z.enum(CUISINES as [Cuisine, ...Cuisine[]]), z.literal('')]),
   caloriesPerServing: z
     .string()
     .trim()
@@ -77,7 +93,7 @@ export const recipeFormSchema = z.object({
   imageUrl: z.string().trim(),
   ingredients: z.array(ingredientSchema).min(1, 'Add at least one ingredient'),
   steps: z.array(stepSchema).min(1, 'Add at least one step'),
-  tags: z.string(),
+  tags: z.array(z.enum(TAGS as [RecipeTag, ...RecipeTag[]])).max(MAX_TAGS, `At most ${MAX_TAGS} tags`),
 })
 
 export type RecipeFormValues = z.infer<typeof recipeFormSchema>
@@ -95,25 +111,27 @@ export const emptyRecipeDefaults: RecipeFormValues = {
   cuisineType: '',
   caloriesPerServing: '',
   imageUrl: '',
-  ingredients: [{ name: '', quantity: '', unit: '' }],
+  // Gram is the default unit, not a blank: with a closed vocabulary there is no
+  // empty member to start on, and weight is what most ingredients are measured
+  // in. The author changes it in one click when it is wrong.
+  ingredients: [{ name: '', quantity: '', unit: 'Gram' }],
   steps: [{ description: '', timerSeconds: '' }],
-  tags: '',
+  tags: [],
 }
 
 /**
  * Form values → CreateRecipeRequest wire body. stepNumber is assigned here as
- * index + 1 (never a form field); tags are trimmed, lowercased, de-duped, and
- * empties dropped; blank optionals become null.
+ * index + 1 (never a form field); blank optionals become null.
+ *
+ * Stream G removed the tag normalisation that used to live here — the split on
+ * commas, the trim, the lowercasing, the de-dupe. All four existed to make free
+ * text survive a case-SENSITIVE match-ALL filter, and the chip picker makes them
+ * unnecessary: a tag is now a member or it is not in the array.
  *
  * The PUT (update) body is structurally identical to CreateRecipeRequest, so
  * checkpoint 06 reuses this same converter for edits.
  */
 export function toCreateRecipeRequest(v: RecipeFormValues): CreateRecipeRequest {
-  const tags = Array.from(
-    new Set(v.tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean)),
-  )
-
-  const cuisineType = v.cuisineType?.trim() ?? ''
   const imageUrl = v.imageUrl.trim()
   const calories = v.caloriesPerServing.trim()
 
@@ -125,20 +143,20 @@ export function toCreateRecipeRequest(v: RecipeFormValues): CreateRecipeRequest 
     servings: Number(v.servings),
     difficulty: v.difficulty,
     visibility: v.visibility,
-    cuisineType: cuisineType ? cuisineType : null,
+    cuisineType: v.cuisineType === '' ? null : v.cuisineType,
     caloriesPerServing: calories ? Number(calories) : null,
     imageUrl: imageUrl ? imageUrl : null,
     ingredients: v.ingredients.map((i) => ({
       name: i.name.trim(),
       quantity: Number(i.quantity),
-      unit: i.unit.trim(),
+      unit: i.unit,
     })),
     steps: v.steps.map((s, idx) => ({
       stepNumber: idx + 1,
       description: s.description.trim(),
       timerSeconds: s.timerSeconds.trim() ? Number(s.timerSeconds) : null,
     })),
-    tags,
+    tags: v.tags,
   }
 }
 
@@ -157,14 +175,14 @@ export function recipeResponseToFormValues(r: RecipeResponse): RecipeFormValues 
     imageUrl: r.imageUrl ?? '',
     ingredients: r.ingredients.length
       ? r.ingredients.map((i) => ({ name: i.name, quantity: String(i.quantity), unit: i.unit }))
-      : [{ name: '', quantity: '', unit: '' }],
+      : [{ name: '', quantity: '', unit: 'Gram' as const }],
     steps: r.steps.length
       ? r.steps.map((s) => ({
           description: s.description,
           timerSeconds: s.timerSeconds != null ? String(s.timerSeconds) : '',
         }))
       : [{ description: '', timerSeconds: '' }],
-    tags: r.tags.join(', '),
+    tags: r.tags,
   }
 }
 
@@ -670,14 +688,29 @@ export function RecipeForm({
                 {...register(`ingredients.${idx}.quantity` as const)}
               />
             </div>
-            <div style={{ flex: '0 0 84px' }}>
-              <TextField
-                label={idx === 0 ? 'Unit' : ''}
+            <div style={{ flex: '0 0 104px' }}>
+              {idx === 0 && <FieldLabel>Unit</FieldLabel>}
+              {/* Grouped by dimension: 21 units in a flat list is a scroll, and
+                  the groups also say which of them the shopping list can add
+                  together. */}
+              <select
                 aria-label={`Ingredient ${idx + 1} unit`}
-                placeholder="g, cup…"
-                error={errors.ingredients?.[idx]?.unit?.message}
+                style={selectStyle}
                 {...register(`ingredients.${idx}.unit` as const)}
-              />
+              >
+                {UNIT_GROUPS.map((group) => (
+                  <optgroup key={group.dimension} label={group.label}>
+                    {group.units.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {unitLabel(unit)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {errors.ingredients?.[idx]?.unit?.message && (
+                <FieldError message={errors.ingredients[idx]!.unit!.message!} />
+              )}
             </div>
             <div style={{ flex: 1 }}>
               <IngredientNameField
@@ -705,7 +738,7 @@ export function RecipeForm({
         ))}
         <button
           type="button"
-          onClick={() => ingredients.append({ name: '', quantity: '', unit: '' })}
+          onClick={() => ingredients.append({ name: '', quantity: '', unit: 'Gram' })}
           style={{ ...smallButtonStyle('ghost'), marginBottom: 12 }}
         >
           + Add ingredient
@@ -784,9 +817,20 @@ export function RecipeForm({
       <Card>
         <SectionTitle>Extras</SectionTitle>
         <div style={{ display: 'flex', gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <TextField label="Cuisine" placeholder="Italian…" error={errors.cuisineType?.message} {...register('cuisineType')} />
-          </div>
+          <label htmlFor="cuisineType" style={{ display: 'block', marginBottom: 14, flex: 1 }}>
+            <FieldLabel>Cuisine</FieldLabel>
+            <select id="cuisineType" style={selectStyle} {...register('cuisineType')}>
+              {/* The empty option is a real answer, not a prompt: most dishes
+                  belong to no particular cuisine. */}
+              <option value="">No particular cuisine</option>
+              {CUISINES.map((cuisine) => (
+                <option key={cuisine} value={cuisine}>
+                  {label(cuisine)}
+                </option>
+              ))}
+            </select>
+            {errors.cuisineType?.message && <FieldError message={errors.cuisineType.message} />}
+          </label>
           <div style={{ flex: 1 }}>
             <TextField
               label="Calories / serving"
@@ -800,15 +844,17 @@ export function RecipeForm({
           </div>
         </div>
         <TextField label="Image URL" placeholder="https://…" error={errors.imageUrl?.message} {...register('imageUrl')} />
-        <TextField
-          label="Tags"
-          placeholder="vegan, quick, dinner"
-          error={typeof errors.tags?.message === 'string' ? errors.tags.message : undefined}
-          {...register('tags')}
+        <Controller
+          control={control}
+          name="tags"
+          render={({ field }) => (
+            <TagPicker
+              selected={field.value}
+              onChange={field.onChange}
+              error={typeof errors.tags?.message === 'string' ? errors.tags.message : undefined}
+            />
+          )}
         />
-        <div style={{ fontSize: 12, color: 'var(--muted)', margin: '-8px 0 10px' }}>
-          Comma-separated. Saved lowercase so filters always match.
-        </div>
       </Card>
 
       {/* Actions */}

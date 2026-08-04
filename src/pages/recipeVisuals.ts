@@ -44,12 +44,19 @@ export function formatTimer(seconds: number): string {
   return `${m} min ${s} s`
 }
 
-/** An ingredient's quantity + unit → "3 tbsp", "150 g", "2" (unitless). */
-export function formatQuantity(quantity: number, unit: string): string {
-  const q = String(quantity)
-  const u = unit?.trim()
-  return u ? `${q} ${u}` : q
-}
+/**
+ * An ingredient's quantity + unit → "3 tbsp", "150 g", "2 cups", "to taste".
+ *
+ * Re-exported from '@/api/vocabulary' rather than reimplemented: stream G gave
+ * units a written form and a pluralisation rule, and a second copy of that here
+ * would be a second place to update when a unit is appended. Both existing call
+ * sites (the detail page's ingredient list, the day page's) keep importing it
+ * from this module — the change is who owns the logic, not who uses it.
+ *
+ * The old version took `unit: string` and appended it raw, which is why "cups"
+ * and "cup" both rendered verbatim.
+ */
+export { formatQuantity } from '@/api/vocabulary'
 
 /** Human label for a Visibility enum value. */
 export function visibilityLabel(v: string): string {

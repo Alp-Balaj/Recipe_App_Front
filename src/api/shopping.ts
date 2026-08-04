@@ -31,6 +31,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch } from './client'
+import type { UnitOfMeasure } from '@/api/types'
 
 /** ShoppingListScope — which weeks the projection covers. */
 export type ShoppingScope = 'Week' | 'All'
@@ -43,11 +44,33 @@ export type ShoppingGroupOrigin = 'Derived' | 'Manual'
 
 /**
  * One dish's contribution to a group. `quantity` is a PRE-RENDERED display string
- * ("2.5 cups") — the server groups, it never sums, so do not parse or add these.
+ * ("2.5 cups"), in the unit that dish's recipe was WRITTEN in. Still do not parse
+ * or add these — stream G made the server able to sum, and `ShoppingGroup.totals`
+ * is where the sum arrives already done.
  */
 export interface ShoppingPart {
   quantity: string
   dishTitle: string
+}
+
+/**
+ * A summed quantity within one group (stream G, slice G1).
+ *
+ * A group carries one total per summation BUCKET, and more than one is normal:
+ * everything mass-dimensioned collapses into a single figure and everything
+ * volume-dimensioned into another, each count unit forms its own, and imprecise
+ * parts (a pinch, a dash) produce none at all — so a group of nothing but
+ * seasoning has an empty `totals` and shows only its parts.
+ *
+ * `display` is server-rendered and is what the UI shows; `quantity` and `unit`
+ * are there for anything that needs the number itself. Two totals on one group
+ * means it was measured by both weight and volume, which cannot be collapsed
+ * without the ingredient's density — that lands in slice G3.
+ */
+export interface ShoppingTotal {
+  quantity: number
+  unit: UnitOfMeasure
+  display: string
 }
 
 /**
@@ -66,6 +89,8 @@ export interface ShoppingGroup {
   isPurchased: boolean
   origin: ShoppingGroupOrigin
   manualItemId?: string | null
+  /** Always empty for a Manual group — its quantity is free text, not a measurement. */
+  totals: ShoppingTotal[]
 }
 
 /** One week of the projection, with its own progress denominator. */

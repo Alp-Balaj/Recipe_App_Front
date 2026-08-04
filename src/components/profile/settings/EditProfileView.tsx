@@ -15,6 +15,8 @@ import { useAuth } from '@/auth/AuthContext'
 import Avatar from '@/components/Avatar'
 import { useUpdateProfile } from '@/hooks/useUserProfile'
 import { SectionLabel, SettingsScreen } from './settingsUi'
+import type { DietaryRestriction } from '@/api/types'
+import { DIETARY_RESTRICTIONS, label } from '@/api/vocabulary'
 
 const BIO_MAX = 160
 
@@ -37,6 +39,7 @@ export default function EditProfileView({ profile, onBack }: Props) {
   const [bio, setBio] = useState(profile.bio ?? '')
   const [imageUrl, setImageUrl] = useState<string | null>(profile.profileImageUrl ?? null)
   const [visibility, setVisibility] = useState<Visibility>(profile.defaultRecipeVisibility)
+  const [restrictions, setRestrictions] = useState<DietaryRestriction[]>(profile.dietaryRestrictions ?? [])
 
   const [banner, setBanner] = useState<string | null>(null)
   const [usernameError, setUsernameError] = useState<string | null>(null)
@@ -118,6 +121,7 @@ export default function EditProfileView({ profile, onBack }: Props) {
         bio: bio.trim() ? bio.trim() : null,
         profileImageUrl: imageUrl,
         defaultRecipeVisibility: visibility,
+        dietaryRestrictions: restrictions,
       })
       updateUsername(updated.username)
       onBack()
@@ -239,11 +243,64 @@ export default function EditProfileView({ profile, onBack }: Props) {
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
         Applied to new recipes by default. You can still change it per recipe.
       </div>
+
+      {/* Dietary restrictions (stream G, D10). A chip set rather than a text
+          field because these are the one setting that leaves the app: they are
+          injected into every AI system prompt as an absolute constraint, so a
+          typo used to become a rule the model was asked to honour and could
+          not. A closed vocabulary is also what lets slice G4 CHECK a recipe
+          against them instead of only asking the model to respect them. */}
+      <SectionLabel style={{ marginTop: 18 }}>Dietary restrictions</SectionLabel>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+        {DIETARY_RESTRICTIONS.map((restriction) => {
+          const active = restrictions.includes(restriction)
+          return (
+            <button
+              key={restriction}
+              type="button"
+              role="checkbox"
+              aria-checked={active}
+              aria-label={label(restriction)}
+              onClick={() =>
+                setRestrictions((prev) =>
+                  prev.includes(restriction)
+                    ? prev.filter((r) => r !== restriction)
+                    : // Rebuilt in vocabulary order, so the saved list never
+                      // reads in click order.
+                      DIETARY_RESTRICTIONS.filter((r) => r === restriction || prev.includes(r)),
+                )
+              }
+              style={restrictionChip(active)}
+            >
+              {label(restriction)}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
+        Used to constrain every recipe the assistant suggests or generates for you.
+      </div>
     </SettingsScreen>
   )
 }
 
 // ── Styles ───────────────────────────────────────────────────────────────────
+
+function restrictionChip(active: boolean): CSSProperties {
+  return {
+    fontFamily: 'inherit',
+    fontSize: 12.5,
+    fontWeight: active ? 700 : 500,
+    padding: '6px 11px',
+    borderRadius: 999,
+    cursor: 'pointer',
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+    // Same token choice as TagPicker — the deeper --accent, not --accent-fill,
+    // so 12.5px label text stays above 4.5:1. See that component's note.
+    background: active ? 'var(--accent)' : 'var(--chipbg)',
+    color: active ? 'var(--accent-ink)' : 'var(--muted)',
+  }
+}
 
 function saveButton(enabled: boolean): CSSProperties {
   return {

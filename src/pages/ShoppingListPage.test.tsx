@@ -17,17 +17,27 @@ const week = {
       key: 'flour', displayName: 'Flour',
       parts: [{ quantity: '2 cups', dishTitle: 'Pasta' }, { quantity: '500 g', dishTitle: 'Bread' }],
       dishes: ['Pasta', 'Bread'], isPurchased: false, origin: 'Derived', manualItemId: null,
+      // Two totals: 2 cups is volume and 500 g is mass, and the two cannot be
+      // collapsed without flour's density (slice G3). The UI must render both.
+      totals: [
+        { quantity: 500, unit: 'Gram', display: '500 g' },
+        { quantity: 480, unit: 'Millilitre', display: '480 ml' },
+      ],
     },
     {
       key: 'carrot', displayName: 'Carrot',
       parts: [{ quantity: '3', dishTitle: 'Soup' }],
       dishes: ['Soup'], isPurchased: true, origin: 'Derived', manualItemId: null,
+      totals: [{ quantity: 3, unit: 'Piece', display: '3 pcs' }],
     },
     {
       key: 'manual:11111111-1111-1111-1111-111111111111', displayName: 'Bin bags',
       parts: [{ quantity: '1 roll', dishTitle: 'Added by you' }],
       dishes: [], isPurchased: false, origin: 'Manual',
       manualItemId: '11111111-1111-1111-1111-111111111111',
+      // Always empty for a manual row — "1 roll" is a note to self, not a
+      // measurement, so there is nothing to add up.
+      totals: [],
     },
   ],
 }
@@ -46,6 +56,7 @@ const olderWeek = {
       key: 'saffron', displayName: 'Saffron',
       parts: [{ quantity: '1 g', dishTitle: 'Paella' }],
       dishes: ['Paella'], isPurchased: false, origin: 'Derived', manualItemId: null,
+      totals: [{ quantity: 1, unit: 'Gram', display: '1 g' }],
     },
   ],
 }
