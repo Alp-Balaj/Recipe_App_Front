@@ -242,6 +242,9 @@ export default function EditProfileView({ profile, onBack }: Props) {
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
         Applied to new recipes by default. You can still change it per recipe.
+        {/* stream F (decision D6): the "Friends" segment is a MUTUAL follow. Spelled out
+            only while it is selected, so the line stays one sentence for everyone else. */}
+        {visibility === 'FriendsOnly' && ' Friends are people you follow who follow you back.'}
       </div>
 
       {/* Dietary restrictions (stream G, D10). A chip set rather than a text

@@ -617,6 +617,15 @@ export function RecipeForm({
               <option value="Private">Private</option>
               <option value="FriendsOnly">Friends only</option>
             </select>
+            {/* stream F (decision D6): "friend" is a MUTUAL follow, and the word alone
+                does not say so — someone reasonably reads it as "people who follow me".
+                Until D6 this option silently behaved as Private; now that it does what it
+                says, saying what it means is the rest of that fix. */}
+            {visibility === 'FriendsOnly' && (
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginTop: 5 }}>
+                Visible to people you follow who follow you back.
+              </span>
+            )}
           </label>
         </div>
       </Card>
