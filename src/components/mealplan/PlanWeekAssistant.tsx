@@ -22,6 +22,7 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
 import { ApiConflictError } from '@/api/client'
+import { isQuotaError } from '@/api/generation'
 import {
   addMealPlanEntry,
   proposeWeek,
@@ -192,7 +193,16 @@ export default function PlanWeekAssistant({
         )}
         {propose.isError && (
           <span role="status" style={errorText}>
-            The assistant couldn't propose a week just now — nothing was changed. Try again.
+            {/*
+              A 429 means the AI budget is spent (or the per-IP window is closed), and
+              "try again" is the one piece of advice that is actively wrong for it —
+              retrying is what the user must NOT do. Same split, same helper, as the
+              recipe generator. Reachable on this surface since propose-week was metered
+              (2026-08-05); before that a 429 here could only be the rate lane.
+            */}
+            {isQuotaError(propose.error)
+              ? "That's today's AI allowance used up — nothing was changed. It resets at 00:00 UTC."
+              : "The assistant couldn't propose a week just now — nothing was changed. Try again."}
           </span>
         )}
         {outcome && (
