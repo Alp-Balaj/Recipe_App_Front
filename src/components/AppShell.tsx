@@ -16,13 +16,23 @@ import BottomNav from './BottomNav'
 import LoginModal from './LoginModal'
 import NotificationBell from './NotificationBell'
 import { useBackdropPath } from './recipeCanvas'
-import BrowsePage from '@/pages/BrowsePage'
-import ChatPage from '@/pages/ChatPage'
-import FeedPage from '@/pages/FeedPage'
-import MealPlanDayPage from '@/pages/MealPlanDayPage'
-import MyRecipesPage from '@/pages/MyRecipesPage'
-import ProfilePage from '@/pages/ProfilePage'
-import UserProfilePage from '@/pages/UserProfilePage'
+// stream F (frontend sweep), Task 2 — REVIEWED EDIT to this frozen shell internal, in the
+// same commit as the router's. These seven were STATIC page imports, and a static import
+// anywhere pins a module into the main chunk: while they lived here, the router's lazy
+// imports of the same seven pages were silently no-ops (Vite warns exactly this). They now
+// come from the shared registry the router uses, so each is one chunk with one component
+// identity — see src/routeChunks.tsx. Nothing about this component's behaviour changes;
+// the backdrop routes below are unchanged apart from wrapping each page in `page()`.
+import {
+  page,
+  BrowsePage,
+  ChatPage,
+  FeedPage,
+  MealPlanDayPage,
+  MyRecipesPage,
+  ProfilePage,
+  UserProfilePage,
+} from '@/routeChunks'
 import type { ThemeContextValue } from './ThemeRoot'
 
 /** /plan/2026-07-29 — the day page, but not /plan or /plan/week/:start. */
@@ -80,17 +90,17 @@ function AppShellContent() {
       {
         element: <Outlet context={theme} />,
         children: [
-          { path: '/feed', element: <FeedPage /> },
-          { path: '/chat', element: <ChatPage /> },
-          { path: '/chat/:conversationId', element: <ChatPage /> },
-          { path: '/users/:id', element: <UserProfilePage /> },
-          { path: '/profile', element: <ProfilePage /> },
+          { path: '/feed', element: page(FeedPage) },
+          { path: '/chat', element: page(ChatPage) },
+          { path: '/chat/:conversationId', element: page(ChatPage) },
+          { path: '/users/:id', element: page(UserProfilePage) },
+          { path: '/profile', element: page(ProfilePage) },
           // A meal's "Recipe" button opens the canvas from the day page, so the
           // day has to be renderable behind it — otherwise the '*' fallback
           // below swaps the reader's day for Discover mid-plan.
-          { path: '/plan/:date', element: <MealPlanDayPage /> },
-          { path: '/recipes/mine', element: <MyRecipesPage /> },
-          { path: '*', element: <BrowsePage /> },
+          { path: '/plan/:date', element: page(MealPlanDayPage) },
+          { path: '/recipes/mine', element: page(MyRecipesPage) },
+          { path: '*', element: page(BrowsePage) },
         ],
       },
     ],
@@ -155,7 +165,7 @@ function AppShellContent() {
   // The routed page — or, for a guest on a gated route, Discover as the page
   // behind the login prompt. Rendered as a direct child (not through the
   // outlet), BrowsePage still reads the theme from ThemeRoot's outlet context.
-  const page = isGatedRoute ? <BrowsePage /> : <Outlet context={theme} />
+  const routedPage = isGatedRoute ? page(BrowsePage) : <Outlet context={theme} />
 
   // ── Desktop (>=1024px): sidebar + conversation pane + recipe canvas ──
   if (isDesktop) {
@@ -180,7 +190,7 @@ function AppShellContent() {
             <div className="conversation-inner" style={isWidePage ? { maxWidth: 1240 } : undefined}>
               {/* On a detail URL the outlet renders in the canvas pane instead,
                   and the page the recipe was opened from backs this pane. */}
-              {isDetail ? backdrop : page}
+              {isDetail ? backdrop : routedPage}
             </div>
           </section>
 
@@ -204,7 +214,7 @@ function AppShellContent() {
           Stays position:relative so the absolutely-positioned pages / nav /
           detail overlay keep working unchanged. */}
       <div className="app-frame">
-        {page}
+        {routedPage}
         {/* open-loops slice 3 — REVIEWED COMMIT against this frozen module,
             following the AuthGateProvider (D9) precedent for a sanctioned
             amendment here.

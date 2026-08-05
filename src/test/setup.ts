@@ -1,8 +1,22 @@
 import { afterAll, afterEach, beforeAll } from 'vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { server } from './msw/server'
 import { setAuthToken, setUnauthorizedHandler } from '@/api/client'
+
+// ── findBy* timeout ──────────────────────────────────────────────────────
+// Raised from Testing Library's 1000ms default (stream F, Task 2). Route-level
+// code splitting means `renderRoute` now resolves a dynamic import before the
+// page component exists, where previously every page was already in the module
+// graph — one extra async hop before the first paint of every routed test.
+//
+// That hop is nothing in isolation (these files pass individually in ~4s), but
+// the suite runs 43 jsdom files in parallel and two profile tests sat close
+// enough to 1000ms that the extra tick pushed them over intermittently. This is
+// the honest fix: the assertions were never wrong and the app is not slower —
+// the budget for "the page has mounted" simply has one more step in it now.
+// Raising it here rather than in 43 files keeps it one decision.
+configure({ asyncUtilTimeout: 5000 })
 
 // Node 22 ships an experimental native `localStorage` global that shadows
 // jsdom's and exposes no getItem/setItem/removeItem. Install a Map-backed

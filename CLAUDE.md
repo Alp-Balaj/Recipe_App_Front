@@ -51,6 +51,24 @@ reviewed commit — including **removals**: `/plan/week` was retired on
 2026-07-30 as one of those, once the Plan tab moved to `/plan` and nothing
 pointed at the redirect any more.
 
+**Pages are lazy — never import one statically** (stream F, 2026-08-05, a
+reviewed commit touching `router.tsx` and `AppShell.tsx`). Every page module is
+declared once in `src/routeChunks.tsx` as `React.lazy`, and both renderers —
+the route tree and AppShell's desktop backdrop — import from there and wrap the
+component in that file's `page()` helper, which supplies the per-page `Suspense`
+boundary. No path was added, removed or reordered; only the import strategy
+changed. Entry bundle 688 kB → 430 kB (gzip 201 → 135), plus a chunk per page.
+
+The rule matters because breaking it is **silent**: a static
+`import SomePage from '@/pages/SomePage'` anywhere pins that module into the
+entry chunk and turns its `lazy()` into a no-op, with no error and no failing
+test — only a Vite build warning. Seven pages were already in that state via
+AppShell. `src/routeChunks.test.ts` now asserts the invariant against the source
+of both files, so it fails loudly instead. The Suspense boundary belongs at the
+page, never above `ThemeRoot`/`AppShell`: higher up it would unmount the layout
+on every navigation and reset `ThemeRoot`'s `mode` state, strobing dark mode
+back to light on every click.
+
 | Route | Page file | Filled by |
 |---|---|---|
 | /login | `LoginPage.tsx` | checkpoint 02 |
