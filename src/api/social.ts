@@ -163,10 +163,14 @@ export type RecipeSocialResponse = Omit<FeedItemResponse, 'recipe'>
 
 /**
  * GET /recipes/{id}/social → 200 | 404. Visibility identical to
- * GET /recipes/{id}: Public or caller-owned → 200 (authors see their own
- * recipes at ANY visibility); anything else — other users' Private/
- * FriendsOnly, soft-deleted, nonexistent — is a 404, never a 403. Counts are
- * live per-request; flags are caller-relative. Rides the `social` rate lane.
+ * GET /recipes/{id}: Public, caller-owned (authors see their own recipes at ANY
+ * visibility), or — since stream F, decision D6 — an author's FriendsOnly recipe
+ * when the caller and the author follow EACH OTHER. Anything else — other users'
+ * Private, a FriendsOnly recipe without that mutual follow, soft-deleted,
+ * nonexistent — is a 404, never a 403: the convention is that an unreadable
+ * recipe is indistinguishable from a missing one, and widening what is readable
+ * did not change it. Counts are live per-request; flags are caller-relative.
+ * Rides the `social` rate lane.
  */
 export function getRecipeSocial(
   recipeId: string,

@@ -13,7 +13,14 @@
 /** RecipeApp.Domain.Enums.DifficultyLevel */
 export type Difficulty = 'Easy' | 'Medium' | 'Hard'
 
-/** RecipeApp.Domain.Enums.RecipeVisibility */
+/**
+ * RecipeApp.Domain.Enums.RecipeVisibility
+ *
+ * `FriendsOnly` means a MUTUAL follow (stream F, decision D6): the viewer follows
+ * the author AND the author follows the viewer. A one-way follow in either
+ * direction grants nothing. Before D6 the backend treated it as owner-only, so
+ * anyone reading old code should not trust "friends" to have ever meant anything.
+ */
 export type Visibility = 'Public' | 'Private' | 'FriendsOnly'
 
 // stream G (ingredient typing, decision D10) — SANCTIONED ADDITIVE EDIT to this
