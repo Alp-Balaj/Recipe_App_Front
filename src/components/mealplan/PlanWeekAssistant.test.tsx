@@ -197,6 +197,26 @@ describe('the week-proposal flow', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  // propose-week was metered on 2026-08-05, so a 429 here can now mean "budget spent"
+  // rather than only "you clicked too fast". The distinction is the whole point: telling
+  // someone to try again is wrong advice until 00:00 UTC.
+  it('an exhausted AI budget says so instead of inviting a retry', async () => {
+    proposalWeek()
+    server.use(
+      http.post('/api/meal-plans/propose-week', () =>
+        HttpResponse.json({ title: 'Daily AI budget exhausted.' }, { status: 429 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderRoute('/plan/week/2026-07-27')
+
+    await user.click(await screen.findByRole('button', { name: /propose a week/i }))
+
+    expect(await screen.findByText(/today's AI allowance used up/i)).toBeInTheDocument()
+    expect(screen.getByText(/resets at 00:00 UTC/i)).toBeInTheDocument()
+    expect(screen.queryByText(/try again/i)).not.toBeInTheDocument()
+  })
+
   it('a full week offers no proposal card', async () => {
     const fullEntries: MealPlanEntry[] = (['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const)
       .flatMap((day) =>
