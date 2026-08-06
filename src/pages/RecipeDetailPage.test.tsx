@@ -159,7 +159,10 @@ describe('RecipeDetailPage', () => {
     expect(await screen.findByText('Step 1 of 2')).toBeInTheDocument()
     await userEvent.click(screen.getByText('Next →'))
     expect(await screen.findByText('Step 2 of 2')).toBeInTheDocument()
-    // Last step's primary action closes the overlay.
-    expect(screen.getByText('Done ✓')).toBeInTheDocument()
+    // Stream M changed what the last step's primary action MEANS. Stream J's
+    // placeholder just closed the overlay ("Done ✓"); cook mode closes into the
+    // existing cook-and-rate action instead, which is the whole point of having
+    // walked someone through a recipe. CookMode.test.tsx owns the rest of it.
+    expect(screen.getByText('Finished cooking')).toBeInTheDocument()
   })
 })
