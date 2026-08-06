@@ -225,6 +225,58 @@ export interface RecipeListResponse {
   nextCursor?: string | null
 }
 
+// ── AI lane envelopes ───────────────────────────────────────────────────────
+// Additive, coordinated change (stream H, 2026-08-06) — its own reviewed commit
+// per CLAUDE.md's frozen-shared-modules rule. Nothing existing is renamed or
+// reshaped.
+//
+// These three shapes were each defined inside ONE feature module and are now
+// returned by more than one endpoint, which is the trigger for promoting them
+// here: AiBudget rode only the chat/generate responses until propose-week
+// started returning it too, and the dietary verdict was declared privately
+// inside RecipeInsights.tsx until propose-week and the generator began carrying
+// it as well. Three private copies of a wire shape drift; this is the file whose
+// whole job is not drifting from the backend DTOs.
+
+/**
+ * RecipeApp.Application.Chat.Dtos.AiBudgetResponse — the caller's remaining AI
+ * allowance for the current UTC day. Rides every response that spends (or could
+ * have spent) an AI call: chat turns, POST /recipes/generate, and — since stream
+ * H — POST /meal-plans/propose-week. `resetsAtUtc` is next UTC midnight.
+ */
+export interface AiBudget {
+  dailyCallLimit: number
+  callsUsed: number
+  callsRemaining: number
+  dailyTokenLimit: number
+  tokensUsed: number
+  tokensRemaining: number
+  resetsAtUtc: string
+}
+
+/** RecipeApp.Application.Recipes.Dtos.DietaryConflictResponse — one offending line. */
+export interface DietaryConflict {
+  ingredientName: string
+  reason: string
+}
+
+/**
+ * RecipeApp.Application.Recipes.Dtos.DietaryCheckResponse — one restriction's
+ * verdict over a recipe's RESOLVED ingredients.
+ *
+ * Read the backend's DietaryRules before rendering this. `conflicts` empty means
+ * nothing was FOUND, which is not the same as compliance: `uncheckableLines`
+ * counts the ingredients that resolved to nothing and were therefore never
+ * tested at all, and decision D8 guarantees such lines will always exist. A
+ * client that shows an empty `conflicts` without showing that number is making a
+ * safety claim this data cannot support. Nothing in the UI says "safe".
+ */
+export interface DietaryCheck {
+  restriction: DietaryRestriction
+  conflicts: DietaryConflict[]
+  uncheckableLines: number
+}
+
 // ── Error payloads ──────────────────────────────────────────────────────────
 
 /**
