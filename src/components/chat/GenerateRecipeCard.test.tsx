@@ -39,7 +39,7 @@ const generated = {
     createdAt: '2026-07-31T10:00:00.000Z',
     updatedAt: null,
     ingredients: [{ name: 'broccoli', quantity: 1, unit: 'Piece' }],
-    steps: [{ stepNumber: 1, description: 'Char it.', timerSeconds: null }],
+    steps: [{ stepNumber: 1, description: 'Char it.', durationSeconds: null }],
     tags: ['Quick'],
     createdByUserId: '11111111-1111-1111-1111-111111111111',
     isAiGenerated: true,

@@ -48,7 +48,7 @@ describe('router shell (authenticated)', () => {
           createdAt: '2026-07-01T00:00:00Z',
           updatedAt: null,
           ingredients: [{ name: 'miso', quantity: 3, unit: 'Tablespoon' }],
-          steps: [{ stepNumber: 1, description: 'Simmer.', timerSeconds: null }],
+          steps: [{ stepNumber: 1, description: 'Simmer.', durationSeconds: null }],
           tags: ['Comfort'],
           createdByUserId: 'someone-else',
         }),
