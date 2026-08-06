@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderRoute } from '@/test/utils'
 import * as api from '@/api/mealPlans'
+import * as planNutrition from '@/api/planNutrition'
 import * as client from '@/api/client'
 import type { MealPlan, MealPlanSummary } from '@/api/mealPlans'
 import type { RecipeResponse } from '@/api/types'
@@ -402,6 +403,67 @@ describe('the day totals strip', () => {
       expect(screen.getByRole('button', { name: /add a recipe for dinner/i })).toBeEnabled(),
     )
     expect(screen.queryByRole('region', { name: /totals for this day/i })).not.toBeInTheDocument()
+  })
+})
+
+// stream I (D12's second surface). The ribbon's own cases live in
+// DayNutritionRibbon.test.tsx; what matters HERE is the pairing — that the
+// computed figure arrives beside the author-typed one and never in place of it.
+describe('the computed nutrition ribbon on the day page', () => {
+  beforeEach(resetPerTest)
+
+  it('sits beside the typed totals without replacing them', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
+    stubDetails([
+      makeRecipe({ id: 'recipe-shakshuka', title: 'Shakshuka', caloriesPerServing: 420, totalTimeMinutes: 25 }),
+      makeRecipe({ id: 'recipe-corn', title: 'Charred corn salad', caloriesPerServing: 610, totalTimeMinutes: 35 }),
+    ])
+    vi.spyOn(planNutrition, 'getMealPlanNutrition').mockResolvedValue({
+      mealPlanId: PLAN_ID,
+      days: [
+        {
+          dayOfWeek: 'Wednesday',
+          entryCount: 2,
+          kcal: 1180,
+          proteinG: 44.2,
+          fatG: 30.1,
+          carbsG: 120.4,
+          fibreG: 9.5,
+          coveredLines: 4,
+          totalLines: 4,
+          isSufficientlyCovered: true,
+        },
+      ],
+    })
+
+    renderRoute('/plan/2026-07-29')
+
+    // The authors said 1,030 between them...
+    const totals = await screen.findByRole('region', { name: /totals for this day/i })
+    await waitFor(() => expect(totals).toHaveTextContent(/1[,.\s]?030/))
+
+    // ...and the ingredients add up to 1,180. Both are on the page, and the
+    // disagreement between them is the interesting part — not a bug to hide.
+    const computed = await screen.findByRole('region', { name: /computed nutrition for this day/i })
+    expect(computed).toHaveTextContent(/1[,.\s]?180/)
+    expect(computed).toHaveTextContent(/from the ingredients/i)
+    expect(computed).toHaveTextContent(/computed from all 4 ingredient lines/i)
+  })
+
+  it('is absent on a day with nothing planned', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(null)
+    const fetcher = vi.spyOn(planNutrition, 'getMealPlanNutrition')
+
+    renderRoute('/plan/2026-07-29')
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /add a recipe for dinner/i })).toBeEnabled(),
+    )
+    expect(
+      screen.queryByRole('region', { name: /computed nutrition for this day/i }),
+    ).not.toBeInTheDocument()
+    expect(fetcher).not.toHaveBeenCalled()
   })
 })
 
