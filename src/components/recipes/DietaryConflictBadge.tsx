@@ -100,10 +100,17 @@ const conflictStyle: CSSProperties = {
   color: 'var(--danger, #c0392b)',
 }
 
-// Deliberately muted, not green. This state is "we could not read all of it",
-// and a reassuring colour would undo the sentence it is carrying.
+// Deliberately muted, not green — a reassuring colour would undo the sentence
+// this is carrying. And deliberately NOT a pill: browser verification against a
+// real proposal put this on 17 of 21 slots (the catalogue does not resolve every
+// line, and D8 says it never will), where a badge as heavy as the conflict
+// variant turned rule 2 inside out — everything shouted, so nothing did. It
+// stays present and readable, because the count is the honest half and must not
+// be dropped; it just stops competing with the finding that needs the eye.
 const partialStyle: CSSProperties = {
-  background: 'var(--surface2)',
+  background: 'none',
+  padding: '1px 0',
   color: 'var(--muted)',
-  fontWeight: 600,
+  fontWeight: 500,
+  fontSize: 11,
 }
