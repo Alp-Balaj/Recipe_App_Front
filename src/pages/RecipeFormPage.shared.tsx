@@ -16,14 +16,24 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { ApiError, ApiUnauthorizedError, ApiValidationError } from '@/api/client'
 import { uploadImage, IMAGE_ACCEPT, IMAGE_ALLOWED_TYPES, IMAGE_MAX_BYTES } from '@/api/images'
-import type { CreateRecipeRequest, Cuisine, RecipeResponse, RecipeTag, UnitOfMeasure } from '@/api/types'
+import type {
+  CreateRecipeRequest,
+  Cuisine,
+  RecipeResponse,
+  RecipeTag,
+  TemperatureUnit,
+  UnitOfMeasure,
+} from '@/api/types'
 import {
   CUISINES,
   MAX_TAGS,
   TAGS,
+  TEMPERATURE_BOUNDS,
+  TEMPERATURE_UNITS,
   UNIT_GROUPS,
   UNITS,
   label,
+  temperatureUnitLabel,
   unitLabel,
 } from '@/api/vocabulary'
 import { useAuth } from '@/auth/AuthContext'
@@ -66,13 +76,32 @@ const ingredientSchema = z.object({
   unit: z.enum(UNITS as [UnitOfMeasure, ...UnitOfMeasure[]]),
 })
 
+/** Whole degrees, positive or negative — a chilling step is a real step. */
+const wholeSignedNumberRe = /^-?\d+$/
+
+// Stream J: the step is a typed value now. Temperature is flattened into two
+// fields here and reassembled on submit — react-hook-form registers strings from
+// <input>s, and a nested { value, unit } object would need a Controller for what
+// is really a number and a two-option select.
 const stepSchema = z.object({
   description: z.string().trim().min(1, 'Describe this step'),
-  // Optional per-step timer, entered in whole seconds; blank = no timer.
-  timerSeconds: z
+  // Optional duration, entered in whole seconds; blank = the step has none.
+  // Zero is NOT blank: the backend rejects it, because it claims the step is
+  // instant rather than that nobody timed it.
+  durationSeconds: z
     .string()
     .trim()
-    .refine((v) => v === '' || wholeNumberRe.test(v), 'Whole seconds ≥ 0'),
+    .refine((v) => v === '' || (wholeNumberRe.test(v) && Number(v) > 0), 'Whole seconds ≥ 1'),
+  // Decision D16 — 0-based positions in this recipe's own ingredient list. The
+  // chip control can only ever produce indexes that exist; what this array has
+  // to survive is an ingredient line being DELETED underneath it, which is what
+  // remapIngredientIndexes and the superRefine below are for.
+  ingredientIndexes: z.array(z.number().int().nonnegative()),
+  temperatureValue: z
+    .string()
+    .trim()
+    .refine((v) => v === '' || wholeSignedNumberRe.test(v), 'Whole degrees'),
+  temperatureUnit: z.enum(TEMPERATURE_UNITS as [TemperatureUnit, ...TemperatureUnit[]]),
 })
 
 export const recipeFormSchema = z.object({
@@ -95,8 +124,57 @@ export const recipeFormSchema = z.object({
   steps: z.array(stepSchema).min(1, 'Add at least one step'),
   tags: z.array(z.enum(TAGS as [RecipeTag, ...RecipeTag[]])).max(MAX_TAGS, `At most ${MAX_TAGS} tags`),
 })
+  // ── Cross-field rules (stream J) ───────────────────────────────────────
+  // Both mirror rules the backend enforces, which is this schema's stated job:
+  // catch the 400 before it leaves the browser. Neither can live on stepSchema —
+  // one needs the sibling ingredient list, the other needs the step's own unit
+  // to know which range applies.
+  .superRefine((values, ctx) => {
+    values.steps.forEach((step, stepIndex) => {
+      for (const index of step.ingredientIndexes) {
+        if (index >= values.ingredients.length) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['steps', stepIndex, 'ingredientIndexes'],
+            message: 'This step points at an ingredient that is no longer in the list.',
+          })
+          break
+        }
+      }
+
+      if (step.temperatureValue === '') return
+      const degrees = Number(step.temperatureValue)
+      const bounds = TEMPERATURE_BOUNDS[step.temperatureUnit]
+      if (Number.isFinite(degrees) && (degrees < bounds.min || degrees > bounds.max)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['steps', stepIndex, 'temperatureValue'],
+          message: `Between ${bounds.min} and ${bounds.max} ${temperatureUnitLabel(step.temperatureUnit)}`,
+        })
+      }
+    })
+  })
 
 export type RecipeFormValues = z.infer<typeof recipeFormSchema>
+
+/**
+ * Decision D16's client half: an ingredient line was removed, so every step's
+ * references have to move with the list.
+ *
+ * References TO the removed line are dropped (the step no longer uses anything
+ * there); references ABOVE it shift down one. Exported and pure because this is
+ * the single rule that keeps an index reference honest across an edit, and it is
+ * far easier to prove correct in a unit test than by clicking ✕ in the browser.
+ */
+export function remapIngredientIndexes(indexes: number[], removedIndex: number): number[] {
+  return indexes.filter((i) => i !== removedIndex).map((i) => (i > removedIndex ? i - 1 : i))
+}
+
+/** An ingredient's chip label in the step editor — its name, or its position while still blank. */
+export function ingredientChipLabel(name: string, index: number): string {
+  const trimmed = name.trim()
+  return trimmed === '' ? `Ingredient ${index + 1}` : trimmed
+}
 
 // ── Defaults + conversion (form ⇆ wire) ─────────────────────────────────────
 
@@ -115,8 +193,24 @@ export const emptyRecipeDefaults: RecipeFormValues = {
   // empty member to start on, and weight is what most ingredients are measured
   // in. The author changes it in one click when it is wrong.
   ingredients: [{ name: '', quantity: '', unit: 'Gram' }],
-  steps: [{ description: '', timerSeconds: '' }],
+  steps: [emptyStep()],
   tags: [],
+}
+
+/**
+ * A blank step. Celsius is the default scale rather than a blank one for the same
+ * reason Gram is the default unit — there is no empty member to start on, and the
+ * value stays absent until a number is typed, so the default scale asserts nothing
+ * about a step that has no temperature.
+ */
+export function emptyStep(): RecipeFormValues['steps'][number] {
+  return {
+    description: '',
+    durationSeconds: '',
+    ingredientIndexes: [],
+    temperatureValue: '',
+    temperatureUnit: 'Celsius',
+  }
 }
 
 /**
@@ -154,7 +248,15 @@ export function toCreateRecipeRequest(v: RecipeFormValues): CreateRecipeRequest 
     steps: v.steps.map((s, idx) => ({
       stepNumber: idx + 1,
       description: s.description.trim(),
-      timerSeconds: s.timerSeconds.trim() ? Number(s.timerSeconds) : null,
+      durationSeconds: s.durationSeconds.trim() ? Number(s.durationSeconds) : null,
+      // Sorted so the chips render in ingredient-list order regardless of the
+      // order they were clicked in, and so two equivalent bodies compare equal.
+      ingredientIndexes: [...s.ingredientIndexes].sort((a, b) => a - b),
+      // Reassembled from the two flat fields. A blank number means the step has
+      // no temperature — the unit alone is not one.
+      temperature: s.temperatureValue.trim()
+        ? { value: Number(s.temperatureValue), unit: s.temperatureUnit }
+        : null,
     })),
     tags: v.tags,
   }
@@ -179,9 +281,16 @@ export function recipeResponseToFormValues(r: RecipeResponse): RecipeFormValues 
     steps: r.steps.length
       ? r.steps.map((s) => ({
           description: s.description,
-          timerSeconds: s.timerSeconds != null ? String(s.timerSeconds) : '',
+          durationSeconds: s.durationSeconds != null ? String(s.durationSeconds) : '',
+          // The saved indexes are already in range (the backend validates it on
+          // both write paths), so they prefill verbatim — the editor's job is to
+          // keep them in range while the list is being edited, not to re-derive
+          // them.
+          ingredientIndexes: s.ingredientIndexes ? [...s.ingredientIndexes] : [],
+          temperatureValue: s.temperature != null ? String(s.temperature.value) : '',
+          temperatureUnit: s.temperature?.unit ?? 'Celsius',
         }))
-      : [{ description: '', timerSeconds: '' }],
+      : [emptyStep()],
     tags: r.tags,
   }
 }
@@ -407,6 +516,7 @@ export function RecipeForm({
     register,
     handleSubmit,
     control,
+    getValues,
     setError,
     setValue,
     watch,
@@ -429,6 +539,27 @@ export function RecipeForm({
   // UNCONTROLLED — this reads their values, it does not drive them.
   const watchedIngredients = useWatch({ control, name: 'ingredients' })
   const steps = useFieldArray({ control, name: 'steps' })
+
+  /**
+   * Decision D16's client half, wired to the one action that can break an index
+   * reference: removing an ingredient line.
+   *
+   * The steps' references have to be rewritten in the SAME interaction, because
+   * `ingredients.remove` renumbers every line after `idx` and nothing else in
+   * the form is watching for that. Doing it here rather than in a useEffect is
+   * deliberate — an effect reacting to a length change cannot tell WHICH line
+   * went, and "the list got shorter" is not enough information to remap.
+   */
+  const removeIngredient = (idx: number) => {
+    const currentSteps = getValues('steps')
+    ingredients.remove(idx)
+    currentSteps.forEach((step, stepIndex) => {
+      const next = remapIngredientIndexes(step.ingredientIndexes, idx)
+      if (next.length !== step.ingredientIndexes.length || next.some((v, i) => v !== step.ingredientIndexes[i])) {
+        setValue(`steps.${stepIndex}.ingredientIndexes`, next, { shouldDirty: true })
+      }
+    })
+  }
 
   // ── Photo upload (social-feed cp07) ──────────────────────────────────────
   // On select: client-side pre-checks (save the 20/min `images` rate budget),
@@ -740,7 +871,7 @@ export function RecipeForm({
             <button
               type="button"
               aria-label={`Remove ingredient ${idx + 1}`}
-              onClick={() => ingredients.remove(idx)}
+              onClick={() => removeIngredient(idx)}
               disabled={ingredients.fields.length === 1}
               style={{
                 ...smallButtonStyle('ghost'),
@@ -766,20 +897,26 @@ export function RecipeForm({
       <Card>
         <SectionTitle>Steps</SectionTitle>
         {typeof errors.steps?.message === 'string' && <FieldError message={errors.steps.message} />}
+        {/* Stream J: a step is a typed value, so it gets a block rather than a
+            row. The instruction stays the primary field; the three additions sit
+            under it in a quieter meta strip, because a step with none of them is
+            still a perfectly good step and the editor should not imply otherwise. */}
         {steps.fields.map((field, idx) => (
-          <div key={field.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 10 }}>
-            <div
-              style={{
-                flex: '0 0 26px',
-                marginTop: idx === 0 ? 26 : 2,
-                fontSize: 14,
-                fontWeight: 800,
-                color: 'var(--accent)',
-              }}
-            >
+          <div
+            key={field.id}
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-start',
+              marginBottom: 14,
+              paddingBottom: 14,
+              borderBottom: idx === steps.fields.length - 1 ? 'none' : '1px solid var(--border)',
+            }}
+          >
+            <div style={{ flex: '0 0 22px', marginTop: idx === 0 ? 26 : 10, fontSize: 14, fontWeight: 800, color: 'var(--accent)' }}>
               {idx + 1}
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <label htmlFor={`step-${idx}`} style={{ display: 'block' }}>
                 {idx === 0 && <FieldLabel>Instruction</FieldLabel>}
                 <textarea
@@ -792,18 +929,105 @@ export function RecipeForm({
                 />
                 <FieldError message={errors.steps?.[idx]?.description?.message} />
               </label>
-            </div>
-            <div style={{ flex: '0 0 92px' }}>
-              <TextField
-                label={idx === 0 ? 'Timer (s)' : ''}
-                aria-label={`Step ${idx + 1} timer in seconds`}
-                type="number"
-                inputMode="numeric"
-                min={0}
-                placeholder="opt."
-                error={errors.steps?.[idx]?.timerSeconds?.message}
-                {...register(`steps.${idx}.timerSeconds` as const)}
+
+              {/* Decision D16 — the ingredient references, as toggles over the
+                  recipe's own lines. A picker over the actual list is the only
+                  control that CANNOT produce an out-of-range index, which is
+                  what makes the reference safe by construction rather than by
+                  validation. Blank lines are still offered, labelled by
+                  position, so an author can wire steps up before naming
+                  everything. */}
+              <Controller
+                control={control}
+                name={`steps.${idx}.ingredientIndexes` as const}
+                render={({ field: refs }) => (
+                  <div style={{ marginTop: 8 }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>Uses</span>
+                    <div
+                      role="group"
+                      aria-label={`Ingredients used in step ${idx + 1}`}
+                      style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 5 }}
+                    >
+                      {(watchedIngredients ?? []).map((ing, ingIdx) => {
+                        const selected = refs.value.includes(ingIdx)
+                        return (
+                          <button
+                            key={ingIdx}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() =>
+                              refs.onChange(
+                                selected
+                                  ? refs.value.filter((v) => v !== ingIdx)
+                                  : [...refs.value, ingIdx].sort((a, b) => a - b),
+                              )
+                            }
+                            style={{
+                              cursor: 'pointer',
+                              borderRadius: 999,
+                              padding: '5px 10px',
+                              fontFamily: 'inherit',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              border: `1px solid ${selected ? 'transparent' : 'var(--border)'}`,
+                              background: selected ? 'var(--accent)' : 'var(--surface2)',
+                              color: selected ? 'var(--accent-ink)' : 'var(--muted)',
+                            }}
+                          >
+                            {ingredientChipLabel(ing?.name ?? '', ingIdx)}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {typeof errors.steps?.[idx]?.ingredientIndexes?.message === 'string' && (
+                      <FieldError message={errors.steps[idx]!.ingredientIndexes!.message} />
+                    )}
+                  </div>
+                )}
               />
+
+              {/* Duration + temperature. Both optional, both labelled in words
+                  rather than as bare fields, so "no temperature" reads as a
+                  normal answer instead of an empty box. */}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 10 }}>
+                <div style={{ flex: '0 0 104px' }}>
+                  <TextField
+                    label="Takes (s)"
+                    aria-label={`Step ${idx + 1} duration in seconds`}
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    placeholder="opt."
+                    error={errors.steps?.[idx]?.durationSeconds?.message}
+                    {...register(`steps.${idx}.durationSeconds` as const)}
+                  />
+                </div>
+                <div style={{ flex: '0 0 104px' }}>
+                  <TextField
+                    label="At"
+                    aria-label={`Step ${idx + 1} temperature`}
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="opt."
+                    error={errors.steps?.[idx]?.temperatureValue?.message}
+                    {...register(`steps.${idx}.temperatureValue` as const)}
+                  />
+                </div>
+                <div style={{ flex: '0 0 84px' }}>
+                  <FieldLabel>Scale</FieldLabel>
+                  <select
+                    aria-label={`Step ${idx + 1} temperature unit`}
+                    style={selectStyle}
+                    {...register(`steps.${idx}.temperatureUnit` as const)}
+                  >
+                    {TEMPERATURE_UNITS.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {temperatureUnitLabel(unit)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
             <button
               type="button"
@@ -812,7 +1036,7 @@ export function RecipeForm({
               disabled={steps.fields.length === 1}
               style={{
                 ...smallButtonStyle('ghost'),
-                marginTop: idx === 0 ? 24 : 0,
+                marginTop: idx === 0 ? 24 : 8,
                 opacity: steps.fields.length === 1 ? 0.4 : 1,
                 padding: '9px 11px',
               }}
@@ -823,7 +1047,7 @@ export function RecipeForm({
         ))}
         <button
           type="button"
-          onClick={() => steps.append({ description: '', timerSeconds: '' })}
+          onClick={() => steps.append(emptyStep())}
           style={{ ...smallButtonStyle('ghost'), marginBottom: 12 }}
         >
           + Add step
