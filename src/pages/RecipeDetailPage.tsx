@@ -22,6 +22,7 @@ import {
 import RecipeInsights from '@/components/recipes/RecipeInsights'
 import CookMode from '@/components/recipes/CookMode'
 import { formatTemperature, label } from '@/api/vocabulary'
+import { sourceDomain } from '@/api/import'
 
 export default function RecipeDetailPage() {
   const { id } = useParams()
@@ -183,6 +184,34 @@ export default function RecipeDetailPage() {
               >
                 AI-generated
               </Badge>
+            )}
+            {/* Stream L (decision D15). The source is shown to EVERY reader, not just
+                the owner, for the same reason the AI badge is: who wrote a recipe is
+                the reader's business. It is a real link rather than a label because
+                D15's promise is auditability — an extracted recipe is a model's
+                reading of somebody's prose, and "you can go and check" is only true
+                if there is something to click.
+
+                Only the host is rendered. The full URL is a tracking-laden line of
+                text that tells a reader nothing the domain does not. */}
+            {sourceDomain(recipe.sourceUrl) && (
+              <a
+                href={recipe.sourceUrl ?? undefined}
+                target="_blank"
+                rel="noreferrer nofollow"
+                className="text-[11px] font-bold shrink-0 mt-1"
+                title={`Imported from ${recipe.sourceUrl}`}
+                style={{
+                  background: 'var(--chipbg)',
+                  color: 'var(--chipcol)',
+                  borderRadius: 999,
+                  padding: '2px 8px',
+                  textDecoration: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                ↗ {sourceDomain(recipe.sourceUrl)}
+              </a>
             )}
             {isOwn && (
               <Badge

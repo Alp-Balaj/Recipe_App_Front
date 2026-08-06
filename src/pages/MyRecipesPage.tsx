@@ -112,22 +112,43 @@ export default function MyRecipesPage() {
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em' }}>My recipes</div>
           <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 3 }}>Everything you've posted</div>
         </div>
-        <button
-          onClick={() => navigate('/recipes/new')}
-          style={{
-            cursor: 'pointer',
-            border: 'none',
-            borderRadius: 12,
-            padding: '9px 14px',
-            fontFamily: 'inherit',
-            fontSize: 13.5,
-            fontWeight: 700,
-            background: 'var(--accent)',
-            color: 'var(--accent-ink)',
-          }}
-        >
-          ＋ New
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {/* Stream L. Beside "New" rather than inside the form, because importing
+              is not a way of filling in that form — it is the other answer to the
+              same question, and a recipe you already have is the commoner one. */}
+          <button
+            onClick={() => navigate('/recipes/import')}
+            style={{
+              cursor: 'pointer',
+              border: '1px solid var(--line)',
+              borderRadius: 12,
+              padding: '9px 14px',
+              fontFamily: 'inherit',
+              fontSize: 13.5,
+              fontWeight: 700,
+              background: 'transparent',
+              color: 'inherit',
+            }}
+          >
+            Import
+          </button>
+          <button
+            onClick={() => navigate('/recipes/new')}
+            style={{
+              cursor: 'pointer',
+              border: 'none',
+              borderRadius: 12,
+              padding: '9px 14px',
+              fontFamily: 'inherit',
+              fontSize: 13.5,
+              fontWeight: 700,
+              background: 'var(--accent)',
+              color: 'var(--accent-ink)',
+            }}
+          >
+            ＋ New
+          </button>
+        </div>
       </div>
 
       {banner && (
