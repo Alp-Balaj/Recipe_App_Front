@@ -235,13 +235,24 @@ function ReportCard({
 }) {
   const open = report.status === 'Open'
   const targetId = report.targetId
+  const automated = report.source === 'Automated'
 
   return (
     <div style={reportCard}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Badge variant="outline">{report.reason}</Badge>
+        {/* Stream X: an auto-flag sits in the same queue as a human report and is
+            actioned identically — the badge only says where the signal came from,
+            and the confidence says how much to trust it before reading further. */}
+        {automated && (
+          <Badge variant="outline">
+            Auto{typeof report.confidence === 'number' ? ` · ${Math.round(report.confidence * 100)}%` : ''}
+          </Badge>
+        )}
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          {report.targetType} · reported by {report.reporter.username} · {timeAgo(report.createdAt)}
+          {report.targetType} ·{' '}
+          {automated ? 'flagged automatically' : `reported by ${report.reporter.username}`} ·{' '}
+          {timeAgo(report.createdAt)}
         </span>
       </div>
 
