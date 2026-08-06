@@ -28,6 +28,7 @@ import {
   ProfilePage,
   RecipeDetailPage,
   RecipeFormPage,
+  RecipeImportPage,
   RegisterPage,
   ShoppingListPage,
   UserProfilePage,
@@ -102,6 +103,9 @@ export const routes: RouteObject[] = [
           { path: '/notifications', element: page(NotificationsPage) },
           { path: '/profile', element: page(ProfilePage) },
           { path: '/recipes/new', element: page(RecipeFormPage) },
+          // Stream L. Static, so it outranks /recipes/:id below — same rule
+          // /recipes/new and /recipes/mine already rely on.
+          { path: '/recipes/import', element: page(RecipeImportPage) },
           { path: '/recipes/mine', element: page(MyRecipesPage) },
           { path: '/recipes/:id', element: page(RecipeDetailPage) },
           { path: '/', element: <Navigate to="/discover" replace /> },

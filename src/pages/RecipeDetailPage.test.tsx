@@ -76,6 +76,29 @@ describe('RecipeDetailPage', () => {
     expect(screen.getByText('Whisk in the miso paste.')).toBeInTheDocument()
   })
 
+  // ── Stream L (decision D15): provenance, shown to every reader ────────────
+
+  it('links an imported recipe to its source, showing only the host', async () => {
+    mockDetail(makeRecipe({ sourceUrl: 'https://www.bbcgoodfood.com/recipes/miso-ramen?utm_source=x' }))
+    renderRoute(`/recipes/${RECIPE_ID}`)
+
+    const link = await screen.findByRole('link', { name: /bbcgoodfood\.com/ })
+    // The HOST is what the reader sees — the full URL is tracking-laden noise.
+    expect(link).toHaveTextContent('bbcgoodfood.com')
+    expect(link).not.toHaveTextContent('utm_source')
+    // But it is a real link, because D15's promise is that the original is one
+    // click away rather than merely named.
+    expect(link).toHaveAttribute('href', 'https://www.bbcgoodfood.com/recipes/miso-ramen?utm_source=x')
+  })
+
+  it('shows no source chip on a recipe that was not imported', async () => {
+    mockDetail(makeRecipe({ sourceUrl: null }))
+    renderRoute(`/recipes/${RECIPE_ID}`)
+
+    await screen.findByText('Miso ramen')
+    expect(screen.queryByRole('link', { name: /↗/ })).not.toBeInTheDocument()
+  })
+
   // ── Stream J: the typed step, as the page reads it ────────────────────────
 
   it("renders a step's temperature and the ingredient lines it uses", async () => {

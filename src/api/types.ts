@@ -243,6 +243,22 @@ export interface RecipeResponse {
   isAiGenerated?: boolean
   /** The chat thread the recipe was generated from; null for hand-written recipes. */
   sourceConversationId?: string | null
+  /**
+   * The page an imported recipe was read off (stream L, decision D15). Null for every recipe
+   * that was typed or generated.
+   *
+   * The FULL url, though the detail page renders only the host: a reader who wants to check
+   * the import against the original needs somewhere to click, and D15's promise is that the
+   * source is always one click away rather than merely named.
+   *
+   * NOT a second isAiGenerated. An import that fell back to model extraction still read a real
+   * author's recipe off a real page, so isAiGenerated stays false on every import path and
+   * this is the whole of what an import claims about itself.
+   *
+   * Immutable server-side: UpdateRecipeRequest has no such field, so an owner may rewrite
+   * every word of an imported recipe but cannot relabel where it came from.
+   */
+  sourceUrl?: string | null
 }
 
 /**
