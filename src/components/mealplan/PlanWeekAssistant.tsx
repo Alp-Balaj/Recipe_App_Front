@@ -30,9 +30,11 @@ import {
   type ProposedSlot,
   type WeekProposal,
 } from '@/api/mealPlans'
+import type { AiBudget } from '@/api/types'
 import { useEnsureWeekPlan } from '@/hooks/useMealPlan'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import Modal from '@/components/ui/Modal'
+import DietaryConflictBadge from '@/components/recipes/DietaryConflictBadge'
 
 const TOTAL_SLOTS = 21 // 7 days × Breakfast/Lunch/Dinner
 
@@ -78,6 +80,13 @@ export default function PlanWeekAssistant({
   const [proposal, setProposal] = useState<WeekProposal | null>(null)
   const [accepted, setAccepted] = useState<Set<string>>(new Set())
   const [outcome, setOutcome] = useState<ApplyOutcome | null>(null)
+  /**
+   * Today's AI allowance, as of the last proposal (stream H). Held separately from
+   * `proposal` because that is cleared when the review dialog closes, and the
+   * budget is the one part of the response that stays true afterwards — this is a
+   * PAID call, and the card is where the user decides whether to make another.
+   */
+  const [budget, setBudget] = useState<AiBudget | null>(null)
 
   const openSlotCount = TOTAL_SLOTS - entries.length
 
@@ -86,6 +95,7 @@ export default function PlanWeekAssistant({
     onSuccess: (result) => {
       setOutcome(null)
       setProposal(result)
+      setBudget(result.budget)
       // Everything starts checked: the common case is "yes, fill my week", and
       // unchecking is the per-slot veto D2 asks for.
       setAccepted(new Set(result.slots.map(slotKey)))
@@ -205,6 +215,16 @@ export default function PlanWeekAssistant({
               : "The assistant couldn't propose a week just now — nothing was changed. Try again."}
           </span>
         )}
+        {/*
+          Same phrasing as the generator card's line. It appears only after a proposal,
+          because before one there is nothing this surface has spent and quoting a budget
+          unprompted would just be noise on a planning screen.
+        */}
+        {budget && (
+          <span style={budgetText}>
+            {budget.callsRemaining} {budget.callsRemaining === 1 ? 'AI call' : 'AI calls'} left today
+          </span>
+        )}
         {outcome && (
           <span role="status" style={outcome.aborted ? errorText : successText}>
             {outcome.added === 0 && outcome.skipped === 0 && 'Nothing was accepted.'}
@@ -253,6 +273,22 @@ export default function PlanWeekAssistant({
                               {slot.recipe.caloriesPerServing != null &&
                                 ` · ${slot.recipe.caloriesPerServing} kcal`}
                             </span>
+                            {/*
+                              Stream H. The system's own check of what the model picked,
+                              against this user's restrictions — the difference between
+                              telling the model and verifying it. Renders nothing for a slot
+                              with no finding and nothing unreadable, so the badges that DO
+                              appear are worth looking at (see the component).
+
+                              It does not uncheck the slot. The proposal starts fully checked
+                              because the common case is "yes, fill my week"; a conflict is
+                              information for the veto D2 already gives the user, not a
+                              decision this component gets to make on their behalf.
+                            */}
+                            <DietaryConflictBadge
+                              checks={slot.dietaryChecks}
+                              style={{ display: 'block', width: 'fit-content', marginTop: 3 }}
+                            />
                           </span>
                         </label>
                       </li>
@@ -349,6 +385,11 @@ const successText: CSSProperties = {
   fontSize: 12.5,
   color: 'var(--accent)',
   fontWeight: 700,
+}
+
+const budgetText: CSSProperties = {
+  fontSize: 12,
+  color: 'var(--muted)',
 }
 
 const reviewBody: CSSProperties = {

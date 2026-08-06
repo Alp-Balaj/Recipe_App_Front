@@ -7,7 +7,7 @@
 // feature area, wire fetchers only, through the frozen apiFetch wrapper.
 //
 //   POST /recipes/generate  { prompt, conversationId?, visibility? }
-//     → 201 { recipe: RecipeResponse, budget: AiBudget }
+//     → 201 { recipe: RecipeResponse, budget: AiBudget, dietaryChecks: DietaryCheck[] }
 //     → 400 blank or over-long prompt
 //     → 404 the conversation is unknown, deleted, or someone else's
 //     → 429 the caller's daily AI budget is spent (or the chat lane's IP window)
@@ -19,18 +19,16 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch, ApiError } from './client'
-import type { RecipeResponse, Visibility } from './types'
+import type { AiBudget, DietaryCheck, RecipeResponse, Visibility } from './types'
 
-/** The caller's remaining AI allowance for the current UTC day (stream B's accounting). */
-export interface AiBudget {
-  dailyCallLimit: number
-  callsUsed: number
-  callsRemaining: number
-  dailyTokenLimit: number
-  tokensUsed: number
-  tokensRemaining: number
-  resetsAtUtc: string
-}
+/**
+ * The caller's remaining AI allowance for the current UTC day (stream B's
+ * accounting). Declared here until stream H, when propose-week started returning
+ * the same envelope and it moved to the shared wire types. Re-exported so the
+ * chat surface's existing `import { type AiBudget } from '@/api/generation'`
+ * keeps working — this module is still where the generate lane is described.
+ */
+export type { AiBudget }
 
 export interface GenerateRecipeRequest {
   /** What the user wants. Required, and capped at 1000 characters by the backend. */
@@ -48,6 +46,15 @@ export interface GenerateRecipeRequest {
 export interface GenerateRecipeResponse {
   recipe: RecipeResponse
   budget: AiBudget
+  /**
+   * The system's own check of the INVENTED ingredient list against the caller's
+   * restrictions (stream H). This lane is the sharper of the two the check
+   * covers: propose-week can only pick recipes that already exist, but the
+   * generator makes its ingredients up, and the row is saved before anyone
+   * looks. A finding never blocked the save and never should — it is reported.
+   * Empty when the caller has no restrictions.
+   */
+  dietaryChecks: DietaryCheck[]
 }
 
 export function generateRecipe(

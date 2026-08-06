@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import type { MealPlan, MealPlanEntry, MealPlanSummary, WeekProposal } from '@/api/mealPlans'
+import type { MealPlan, MealPlanEntry, MealPlanSummary, ProposedSlot, WeekProposal } from '@/api/mealPlans'
 import { server } from '@/test/msw/server'
 import { renderRoute } from '@/test/utils'
 
@@ -24,12 +24,24 @@ const NOW = new Date('2026-07-30T09:00:00.000Z')
 const oats = { id: 'recipe-oats', title: 'Overnight oats', imageUrl: null, totalTimeMinutes: 5, caloriesPerServing: 300 }
 const pasta = { id: 'recipe-pasta', title: 'Pasta al forno', imageUrl: null, totalTimeMinutes: 45, caloriesPerServing: 700 }
 
+/** A caller with no dietary restrictions gets no verdicts — the common case. */
+const budget = {
+  dailyCallLimit: 50,
+  callsUsed: 3,
+  callsRemaining: 47,
+  dailyTokenLimit: 250_000,
+  tokensUsed: 12_000,
+  tokensRemaining: 238_000,
+  resetsAtUtc: '2026-07-31T00:00:00.000Z',
+}
+
 const proposal: WeekProposal = {
   weekStartDate: WEEK_START,
   slots: [
-    { dayOfWeek: 'Monday', mealType: 'Breakfast', recipe: oats },
-    { dayOfWeek: 'Tuesday', mealType: 'Dinner', recipe: pasta },
+    { dayOfWeek: 'Monday', mealType: 'Breakfast', recipe: oats, dietaryChecks: [] },
+    { dayOfWeek: 'Tuesday', mealType: 'Dinner', recipe: pasta, dietaryChecks: [] },
   ],
+  budget,
 }
 
 const summary: MealPlanSummary = {
@@ -240,5 +252,88 @@ describe('the week-proposal flow', () => {
     expect(await screen.findByText('Mon 27')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText(/loading this week's meals/i)).not.toBeInTheDocument())
     expect(screen.queryByRole('button', { name: /propose a week/i })).not.toBeInTheDocument()
+  })
+
+  // ── dietary verification + the budget envelope (stream H) ────────────────
+
+  /** Serves a proposal whose two slots carry the given verdicts. */
+  function proposalWithChecks(
+    mondayChecks: ProposedSlot['dietaryChecks'],
+    tuesdayChecks: ProposedSlot['dietaryChecks'] = [],
+  ) {
+    proposalWeek()
+    server.use(
+      http.post('/api/meal-plans/propose-week', () =>
+        HttpResponse.json({
+          ...proposal,
+          slots: [
+            { ...proposal.slots[0], dietaryChecks: mondayChecks },
+            { ...proposal.slots[1], dietaryChecks: tuesdayChecks },
+          ],
+        }),
+      ),
+    )
+  }
+
+  it('flags the slot that conflicts with the caller’s restrictions', async () => {
+    const user = userEvent.setup()
+    proposalWithChecks([
+      {
+        restriction: 'Vegetarian',
+        conflicts: [{ ingredientName: 'Bacon pork', reason: 'Pork is not vegetarian' }],
+        uncheckableLines: 0,
+      },
+    ])
+    renderRoute('/plan/week/2026-07-27')
+
+    await user.click(await screen.findByRole('button', { name: /propose a week/i }))
+
+    const dialog = await screen.findByRole('dialog', { name: /review the proposed week/i })
+    expect(within(dialog).getByText(/Conflicts with Vegetarian/)).toBeInTheDocument()
+    // The clean slot stays quiet — only the row worth looking at is marked.
+    expect(within(dialog).queryByText(/No conflicts found/)).not.toBeInTheDocument()
+  })
+
+  it('leaves the conflicting slot checked — the user vetoes, the app does not', async () => {
+    // D2's per-slot veto is the mechanism. Silently unchecking would make the
+    // app decide on the user's behalf using a keyword rule that reports
+    // findings, not clearances.
+    const user = userEvent.setup()
+    proposalWithChecks([
+      {
+        restriction: 'Vegetarian',
+        conflicts: [{ ingredientName: 'Bacon pork', reason: 'Pork is not vegetarian' }],
+        uncheckableLines: 0,
+      },
+    ])
+    renderRoute('/plan/week/2026-07-27')
+
+    await user.click(await screen.findByRole('button', { name: /propose a week/i }))
+
+    expect(await screen.findByRole('button', { name: /add 2 meals/i })).toBeInTheDocument()
+  })
+
+  it('says how many lines it could not check rather than implying a pass', async () => {
+    const user = userEvent.setup()
+    proposalWithChecks([{ restriction: 'Vegan', conflicts: [], uncheckableLines: 3 }])
+    renderRoute('/plan/week/2026-07-27')
+
+    await user.click(await screen.findByRole('button', { name: /propose a week/i }))
+
+    const dialog = await screen.findByRole('dialog', { name: /review the proposed week/i })
+    expect(within(dialog).getByText(/3 ingredients could not be checked/)).toBeInTheDocument()
+    expect(within(dialog).queryByText(/safe/i)).not.toBeInTheDocument()
+  })
+
+  it('reports what today’s AI allowance has left after proposing', async () => {
+    // The envelope propose-week did not return until stream H — the lane had
+    // been billing against an allowance it never reported.
+    const user = userEvent.setup()
+    proposalWeek()
+    renderRoute('/plan/week/2026-07-27')
+
+    await user.click(await screen.findByRole('button', { name: /propose a week/i }))
+
+    expect(await screen.findByText(/47 AI calls left today/)).toBeInTheDocument()
   })
 })

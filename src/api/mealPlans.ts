@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch } from './client'
+import type { AiBudget, DietaryCheck } from './types'
 
 /** DayOfWeek crosses the wire as its .NET name. */
 export type DayName =
@@ -171,11 +172,19 @@ export function removeMealPlanEntry(planId: string, entryId: string): Promise<vo
 
 // ── AI week proposal (stream C, D2 = propose-then-accept) ───────────────────
 
-/** One proposed (day, meal) assignment. Same recipe summary shape as a planned entry. */
+/**
+ * One proposed (day, meal) assignment. Same recipe summary shape as a planned entry.
+ *
+ * `dietaryChecks` (stream H) is the system's own verdict on what the model picked,
+ * run against the CALLER's restrictions before the proposal was returned. Empty
+ * when the caller has no restrictions. It reports conflicts FOUND and how many
+ * lines could not be read — never a clearance; see the type's doc comment.
+ */
 export interface ProposedSlot {
   dayOfWeek: DayName
   mealType: MealTypeName
   recipe: MealPlanEntryRecipeSummary
+  dietaryChecks: DietaryCheck[]
 }
 
 /**
@@ -189,6 +198,12 @@ export interface ProposedSlot {
 export interface WeekProposal {
   weekStartDate: string
   slots: ProposedSlot[]
+  /**
+   * Today's remaining AI allowance after this call (stream H). Always present on a
+   * 200, including the two paths that never reached the provider — a full week and
+   * nothing to ground on both return the figure unchanged rather than omitting it.
+   */
+  budget: AiBudget
 }
 
 /**

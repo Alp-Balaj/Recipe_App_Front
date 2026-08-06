@@ -54,6 +54,8 @@ const generated = {
     tokensRemaining: 96000,
     resetsAtUtc: '2026-08-01T00:00:00.000Z',
   },
+  // The common case: a caller with no restrictions gets no verdicts (stream H).
+  dietaryChecks: [],
 }
 
 /** Serves POST /recipes/generate and records every request body. */
@@ -148,6 +150,88 @@ describe('GenerateRecipeCard', () => {
 
     expect(await screen.findByText(/couldn't write a usable recipe/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Open it' })).not.toBeInTheDocument()
+  })
+
+  // ── dietary verification at the AI boundary (stream H) ────────────────────
+
+  it('reports a dietary conflict in the generated recipe, and still links to it', async () => {
+    // The generator INVENTS its ingredients and the row is saved before anyone
+    // looks (D1), so the finding is information, not a failed write.
+    server.use(
+      http.post('/api/recipes/generate', () =>
+        HttpResponse.json(
+          {
+            ...generated,
+            dietaryChecks: [
+              {
+                restriction: 'Vegan',
+                conflicts: [{ ingredientName: 'Cheddar cheese', reason: 'contains cheese' }],
+                uncheckableLines: 0,
+              },
+            ],
+          },
+          { status: 201 },
+        ),
+      ),
+    )
+
+    renderCard(CONVERSATION_ID)
+    await generate()
+
+    expect(await screen.findByText(/Conflicts with Vegan/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open it' })).toBeInTheDocument()
+  })
+
+  it('never claims the recipe is safe when it could not read every line', async () => {
+    // The one that matters. A clean result over unreadable lines must not render
+    // as a pass — D8 guarantees unresolved ingredients will always exist.
+    server.use(
+      http.post('/api/recipes/generate', () =>
+        HttpResponse.json(
+          {
+            ...generated,
+            dietaryChecks: [{ restriction: 'Vegan', conflicts: [], uncheckableLines: 2 }],
+          },
+          { status: 201 },
+        ),
+      ),
+    )
+
+    renderCard(CONVERSATION_ID)
+    await generate()
+
+    expect(await screen.findByText(/2 ingredients could not be checked/)).toBeInTheDocument()
+    expect(screen.getByText(/No conflicts found/)).toBeInTheDocument()
+    expect(screen.queryByText(/safe/i)).not.toBeInTheDocument()
+  })
+
+  it('shows no badge at all when nothing was found and nothing was unreadable', async () => {
+    // Silence is the quiet case; a reassuring tick here would train the eye to
+    // skim past the badge that matters.
+    generateEndpoint()
+
+    renderCard(CONVERSATION_ID)
+    await generate()
+
+    expect(await screen.findByRole('link', { name: 'Open it' })).toBeInTheDocument()
+    expect(screen.queryByText(/No conflicts found/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Conflicts with/)).not.toBeInTheDocument()
+  })
+
+  it('survives a response from a backend that does not send the field yet', async () => {
+    // The repos deploy independently. A frontend ahead of its backend must
+    // degrade to no badge, not take the whole result card down.
+    server.use(
+      http.post('/api/recipes/generate', () => {
+        const { dietaryChecks: _omitted, ...withoutChecks } = generated
+        return HttpResponse.json(withoutChecks, { status: 201 })
+      }),
+    )
+
+    renderCard(CONVERSATION_ID)
+    await generate()
+
+    expect(await screen.findByRole('link', { name: 'Open it' })).toBeInTheDocument()
   })
 
   it('cannot be submitted with a blank prompt', async () => {
