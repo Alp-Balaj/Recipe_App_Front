@@ -50,6 +50,7 @@ import StateBlock from '@/components/ui/StateBlock'
 import MealCard from '@/components/mealplan/MealCard'
 import DayIngredients, { type IngredientGroup } from '@/components/mealplan/DayIngredients'
 import DayTotals, { type DaySlot } from '@/components/mealplan/DayTotals'
+import DayNutritionRibbon from '@/components/mealplan/DayNutritionRibbon'
 import PickerContent from '@/components/mealplan/PickerContent'
 import RecipePickerModal from '@/components/mealplan/RecipePickerModal'
 
@@ -386,6 +387,14 @@ function DayView({ date }: { date: Date }) {
           )}
 
           <DayTotals slots={daySlots} isLoading={detailsLoading} />
+
+          {/*
+            Directly beneath the typed figures, on purpose (stream I, D12). The
+            same day counted two ways — what the authors wrote, then what the
+            catalogue computes — and the second never rewrites the first. One
+            batch read for the whole plan, not one per meal.
+          */}
+          <DayNutritionRibbon planId={planId ?? null} day={day} plannedMeals={entries.length} />
 
           <div style={mealStack}>
             {MEAL_ORDER.map((meal) => {
