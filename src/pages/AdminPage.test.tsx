@@ -55,6 +55,55 @@ describe('AdminPage', () => {
     expect(screen.getByText(/watchful_sam/)).toBeInTheDocument()
   })
 
+  // Stream X: an auto-flag is an ordinary item in the same queue. The badge is the
+  // only thing that distinguishes it, and the reporter line must not read "reported
+  // by RecipeApp Moderation" — nobody reported it, a classifier flagged it.
+  it('marks an automated flag with its confidence instead of a reporter', async () => {
+    mockAdminEndpoints()
+    server.use(
+      http.get('*/admin/reports', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'rep-auto',
+              targetType: 'Recipe',
+              targetId: 'rec-9',
+              targetSummary: 'Recipe: Buy Cheap Knives',
+              reason: 'Spam',
+              details: 'The description is an advertisement.',
+              status: 'Open',
+              createdAt: '2026-08-06T00:00:00Z',
+              reporter: { id: 'sys', username: 'RecipeApp Moderation', profileImageUrl: null },
+              resolvedAtUtc: null,
+              resolvedByUsername: null,
+              resolutionNote: null,
+              source: 'Automated',
+              confidence: 0.87,
+            },
+          ],
+          nextCursor: null,
+        }),
+      ),
+    )
+    renderRoute('/admin', { auth: makeAuthValue({ user: TEST_ADMIN }) })
+
+    expect(await screen.findByText('Recipe: Buy Cheap Knives')).toBeInTheDocument()
+    expect(screen.getByText('Auto · 87%')).toBeInTheDocument()
+    expect(screen.getByText(/flagged automatically/)).toBeInTheDocument()
+    expect(screen.queryByText(/reported by/)).not.toBeInTheDocument()
+    // Triage is unchanged: the same two actions a human report offers.
+    expect(screen.getByRole('button', { name: 'Resolve' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
+  })
+
+  it('still shows a human report as reported by its author', async () => {
+    mockAdminEndpoints()
+    renderRoute('/admin', { auth: makeAuthValue({ user: TEST_ADMIN }) })
+
+    expect(await screen.findByText(/reported by watchful_sam/)).toBeInTheDocument()
+    expect(screen.queryByText(/^Auto/)).not.toBeInTheDocument()
+  })
+
   it('resolving a report POSTs to the resolve endpoint', async () => {
     mockAdminEndpoints()
     let resolved = false
