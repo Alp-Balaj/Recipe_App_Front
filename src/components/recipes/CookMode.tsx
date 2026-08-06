@@ -97,6 +97,22 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
   const timers = useCookTimers()
   const wakeLockHeld = useWakeLock(true)
 
+  // The cook-and-rate write lives HERE, not in the finish panel, and the reason
+  // is a bug the browser pass found rather than a preference. Firing a mutation
+  // from a panel's mount effect works in tests and breaks in a dev browser:
+  // StrictMode double-invokes mount effects, so the request goes out under the
+  // first observer, the cleanup tears that observer down, and the remount gets a
+  // fresh one that never hears the result — the write lands on the server and
+  // the UI sits on "idle" forever, which is exactly the silent loss D18 forbids.
+  // A write belongs to the interaction that asked for it, so it is fired from
+  // the button and owned by a component that nothing remounts.
+  const { logCooked } = useSocialMutations()
+  const logCook = () => {
+    // A guest gets the sign-in gate rather than a silent no-op — they did just
+    // cook the thing.
+    if (requireAuth()) logCooked.mutate({ recipeId: frozen.id })
+  }
+
   const factor = scaleFactor(frozen.servings, servings)
   const scaled = useMemo(
     () => scaleIngredients(frozen.ingredients, frozen.servings, servings),
@@ -187,7 +203,10 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
         atStart={index === 0}
         onPrev={() => setIndex((n) => Math.max(0, n - 1))}
         onNext={() => setIndex((n) => Math.min(steps.length - 1, n + 1))}
-        onFinish={() => setFinishing(true)}
+        onFinish={() => {
+          setFinishing(true)
+          logCook()
+        }}
         onAsk={() => setAssistantOpen(true)}
       />
 
@@ -202,11 +221,17 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
 
       {finishing && (
         <FinishPanel
-          recipeId={frozen.id}
           title={frozen.title}
           myRating={myRating}
+          // Read off the mutation itself rather than mirrored into local state:
+          // a panel that has to be right about whether a write landed should not
+          // be able to disagree with the write about it.
+          logged={logCooked.isSuccess}
+          failed={logCooked.isError}
+          pending={logCooked.isPending}
           requireAuth={requireAuth}
           onRate={onRate}
+          onRetry={logCook}
           onBack={() => setFinishing(false)}
           onDone={onExit}
         />
@@ -740,7 +765,14 @@ function AssistantSheet({
         </button>
       </div>
 
-      <div className="scroll" style={{ flex: 1, overflowY: 'auto', margin: '12px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* role="log": answers arrive after the fact and a screen reader should
+          be told without stealing focus from the input. */}
+      <div
+        role="log"
+        aria-label="Cook mode conversation"
+        className="scroll"
+        style={{ flex: 1, overflowY: 'auto', margin: '12px 0', display: 'flex', flexDirection: 'column', gap: 10 }}
+      >
         {turns.length === 0 && !pending && (
           <div style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.55 }}>
             Ask anything about {recipe.title} — “can I swap the butter?”, “how do I know it's
@@ -752,6 +784,10 @@ function AssistantSheet({
         {turns.map((turn, i) => (
           <div
             key={i}
+            data-testid="cook-turn"
+            // The refusal is on the element as well as in its styling, so a
+            // browser probe can assert the BOUNDARY rather than a font-style.
+            data-refused={turn.refused ? 'true' : undefined}
             style={{
               alignSelf: turn.role === 'user' ? 'flex-end' : 'flex-start',
               maxWidth: '86%',
@@ -852,44 +888,28 @@ function AssistantSheet({
  * failure this surface must not have.
  */
 function FinishPanel({
-  recipeId,
   title,
   myRating,
+  logged,
+  failed,
+  pending,
   requireAuth,
   onRate,
+  onRetry,
   onBack,
   onDone,
 }: {
-  recipeId: string
   title: string
   myRating: number | null
+  logged: boolean
+  failed: boolean
+  pending: boolean
   requireAuth: () => boolean
   onRate: (value: number | null) => void
+  onRetry: () => void
   onBack: () => void
   onDone: () => void
 }) {
-  const { logCooked } = useSocialMutations()
-  const [logged, setLogged] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const attempted = useRef(false)
-
-  const log = () => {
-    setFailed(false)
-    logCooked.mutate(
-      { recipeId },
-      { onSuccess: () => setLogged(true), onError: () => setFailed(true) },
-    )
-  }
-
-  useEffect(() => {
-    // Once, on open. A guest gets the panel and the prompt to sign in rather
-    // than a silent no-op — they did just cook the thing.
-    if (attempted.current) return
-    attempted.current = true
-    if (requireAuth()) log()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   return (
     <div
       style={{
@@ -952,8 +972,8 @@ function FinishPanel({
           ← Back to steps
         </Button>
         <Button
-          onClick={failed ? log : onDone}
-          disabled={logCooked.isPending}
+          onClick={failed ? onRetry : onDone}
+          disabled={pending}
           className="flex-1 rounded-2xl text-base font-bold py-4 h-auto"
           style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
         >

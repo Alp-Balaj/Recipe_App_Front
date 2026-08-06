@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -451,6 +452,36 @@ describe('CookMode — finishing', () => {
     expect(await screen.findByText(/Couldn't log it just now/)).toBeInTheDocument()
     await userEvent.click(screen.getByText('Try again'))
     await waitFor(() => expect(screen.getByText('Logged. How did it go?')).toBeInTheDocument())
+  })
+
+  it('reflects the write under StrictMode, not just under a single mount', async () => {
+    // REGRESSION, and the browser pass is what found it. The finish write used
+    // to be fired from the panel's mount effect. StrictMode double-invokes those
+    // — request out under the first observer, observer torn down, remount gets a
+    // fresh one that never hears the result — so the cook landed on the server
+    // while the UI sat on "How did it go?" forever. Every dev browser runs
+    // StrictMode; no test that mounts once can see it.
+    server.use(http.post('*/recipes/:id/cooked', () => HttpResponse.json(cooked)))
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    render(
+      <StrictMode>
+        <QueryClientProvider client={client}>
+          <CookMode
+            recipe={makeRecipe()}
+            myRating={null}
+            onRate={() => {}}
+            requireAuth={() => true}
+            onExit={() => {}}
+          />
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+
+    await walkToFinish()
+    expect(await screen.findByText('Logged. How did it go?')).toBeInTheDocument()
   })
 
   it('can go back to the steps from the finish panel', async () => {
