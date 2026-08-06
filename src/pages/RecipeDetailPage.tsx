@@ -14,14 +14,14 @@ import StateBlock from '@/components/ui/StateBlock'
 import Modal from '@/components/ui/Modal'
 import { resolveImageUrl } from '@/lib/images'
 import {
+  formatDuration,
   formatMinutes,
   formatQuantity,
-  formatTimer,
   gradientFor,
   visibilityLabel,
 } from './recipeVisuals'
 import RecipeInsights from '@/components/recipes/RecipeInsights'
-import { label } from '@/api/vocabulary'
+import { formatTemperature, label } from '@/api/vocabulary'
 
 export default function RecipeDetailPage() {
   const { id } = useParams()
@@ -287,7 +287,7 @@ export default function RecipeDetailPage() {
                 {[...recipe.steps]
                   .sort((a, b) => a.stepNumber - b.stepNumber)
                   .map((step, i) => (
-                    <StepRow key={i} index={i} step={step} />
+                    <StepRow key={i} index={i} step={step} ingredients={recipe.ingredients} />
                   ))}
               </ol>
             </>
@@ -437,10 +437,51 @@ function SectionLabel({ children }: { children: ReactNode }) {
   )
 }
 
-function StepRow({ index, step }: { index: number; step: RecipeStep }) {
-  const timer = step.timerSeconds != null ? formatTimer(step.timerSeconds) : ''
+/**
+ * The ingredient lines a step consumes, resolved through decision D16's indexes.
+ *
+ * Returns only the references that land on a real line. The backend validates
+ * that every stored index is in range on both write paths, so an out-of-range
+ * one should be impossible — but this page also renders recipes fetched from a
+ * cache that may predate an edit, and a step is worth reading with one chip
+ * missing rather than not at all.
+ */
+function referencedIngredients(step: RecipeStep, all: RecipeResponse['ingredients']) {
+  return (step.ingredientIndexes ?? [])
+    .map((i) => all[i])
+    .filter((ing): ing is RecipeResponse['ingredients'][number] => ing != null)
+}
+
+/**
+ * One step, read as a typed value (stream J).
+ *
+ * The redesign is what J's Q6 ruling asked for alongside the model: a step used
+ * to be prose with an optional timer appended, which is all a three-field step
+ * could say. It now leads with its facts — what it uses, how long it takes, how
+ * hot — and the prose sits under them.
+ *
+ * DECISION D17, partially: the quantity is rendered FROM the referenced line
+ * beside the instruction, rather than being repeated inside the prose. That is
+ * the third answer D17 names, and it is the half stream J can settle on its own
+ * — whichever way M decides serving scaling should behave, a quantity that is
+ * rendered from the ingredient list scales with it for free, and one baked into
+ * the prose never can. What J does NOT settle is whether scaling happens at all;
+ * this renders the stored quantity as stored.
+ */
+function StepRow({
+  index,
+  step,
+  ingredients,
+}: {
+  index: number
+  step: RecipeStep
+  ingredients: RecipeResponse['ingredients']
+}) {
+  const duration = step.durationSeconds != null ? formatDuration(step.durationSeconds) : ''
+  const used = referencedIngredients(step, ingredients)
+
   return (
-    <li style={{ display: 'flex', gap: 13, padding: '11px 0', borderBottom: '1px solid var(--border)' }}>
+    <li style={{ display: 'flex', gap: 13, padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
       <span
         style={{
           flexShrink: 0,
@@ -458,11 +499,46 @@ function StepRow({ index, step }: { index: number; step: RecipeStep }) {
       >
         {index + 1}
       </span>
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* The meta strip sits ABOVE the prose: reading "12 min · 180 °C" before
+            the instruction is what lets someone scanning a method plan around
+            it. Absent entirely when the step has neither, which keeps an
+            untyped step reading exactly as it did before. */}
+        {(duration || step.temperature) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 6 }}>
+            {duration && (
+              <span style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 700 }}>◷ {duration}</span>
+            )}
+            {step.temperature && (
+              <span style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 700 }}>
+                ◈ {formatTemperature(step.temperature)}
+              </span>
+            )}
+          </div>
+        )}
+
         <div style={{ fontSize: 14.5, lineHeight: 1.5 }}>{step.description}</div>
-        {timer && (
-          <div style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 700, marginTop: 4 }}>
-            ◷ {timer}
+
+        {used.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {used.map((ing, i) => (
+              <span
+                key={i}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'baseline',
+                  gap: 5,
+                  borderRadius: 999,
+                  padding: '4px 10px',
+                  background: 'var(--surface2)',
+                  border: '1px solid var(--border)',
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>{formatQuantity(ing.quantity, ing.unit)}</span>
+                <span style={{ color: 'var(--muted)' }}>{ing.name}</span>
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -472,14 +548,21 @@ function StepRow({ index, step }: { index: number; step: RecipeStep }) {
 
 /**
  * Minimal step-by-step cooking mode — a full-bleed overlay (covers just the
- * detail pane on desktop) showing one step at a time with its timer and
- * Prev/Next. Presentational only: no live countdown (that can come later).
+ * detail pane on desktop) showing one step at a time with its duration and
+ * Prev/Next. Presentational only: no live countdown, no wake-lock, no serving
+ * scaling and no assistant.
+ *
+ * STREAM J DELIBERATELY LEAVES IT THAT WAY. Real cook mode is stream M, and it
+ * is the whole of stream M; what J owes it is the typed step underneath, which
+ * is now here. The only change J makes is carrying the step's new facts through
+ * so this overlay does not read as LESS informative than the page behind it.
  */
 function CookMode({ recipe, onExit }: { recipe: RecipeResponse; onExit: () => void }) {
   const steps = [...recipe.steps].sort((a, b) => a.stepNumber - b.stepNumber)
   const [i, setI] = useState(0)
   const step = steps[i]
-  const timer = step.timerSeconds != null ? formatTimer(step.timerSeconds) : ''
+  const duration = step.durationSeconds != null ? formatDuration(step.durationSeconds) : ''
+  const used = referencedIngredients(step, recipe.ingredients)
   const last = i === steps.length - 1
 
   return (
@@ -500,8 +583,32 @@ function CookMode({ recipe, onExit }: { recipe: RecipeResponse; onExit: () => vo
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div style={{ fontSize: 15, color: 'var(--muted)', fontWeight: 700, marginBottom: 6 }}>{recipe.title}</div>
         <div style={{ fontSize: 21, fontWeight: 700, lineHeight: 1.4 }}>{step.description}</div>
-        {timer && (
-          <div style={{ fontSize: 14, color: 'var(--accent)', fontWeight: 800, marginTop: 14 }}>◷ {timer}</div>
+        {(duration || step.temperature) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 14 }}>
+            {duration && (
+              <span style={{ fontSize: 14, color: 'var(--accent)', fontWeight: 800 }}>◷ {duration}</span>
+            )}
+            {step.temperature && (
+              <span style={{ fontSize: 14, color: 'var(--accent)', fontWeight: 800 }}>
+                ◈ {formatTemperature(step.temperature)}
+              </span>
+            )}
+          </div>
+        )}
+        {/* What this step needs to hand, at the size a phone propped against a
+            bowl can read. The quantity comes from the ingredient line, never
+            from the prose — see StepRow on decision D17. */}
+        {used.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 16 }}>
+            {used.map((ing, n) => (
+              <div key={n} style={{ fontSize: 15, color: 'var(--muted)' }}>
+                <span style={{ fontWeight: 700, color: 'var(--text)' }}>
+                  {formatQuantity(ing.quantity, ing.unit)}
+                </span>{' '}
+                {ing.name}
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

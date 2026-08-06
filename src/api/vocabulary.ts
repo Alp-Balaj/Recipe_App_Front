@@ -16,6 +16,8 @@ import type {
   Cuisine,
   DietaryRestriction,
   RecipeTag,
+  StepTemperature,
+  TemperatureUnit,
   UnitDimension,
   UnitOfMeasure,
 } from '@/api/types'
@@ -93,6 +95,33 @@ export function formatQuantity(quantity: number, unit: UnitOfMeasure): string {
   const number = Number.isFinite(quantity) ? String(Number(quantity.toFixed(2))) : String(quantity)
   const word = quantity !== 1 && meta.pluralises ? `${meta.label}s` : meta.label
   return `${number} ${word}`
+}
+
+// ── Step temperatures (stream J) ──────────────────────────────────────────
+
+/**
+ * The two scales, and the plausible range for each. These MIRROR
+ * RecipeStepRules.cs — the backend rejects anything outside them, and the form
+ * checks the same bounds so an obvious typo never costs a round trip.
+ *
+ * One range for both scales could only ever be wrong in one direction: 400 is
+ * an ordinary oven in Fahrenheit and a kiln in Celsius.
+ */
+export const TEMPERATURE_UNITS: readonly TemperatureUnit[] = ['Celsius', 'Fahrenheit']
+
+export const TEMPERATURE_BOUNDS: Readonly<Record<TemperatureUnit, { min: number; max: number }>> = {
+  Celsius: { min: -40, max: 300 },
+  Fahrenheit: { min: -40, max: 575 },
+}
+
+/** "180 °C". The degree sign is part of the written form, not the data. */
+export function formatTemperature(temperature: StepTemperature): string {
+  return `${temperature.value} °${temperature.unit === 'Celsius' ? 'C' : 'F'}`
+}
+
+/** "°C" — for a unit picker, where the number is supplied separately. */
+export function temperatureUnitLabel(unit: TemperatureUnit): string {
+  return unit === 'Celsius' ? '°C' : '°F'
 }
 
 // ── Cuisines ──────────────────────────────────────────────────────────────

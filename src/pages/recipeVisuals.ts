@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Presentation helpers shared by the lane-A recipe surfaces (detail + browse).
 //
-// Real recipes carry structured data (integer minutes, per-step timerSeconds,
+// Real recipes carry structured data (integer minutes, per-step durationSeconds,
 // a nullable imageUrl) rather than the mock's display strings, so the pages
 // format them here in one place. New lane-A-only module — imported by
 // RecipeDetailPage and BrowsePage; nothing else depends on it.
@@ -34,8 +34,14 @@ export function formatMinutes(minutes: number): string {
   return `${h} h ${m} min`
 }
 
-/** A step's timerSeconds → "45 s" / "5 min" / "1 min 30 s". */
-export function formatTimer(seconds: number): string {
+/**
+ * A step's durationSeconds → "45 s" / "5 min" / "1 min 30 s".
+ *
+ * Renamed from formatTimer with the field it formats (stream J): the value is
+ * how long the step TAKES, not just an unattended wait, and a helper called
+ * "timer" invites a reader to render it only where a countdown belongs.
+ */
+export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return ''
   if (seconds < 60) return `${seconds} s`
   const m = Math.floor(seconds / 60)

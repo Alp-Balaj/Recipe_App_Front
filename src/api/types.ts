@@ -153,11 +153,61 @@ export interface RecipeIngredient {
   ingredientId?: string | null
 }
 
-/** RecipeApp.Domain.ValueObjects.RecipeStep — timerSeconds is null when unset. */
+/**
+ * RecipeApp.Domain.Enums.TemperatureUnit — stream J.
+ *
+ * Two members, and a step's temperature is stored in the unit it was WRITTEN in
+ * rather than normalised to one scale: 350 °F is a number a reader recognises,
+ * and 177 °C is the same oven wearing a disguise. Convert at display time.
+ */
+export type TemperatureUnit = 'Celsius' | 'Fahrenheit'
+
+/** RecipeApp.Domain.ValueObjects.StepTemperature — whole degrees plus its scale. */
+export interface StepTemperature {
+  value: number
+  unit: TemperatureUnit
+}
+
+/**
+ * RecipeApp.Domain.ValueObjects.RecipeStep — SANCTIONED EDIT to this frozen
+ * module, landing as its own reviewed commit per the rule (stream J).
+ *
+ * `timerSeconds` is GONE, not deprecated: decision D10 makes this a hard cutover
+ * with no dual-read, the migration renames the key in the stored jsonb, and the
+ * backend neither accepts nor emits the old name. A field kept "for safety" here
+ * would be a field that is always undefined, which is worse than its absence —
+ * it reads as data that might arrive.
+ *
+ * The three additions are all optional in shape. A step written before J has no
+ * references and no temperature, and both of those are ordinary legal states
+ * rather than missing values, so no consumer should treat either as an error.
+ */
 export interface RecipeStep {
   stepNumber: number
   description: string
-  timerSeconds?: number | null
+  /**
+   * How long the step takes, in whole seconds. Absorbs the old `timerSeconds`,
+   * which claimed something narrower — an unattended wait worth setting a timer
+   * for. Null means the step has no meaningful duration ("season to taste").
+   */
+  durationSeconds?: number | null
+  /**
+   * DECISION D16 — which of the recipe's own ingredient lines this step uses, as
+   * ZERO-BASED indexes into the SAME recipe's `ingredients` array. Not catalogue
+   * ids: `ingredientId` is nullable by design (D8), so it cannot address a line
+   * the catalogue has never heard of, and a reference shape with a hole in it is
+   * not a reference shape.
+   *
+   * The backend validators reject an out-of-range or repeated index on both the
+   * create and update paths, so a stored recipe's indexes are always in range —
+   * but a CLIENT holding an edited ingredient list must remap them itself before
+   * sending, because deleting a line shifts every position after it.
+   *
+   * Absent or empty is the common case: "preheat the oven" consumes nothing.
+   */
+  ingredientIndexes?: number[]
+  /** The temperature this step is carried out at, or null — which is most steps. */
+  temperature?: StepTemperature | null
 }
 
 /** RecipeResponse — GET /recipes/{id}, items of GET /recipes, POST /recipes 201. */

@@ -29,8 +29,23 @@ function makeRecipe(overrides: Partial<RecipeResponse> = {}): RecipeResponse {
       { name: 'ramen noodles', quantity: 150, unit: 'Gram' },
     ],
     steps: [
-      { stepNumber: 1, description: 'Simmer the dashi.', timerSeconds: 300 },
-      { stepNumber: 2, description: 'Whisk in the miso paste.', timerSeconds: null },
+      {
+        stepNumber: 1,
+        description: 'Simmer the dashi.',
+        durationSeconds: 300,
+        ingredientIndexes: [],
+        temperature: { value: 95, unit: 'Celsius' },
+      },
+      {
+        stepNumber: 2,
+        description: 'Whisk in the miso paste.',
+        durationSeconds: null,
+        // Stream J: this step consumes the SECOND ingredient line, so the page
+        // renders that line's quantity beside the instruction (decision D17's
+        // third answer) rather than the prose repeating it.
+        ingredientIndexes: [1],
+        temperature: null,
+      },
     ],
     tags: ['Comfort', 'Comfort'],
     createdByUserId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
@@ -54,11 +69,66 @@ describe('RecipeDetailPage', () => {
     expect(screen.queryByText(/protein/i)).not.toBeInTheDocument()
     // Ingredients formatted from quantity + unit.
     expect(screen.getByText('3 tbsp')).toBeInTheDocument()
-    // Steps section with a formatted timer.
+    // Steps section with a formatted duration.
     expect(screen.getByText('Steps')).toBeInTheDocument()
     expect(screen.getByText('Simmer the dashi.')).toBeInTheDocument()
     expect(screen.getByText('◷ 5 min')).toBeInTheDocument()
     expect(screen.getByText('Whisk in the miso paste.')).toBeInTheDocument()
+  })
+
+  // ── Stream J: the typed step, as the page reads it ────────────────────────
+
+  it("renders a step's temperature and the ingredient lines it uses", async () => {
+    mockDetail(makeRecipe())
+    renderRoute(`/recipes/${RECIPE_ID}`)
+
+    expect(await screen.findByText('◈ 95 °C')).toBeInTheDocument()
+
+    // The referenced line's quantity is rendered FROM the ingredient list, so it
+    // appears twice on the page — once in the list, once beside step 2. That is
+    // the point of D17's third answer: one stored number, two renderings, and no
+    // quantity baked into prose that could go stale.
+    expect(screen.getAllByText('150 g')).toHaveLength(2)
+    expect(screen.getAllByText('ramen noodles')).toHaveLength(2)
+
+    // Step 1 references nothing, so the miso paste is only in the list.
+    expect(screen.getAllByText('white miso paste')).toHaveLength(1)
+  })
+
+  it('ignores a step reference that points past the ingredient list', async () => {
+    // The backend rejects this on both write paths, so it should be unreachable
+    // — but the page also renders cached recipes that may predate an edit, and a
+    // step is worth reading with one chip missing rather than crashing.
+    mockDetail(
+      makeRecipe({
+        steps: [
+          { stepNumber: 1, description: 'Fold it in.', durationSeconds: null, ingredientIndexes: [0, 9] },
+        ],
+      }),
+    )
+    renderRoute(`/recipes/${RECIPE_ID}`)
+
+    expect(await screen.findByText('Fold it in.')).toBeInTheDocument()
+    // Index 0 resolved; index 9 was skipped rather than rendered as a blank chip.
+    expect(screen.getAllByText('white miso paste')).toHaveLength(2)
+    expect(screen.getByText('Fold it in.').closest('li')!.textContent).toBe(
+      '1Fold it in.3 tbspwhite miso paste',
+    )
+  })
+
+  it('reads a step written before the model was typed', async () => {
+    // Every new field is optional on the wire. A step carrying none of them must
+    // render exactly as it always did — no empty meta strip, no stray chips.
+    mockDetail(
+      makeRecipe({ steps: [{ stepNumber: 1, description: 'Just cook it.' }] }),
+    )
+    renderRoute(`/recipes/${RECIPE_ID}`)
+
+    expect(await screen.findByText('Just cook it.')).toBeInTheDocument()
+    // The whole <li>, verbatim: the number badge and the prose and nothing else.
+    // Asserting on the element rather than on the absence of an icon is what
+    // makes this catch an EMPTY meta strip, which renders no text at all.
+    expect(screen.getByText('Just cook it.').closest('li')!.textContent).toBe('1Just cook it.')
   })
 
   it('shows the visibility badge only on the caller\'s own recipe', async () => {
