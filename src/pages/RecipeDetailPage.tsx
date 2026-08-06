@@ -11,7 +11,6 @@ import type { RecipeResponse, RecipeStep } from '@/api/types'
 import { CommentsPanel } from '@/components/CommentsPanel'
 import ReportModal from '@/components/ReportModal'
 import StateBlock from '@/components/ui/StateBlock'
-import Modal from '@/components/ui/Modal'
 import { resolveImageUrl } from '@/lib/images'
 import {
   formatDuration,
@@ -21,6 +20,7 @@ import {
   visibilityLabel,
 } from './recipeVisuals'
 import RecipeInsights from '@/components/recipes/RecipeInsights'
+import CookMode from '@/components/recipes/CookMode'
 import { formatTemperature, label } from '@/api/vocabulary'
 
 export default function RecipeDetailPage() {
@@ -344,7 +344,25 @@ export default function RecipeDetailPage() {
         </div>
       )}
 
-      {cooking && <CookMode recipe={recipe} onExit={() => setCooking(false)} />}
+      {/* Stream M. J's placeholder overlay lived in this file; the real cook
+          mode is its own module — timers, wake lock, serving scaling and a
+          bounded assistant are a surface rather than a helper, and keeping the
+          entry point here is what keeps this page's diff readable.
+
+          It is handed the caller's own rating and the rate mutation rather than
+          owning either: "Finished cooking" closes into the SAME cook-and-rate
+          action the Rating row above uses, which is what makes the loop worth
+          anything — one write path, one cache patch, no second opinion about
+          what the caller thought of the dish. */}
+      {cooking && (
+        <CookMode
+          recipe={recipe}
+          myRating={envelope.myRating}
+          onRate={(value) => setRating.mutate({ recipeId: recipe.id, rating: value })}
+          requireAuth={requireAuth}
+          onExit={() => setCooking(false)}
+        />
+      )}
 
       {reporting && (
         <ReportModal
@@ -543,93 +561,6 @@ function StepRow({
         )}
       </div>
     </li>
-  )
-}
-
-/**
- * Minimal step-by-step cooking mode — a full-bleed overlay (covers just the
- * detail pane on desktop) showing one step at a time with its duration and
- * Prev/Next. Presentational only: no live countdown, no wake-lock, no serving
- * scaling and no assistant.
- *
- * STREAM J DELIBERATELY LEAVES IT THAT WAY. Real cook mode is stream M, and it
- * is the whole of stream M; what J owes it is the typed step underneath, which
- * is now here. The only change J makes is carrying the step's new facts through
- * so this overlay does not read as LESS informative than the page behind it.
- */
-function CookMode({ recipe, onExit }: { recipe: RecipeResponse; onExit: () => void }) {
-  const steps = [...recipe.steps].sort((a, b) => a.stepNumber - b.stepNumber)
-  const [i, setI] = useState(0)
-  const step = steps[i]
-  const duration = step.durationSeconds != null ? formatDuration(step.durationSeconds) : ''
-  const used = referencedIngredients(step, recipe.ingredients)
-  const last = i === steps.length - 1
-
-  return (
-    <Modal variant="full" label="Step-by-step cooking" onClose={onExit}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 12.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700 }}>
-          Step {i + 1} of {steps.length}
-        </div>
-        <button
-          onClick={onExit}
-          aria-label="Exit cooking mode"
-          style={{ ...roundIconBtn(18), position: 'static', width: 34, height: 34, background: 'var(--surface2)', color: 'var(--text)' }}
-        >
-          ✕
-        </button>
-      </div>
-
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <div style={{ fontSize: 15, color: 'var(--muted)', fontWeight: 700, marginBottom: 6 }}>{recipe.title}</div>
-        <div style={{ fontSize: 21, fontWeight: 700, lineHeight: 1.4 }}>{step.description}</div>
-        {(duration || step.temperature) && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 14 }}>
-            {duration && (
-              <span style={{ fontSize: 14, color: 'var(--accent)', fontWeight: 800 }}>◷ {duration}</span>
-            )}
-            {step.temperature && (
-              <span style={{ fontSize: 14, color: 'var(--accent)', fontWeight: 800 }}>
-                ◈ {formatTemperature(step.temperature)}
-              </span>
-            )}
-          </div>
-        )}
-        {/* What this step needs to hand, at the size a phone propped against a
-            bowl can read. The quantity comes from the ingredient line, never
-            from the prose — see StepRow on decision D17. */}
-        {used.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 16 }}>
-            {used.map((ing, n) => (
-              <div key={n} style={{ fontSize: 15, color: 'var(--muted)' }}>
-                <span style={{ fontWeight: 700, color: 'var(--text)' }}>
-                  {formatQuantity(ing.quantity, ing.unit)}
-                </span>{' '}
-                {ing.name}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', gap: 10 }}>
-        <Button
-          onClick={() => setI((n) => Math.max(0, n - 1))}
-          disabled={i === 0}
-          className="flex-1 rounded-2xl text-base font-bold py-4 h-auto"
-          style={{ background: 'var(--surface2)', color: 'var(--text)', opacity: i === 0 ? 0.5 : 1 }}
-        >
-          ← Prev
-        </Button>
-        <Button
-          onClick={() => (last ? onExit() : setI((n) => Math.min(steps.length - 1, n + 1)))}
-          className="flex-1 rounded-2xl text-base font-bold py-4 h-auto"
-          style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
-        >
-          {last ? 'Done ✓' : 'Next →'}
-        </Button>
-      </div>
-    </Modal>
   )
 }
 

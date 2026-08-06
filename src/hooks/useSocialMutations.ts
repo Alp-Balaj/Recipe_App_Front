@@ -371,8 +371,24 @@ export function useSocialMutations() {
    * "I cooked this" is not a toggle and has no count in the envelope — the
    * server's reply carries timesCooked for the caller to surface. All the
    * shared caches need to learn is that cookedByMe is now true.
+   *
+   * `networkMode: 'always'` (stream M) — the ONE place this hook opts out of
+   * react-query's default. By default a mutation fired while the browser
+   * reports itself offline is PAUSED rather than failed, on the promise that it
+   * resumes when connectivity returns. Cook mode's browser pass could not make
+   * that promise come true: with the network restored and an `online` event
+   * dispatched by hand, the paused mutation sat there for thirty seconds and
+   * the cook was never logged.
+   *
+   * A silent pause with no resume is the worst of the three outcomes — worse
+   * than an error, because nothing tells the person their cook did not land.
+   * 'always' lets the request go out and FAIL, which gives the surface an error
+   * to show and the user a retry to press. Cook mode's finish panel is built on
+   * exactly that, and MealCard's "I cooked this" is no worse off: it had no
+   * pending-state UI either way.
    */
   const logCooked = useMutation({
+    networkMode: 'always',
     mutationFn: ({ recipeId }: { recipeId: string }) => markCooked(recipeId),
     onSuccess: (_row: CookedRecipeResponse, { recipeId }) => {
       patchFeedCaches(queryClient, recipeId, (item) =>
