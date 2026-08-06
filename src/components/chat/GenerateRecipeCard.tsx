@@ -22,6 +22,7 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
 import { generateRecipe, isQuotaError, type GenerateRecipeResponse } from '@/api/generation'
+import DietaryConflictBadge from '@/components/recipes/DietaryConflictBadge'
 
 /** Matches the backend validator's cap so the button disables before a 400 can happen. */
 const MAX_PROMPT_LENGTH = 1000
@@ -104,18 +105,33 @@ export default function GenerateRecipeCard({ conversationId }: { conversationId?
       )}
 
       {result && (
-        <div style={outcomeStyle}>
-          <span role="status" style={successText}>
-            Saved “{result.recipe.title}” to your recipes.
-          </span>
-          <Link to={`/recipes/${result.recipe.id}`} style={outcomeLink}>
-            Open it
-          </Link>
-          <span style={budgetText}>
-            {result.budget.callsRemaining}{' '}
-            {result.budget.callsRemaining === 1 ? 'AI call' : 'AI calls'} left today
-          </span>
-        </div>
+        <>
+          <div style={outcomeStyle}>
+            <span role="status" style={successText}>
+              Saved “{result.recipe.title}” to your recipes.
+            </span>
+            <Link to={`/recipes/${result.recipe.id}`} style={outcomeLink}>
+              Open it
+            </Link>
+            <span style={budgetText}>
+              {result.budget.callsRemaining}{' '}
+              {result.budget.callsRemaining === 1 ? 'AI call' : 'AI calls'} left today
+            </span>
+          </div>
+          {/*
+            Stream H, and this card is where the check earns its keep. Everything above
+            this component is GROUNDED — the assistant may only point at recipes that
+            exist — while this card is FREE: the model invents the ingredient list, and
+            per D1 the row is already saved by the time this renders. The user told the
+            app their restrictions; this is the app checking the answer rather than
+            trusting it.
+
+            It sits under the "Saved …" line on purpose. The recipe WAS saved, and the
+            finding does not retract that — it is something to know before cooking, not
+            an error about the write.
+          */}
+          <DietaryConflictBadge checks={result.dietaryChecks} />
+        </>
       )}
     </div>
   )
