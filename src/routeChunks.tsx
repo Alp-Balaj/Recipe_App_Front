@@ -27,6 +27,7 @@ import { lazy, Suspense, type ComponentType, type ReactElement } from 'react'
 
 export const LoginPage = lazy(() => import('./pages/LoginPage'))
 export const RegisterPage = lazy(() => import('./pages/RegisterPage'))
+export const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 export const ChatPage = lazy(() => import('./pages/ChatPage'))
 export const FeedPage = lazy(() => import('./pages/FeedPage'))
 export const BrowsePage = lazy(() => import('./pages/BrowsePage'))

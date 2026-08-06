@@ -113,6 +113,19 @@ export interface MeResponse {
   username: string
   /** stream D: DB-read role, authoritative over the (possibly stale) token claim. */
   role: UserRole
+  /**
+   * stream K (onboarding) — SANCTIONED ADDITIVE EDIT to this frozen module,
+   * landing as its own reviewed commit per the rule.
+   *
+   * True until the post-register wizard is answered or skipped. Purely
+   * additive: an optional boolean on a response the app already fetches on
+   * every boot, so nothing that ignores it changes behaviour.
+   *
+   * It is the negation of a server-side stamp, NEVER "the user has no
+   * preferences" — someone whose honest answer was "none" has finished
+   * onboarding and must not be asked again.
+   */
+  needsOnboarding?: boolean
 }
 
 // ── Recipes ───────────────────────────────────────────────────────────────

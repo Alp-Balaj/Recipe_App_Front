@@ -15,8 +15,8 @@ import { useAuth } from '@/auth/AuthContext'
 import Avatar from '@/components/Avatar'
 import { useUpdateProfile } from '@/hooks/useUserProfile'
 import { SectionLabel, SettingsScreen } from './settingsUi'
-import type { DietaryRestriction } from '@/api/types'
-import { DIETARY_RESTRICTIONS, label } from '@/api/vocabulary'
+import type { Cuisine, DietaryRestriction } from '@/api/types'
+import { CUISINES, DIETARY_RESTRICTIONS, label } from '@/api/vocabulary'
 
 const BIO_MAX = 160
 
@@ -40,6 +40,7 @@ export default function EditProfileView({ profile, onBack }: Props) {
   const [imageUrl, setImageUrl] = useState<string | null>(profile.profileImageUrl ?? null)
   const [visibility, setVisibility] = useState<Visibility>(profile.defaultRecipeVisibility)
   const [restrictions, setRestrictions] = useState<DietaryRestriction[]>(profile.dietaryRestrictions ?? [])
+  const [cuisines, setCuisines] = useState<Cuisine[]>(profile.cuisinePreferences ?? [])
 
   const [banner, setBanner] = useState<string | null>(null)
   const [usernameError, setUsernameError] = useState<string | null>(null)
@@ -122,6 +123,7 @@ export default function EditProfileView({ profile, onBack }: Props) {
         profileImageUrl: imageUrl,
         defaultRecipeVisibility: visibility,
         dietaryRestrictions: restrictions,
+        cuisinePreferences: cuisines,
       })
       updateUsername(updated.username)
       onBack()
@@ -282,6 +284,42 @@ export default function EditProfileView({ profile, onBack }: Props) {
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
         Used to constrain every recipe the assistant suggests or generates for you.
+      </div>
+
+      {/* Cuisine preferences (stream K, onboarding). The wizard collects these
+          once at registration; this is where they stay editable — a preference
+          you can set only on the day you sign up is one you are stuck with.
+          Placed directly BELOW the restrictions on purpose: the two are easy to
+          confuse, and reading them in this order (hard rules, then soft leaning)
+          is what the helper text under each is there to settle. */}
+      <SectionLabel style={{ marginTop: 18 }}>Cuisines you prefer</SectionLabel>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+        {CUISINES.map((cuisine) => {
+          const active = cuisines.includes(cuisine)
+          return (
+            <button
+              key={cuisine}
+              type="button"
+              role="checkbox"
+              aria-checked={active}
+              aria-label={label(cuisine)}
+              onClick={() =>
+                setCuisines((prev) =>
+                  prev.includes(cuisine)
+                    ? prev.filter((c) => c !== cuisine)
+                    : CUISINES.filter((c) => c === cuisine || prev.includes(c)),
+                )
+              }
+              style={restrictionChip(active)}
+            >
+              {label(cuisine)}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
+        A gentle lean, not a filter — it breaks ties when the assistant suggests or plans, and
+        never hides a recipe from you.
       </div>
     </SettingsScreen>
   )

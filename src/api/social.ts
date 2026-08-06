@@ -32,7 +32,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch } from './client'
-import type { DietaryRestriction, RecipeListResponse, RecipeResponse, Visibility } from './types'
+import type { Cuisine, DietaryRestriction, RecipeListResponse, RecipeResponse, Visibility } from './types'
 
 /** UserSummaryResponse — the compact author block on feed items + follow lists. */
 export interface UserSummaryResponse {
@@ -273,6 +273,14 @@ export interface UserProfileResponse {
    * account-level setting.
    */
   dietaryRestrictions: DietaryRestriction[]
+  /**
+   * Stream K (onboarding). The taste half of the pair, and NOT the same kind of
+   * thing as the restrictions above: a restriction is a rule the app must never
+   * break, a preference only leans. It weights propose-week's candidates,
+   * defaults the generator and breaks ties in chat — it never filters anything,
+   * and Discover/feed ordering deliberately ignores it entirely.
+   */
+  cuisinePreferences: Cuisine[]
 }
 
 /**
@@ -286,6 +294,31 @@ export interface UpdateProfileRequest {
   defaultRecipeVisibility: Visibility
   /** PUT is a full replace here, like every other field: an empty array clears them. */
   dietaryRestrictions: DietaryRestriction[]
+  /** Same full-replace semantics (stream K). */
+  cuisinePreferences: Cuisine[]
+}
+
+/**
+ * CompleteOnboardingRequest — POST /users/me/onboarding, the post-register
+ * wizard's one write (stream K).
+ *
+ * Deliberately not PUT /users/me: that route is a full replace of the whole
+ * account, so a wizard using it would have to send a username and a visibility
+ * it never asked about, and would silently clear anything it forgot. This
+ * writes only what the wizard collects.
+ *
+ * Sending both lists empty is the SKIP case — a real answer, which the server
+ * records so the wizard is not raised again.
+ */
+export interface CompleteOnboardingRequest {
+  cuisinePreferences: Cuisine[]
+  dietaryRestrictions: DietaryRestriction[]
+}
+
+export function completeOnboarding(
+  body: CompleteOnboardingRequest,
+): Promise<UserProfileResponse> {
+  return apiFetch<UserProfileResponse>('/users/me/onboarding', { method: 'POST', body })
 }
 
 /** GET /users/{id}/followers | /following → 200 body (FollowedAt DESC keyset). */
