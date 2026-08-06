@@ -69,8 +69,12 @@ describe('RegisterPage', () => {
     await user.type(screen.getByLabelText('Password'), 'longenough')
     await user.click(screen.getByRole('button', { name: /create account/i }))
 
-    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
-    expect(router.state.location.pathname).toBe('/discover')
+    // stream K: a new account lands on the onboarding wizard rather than
+    // straight on /discover. What this test is actually for is unchanged and
+    // still asserted below — register returns a token, so /auth/login is never
+    // called — but the destination moved, so the assertion follows it.
+    expect(await screen.findByText('What do you like to cook?')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/welcome')
     // The whole point: register returns a token, so login is never called.
     expect(loginSpy).not.toHaveBeenCalled()
   })

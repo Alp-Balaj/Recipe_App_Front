@@ -24,6 +24,7 @@ import {
   MealPlanWeekPage,
   MyRecipesPage,
   NotificationsPage,
+  OnboardingPage,
   ProfilePage,
   RecipeDetailPage,
   RecipeFormPage,
@@ -46,6 +47,13 @@ export const routes: RouteObject[] = [
     children: [
       { path: '/login', element: page(LoginPage) },
       { path: '/register', element: page(RegisterPage) },
+      // stream K (onboarding) — SANCTIONED ADDITIVE route registration, same
+      // discipline as the social-feed, chat-ai and meal-planning routes below:
+      // a NEW path pointing at a NEW page, nothing existing changed or
+      // reordered. It sits OUTSIDE AppShell, beside /login and /register, so
+      // the post-register wizard is not framed by a tab bar that invites
+      // leaving it unanswered; the page guards its own authentication.
+      { path: '/welcome', element: page(OnboardingPage) },
       {
         element: <AppShell />,
         children: [
