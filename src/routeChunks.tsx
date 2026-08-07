@@ -41,6 +41,7 @@ export const MealPlanWeekPage = lazy(() => import('./pages/MealPlanWeekPage'))
 export const MealPlanMonthPage = lazy(() => import('./pages/MealPlanMonthPage'))
 export const MealPlanDayPage = lazy(() => import('./pages/MealPlanDayPage'))
 export const ShoppingListPage = lazy(() => import('./pages/ShoppingListPage'))
+export const FoodScanPage = lazy(() => import('./pages/FoodScanPage'))
 export const AdminPage = lazy(() => import('./pages/AdminPage'))
 export const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 

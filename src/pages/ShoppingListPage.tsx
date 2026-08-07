@@ -30,6 +30,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useState, type CSSProperties } from 'react'
+import { Link } from 'react-router-dom'
 import { weekStartOf } from '@/api/mealPlans'
 import type { ShoppingGroup, ShoppingScope, ShoppingWeek } from '@/api/shopping'
 import { useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
@@ -111,6 +112,12 @@ export default function ShoppingListPage() {
       <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>Shopping list</h1>
       <div style={{ fontSize: 13, color: 'var(--muted)', margin: '6px 0 14px' }}>
         Everything this week's meals need, one row per ingredient.
+        {/* Stream N: the scanner's one entry point — the tab bar is full, and a
+            receipt scan lands its confirmed rows exactly here. */}
+        {' '}
+        <Link to="/scan?mode=receipt" style={{ color: 'var(--accent)', fontWeight: 700 }}>
+          Scan a receipt
+        </Link>
       </div>
 
       <div style={controls}>
