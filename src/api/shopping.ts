@@ -51,6 +51,19 @@ export type ShoppingGroupOrigin = 'Derived' | 'Manual'
 export interface ShoppingPart {
   quantity: string
   dishTitle: string
+  /**
+   * The date this dish is planned for, ISO. Null on a manual row, which serves no
+   * planned dish. Parts arrive in (date, meal) order, so `parts[0]` is the dish the
+   * row is filed under — the shop redesign's buy-once rule, decided server-side.
+   */
+  date?: string | null
+  /**
+   * Deliberately a plain string, not `MealTypeName`: that union is the three slots the
+   * planner OFFERS, while the server's MealType enum is wider — an older entry can come
+   * back as a meal this client never writes, and narrowing here would be a lie the
+   * compiler enforces.
+   */
+  meal?: string | null
 }
 
 /**
@@ -91,6 +104,13 @@ export interface ShoppingGroup {
   manualItemId?: string | null
   /** Always empty for a Manual group — its quantity is free text, not a measurement. */
   totals: ShoppingTotal[]
+  /**
+   * The shop aisle this line is shelved in — the redesigned list's heading, so it is never
+   * empty: an unresolved name or a manual row answers "Other". Groups arrive already sorted
+   * into walk order (produce first, "Other" last), which is why the page groups them in
+   * ENCOUNTER order and never re-sorts alphabetically.
+   */
+  aisle: string
 }
 
 /** One week of the projection, with its own progress denominator. */

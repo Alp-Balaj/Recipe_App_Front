@@ -29,6 +29,18 @@ prefix** (`/auth/*`, `/recipes/*` at the root). The Vite dev proxy bridges both:
 > their `-ink` pairs) in `src/index.css`. Everywhere else, the no-redesign rule
 > still holds.
 
+> **Scoped exception — `/shopping-list`** (shop redesign, direction 1c, from an
+> external design handoff). The page was rebuilt aisle-first with dish
+> provenance: aisle/dish headings, buy-once rows carrying `Dish · Day`, touch
+> swipe + long-press multi-select, a 328px desktop rail, and an all-bought
+> receipt screen. It adds **no** palette tokens — the handoff's hexes turned out
+> to be the light theme's existing values, so everything maps onto `--bg`,
+> `--surface`, `--surface2`, `--accent`, `--accent-fill`, `--clay`, … and dark
+> mode keeps working. Components live in `src/components/shopping/`, with the
+> derivations (grouping, counts, provenance strings) isolated in
+> `shoppingModel.ts` so the page's several counters cannot disagree.
+> `/shopping-list` is in AppShell's `isWidePage` list for the rail's sake.
+
 - **Inline styles over CSS variables** — `var(--surface)`, `var(--surface2)`, `var(--accent)`, `var(--accent-ink)`, `var(--muted)`, `var(--border)`, `var(--cardsh)`, `var(--tagbg)`, `var(--chipbg)`, … defined per theme in `src/index.css`.
 - **Theming**: `data-mode="light|dark"` on the `.app-shell` root (owned by `src/components/ThemeRoot.tsx`); pages read `{ mode, setMode, toggleMode }` via `useOutletContext<ThemeContextValue>()`.
 - **Cards**: `background: var(--surface)`, `border: 1px solid var(--border)`, `boxShadow: var(--cardsh)`, borderRadius 18–22.

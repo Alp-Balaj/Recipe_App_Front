@@ -131,7 +131,12 @@ function AppShellContent() {
     // point of "days as rows".
     DAY_PLAN_PATH.test(panePath) ||
     MONTH_PLAN_PATH.test(panePath) ||
-    panePath.startsWith('/plan/week')
+    panePath.startsWith('/plan/week') ||
+    // The shopping list (shop redesign) docks a 328px rail beside a 720px reading
+    // column — 1048px before any padding, so in the readable column the rail
+    // simply has nowhere to be and the page falls back to its phone layout on a
+    // desktop screen.
+    panePath.startsWith('/shopping-list')
 
   // ── Auth gate (guest access, D9 amendment) ──────────────────────────────
   // A guest landing on an account-only route by direct URL gets Discover with

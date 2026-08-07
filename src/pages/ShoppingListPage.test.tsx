@@ -14,8 +14,13 @@ const week = {
   totalCount: 3,
   groups: [
     {
-      key: 'flour', displayName: 'Flour',
-      parts: [{ quantity: '2 cups', dishTitle: 'Pasta' }, { quantity: '500 g', dishTitle: 'Bread' }],
+      key: 'flour', displayName: 'Flour', aisle: 'Pantry',
+      // Parts arrive in (date, meal) order, so Pasta — the Monday dish — OWNS the
+      // row and Bread is named as the other dish that wants it.
+      parts: [
+        { quantity: '2 cups', dishTitle: 'Pasta', date: '2026-07-27T00:00:00Z', meal: 'Dinner' },
+        { quantity: '500 g', dishTitle: 'Bread', date: '2026-07-28T00:00:00Z', meal: 'Dinner' },
+      ],
       dishes: ['Pasta', 'Bread'], isPurchased: false, origin: 'Derived', manualItemId: null,
       // Two totals: 2 cups is volume and 500 g is mass, and the two cannot be
       // collapsed without flour's density (slice G3). The UI must render both.
@@ -25,14 +30,14 @@ const week = {
       ],
     },
     {
-      key: 'carrot', displayName: 'Carrot',
-      parts: [{ quantity: '3', dishTitle: 'Soup' }],
+      key: 'carrot', displayName: 'Carrot', aisle: 'Produce',
+      parts: [{ quantity: '3', dishTitle: 'Soup', date: '2026-07-29T00:00:00Z', meal: 'Lunch' }],
       dishes: ['Soup'], isPurchased: true, origin: 'Derived', manualItemId: null,
       totals: [{ quantity: 3, unit: 'Piece', display: '3 pcs' }],
     },
     {
-      key: 'manual:11111111-1111-1111-1111-111111111111', displayName: 'Bin bags',
-      parts: [{ quantity: '1 roll', dishTitle: 'Added by you' }],
+      key: 'manual:11111111-1111-1111-1111-111111111111', displayName: 'Bin bags', aisle: 'Other',
+      parts: [{ quantity: '1 roll', dishTitle: 'Added by you', date: null, meal: null }],
       dishes: [], isPurchased: false, origin: 'Manual',
       manualItemId: '11111111-1111-1111-1111-111111111111',
       // Always empty for a manual row — "1 roll" is a note to self, not a
@@ -53,8 +58,8 @@ const olderWeek = {
   totalCount: 1,
   groups: [
     {
-      key: 'saffron', displayName: 'Saffron',
-      parts: [{ quantity: '1 g', dishTitle: 'Paella' }],
+      key: 'saffron', displayName: 'Saffron', aisle: 'Spices & herbs',
+      parts: [{ quantity: '1 g', dishTitle: 'Paella', date: '2026-07-24T00:00:00Z', meal: 'Dinner' }],
       dishes: ['Paella'], isPurchased: false, origin: 'Derived', manualItemId: null,
       totals: [{ quantity: 1, unit: 'Gram', display: '1 g' }],
     },
@@ -172,8 +177,13 @@ describe('ShoppingListPage', () => {
       isSuppressed: false,
     })
     // Dimmed, not moved: all three rows still on screen, Flour still the first.
-    expect(screen.getAllByRole('checkbox')).toHaveLength(3)
-    expect(screen.getAllByRole('checkbox')[0]).toHaveAccessibleName('Flour')
+    // Filtered because the aisle headings are checkboxes too now — that is how a
+    // whole section is selected, and how multi-select starts without a long-press.
+    const rows = screen
+      .getAllByRole('checkbox')
+      .filter((box) => !box.getAttribute('aria-label')?.startsWith('Select all'))
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveAccessibleName('Flour')
     expect(screen.getByText('2 of 3')).toBeInTheDocument()
   })
 
@@ -215,7 +225,10 @@ describe('ShoppingListPage', () => {
     expect(await screen.findByText(/nothing on your list/i)).toBeInTheDocument()
   })
 
-  it('says the list is finished rather than going blank when every row is hidden', async () => {
+  // The shop redesign replaces the list wholesale once nothing is left to tick:
+  // aisles as a receipt, then the next thing to cook. Before it, hiding the last
+  // bought row left the list area simply blank, which read as a broken page.
+  it('shows the finished screen rather than going blank when everything is bought', async () => {
     const allBought = {
       weekStartDate: week.weekStartDate,
       purchasedCount: 1,
@@ -226,9 +239,108 @@ describe('ShoppingListPage', () => {
       HttpResponse.json({ weeks: [allBought], orphanedPurchasedNames: [] })))
     renderRoute('/shopping-list')
 
-    await userEvent.click(await screen.findByRole('button', { name: /hide bought \(1\)/i }))
+    expect(await screen.findByText(/everything's ticked/i)).toBeInTheDocument()
+    // The receipt names the aisle it all came out of, and how much it held.
+    expect(screen.getByText('Produce')).toBeInTheDocument()
+  })
+})
 
-    expect(screen.getByText(/everything on this list is bought/i)).toBeInTheDocument()
+/**
+ * The shop redesign (direction 1c). The list is organised by AISLE, every row
+ * says which dish and day it serves, and a whole section can be taken in one
+ * click — which is what multi-select is for on a surface with no long-press.
+ */
+describe('ShoppingListPage — aisles, provenance and multi-select', () => {
+  it('heads the list by aisle, in the order the server shelved them', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    await screen.findByText('Flour')
+    // Walk order comes off the wire — Pantry before Produce here because that is
+    // the order the groups arrived in. The page must not re-sort alphabetically.
+    const aisles = screen
+      .getAllByRole('checkbox')
+      .map((box) => box.getAttribute('aria-label'))
+      .filter((label): label is string => !!label?.startsWith('Select all in '))
+    expect(aisles).toEqual(['Select all in Pantry', 'Select all in Produce', 'Select all in Other'])
+    // And the heading states what the aisle still OWES, not what it holds:
+    // Produce's one row is already ticked, so it reads 0 of 1 rather than 1 of 1.
+    expect(screen.getByText('0 OF 1 LEFT')).toBeInTheDocument()
+    expect(screen.getAllByText('1 OF 1 LEFT')).toHaveLength(2)
+  })
+
+  it('names the dish and day a row serves, and the other dish that shares it', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    // Flour is wanted by Monday's Pasta and Tuesday's Bread. It is bought ONCE,
+    // under Pasta, and Bread is named on the same row rather than given its own.
+    expect(await screen.findByText('Pasta · Mon, + Bread')).toBeInTheDocument()
+    expect(screen.getAllByText('Flour')).toHaveLength(1)
+    // A manual row serves no dish, so it carries no provenance line at all.
+    expect(screen.queryByText(/Added by you/)).not.toBeInTheDocument()
+  })
+
+  it('re-groups the same rows by dish without duplicating a shared one', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    await screen.findByText('Flour')
+    await userEvent.click(screen.getByRole('button', { name: 'By dish' }))
+
+    expect(screen.getByRole('checkbox', { name: 'Select all in Pasta' })).toBeInTheDocument()
+    // Bread wants flour too, but flour is Pasta's — "by dish" regroups the list,
+    // it does not expand it into a per-dish list that says to buy flour twice.
+    expect(screen.queryByRole('checkbox', { name: 'Select all in Bread' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('Flour')).toHaveLength(1)
+  })
+
+  it('takes a whole aisle in one click and ticks it in one action', async () => {
+    const marks: { key: string; isPurchased: boolean }[] = []
+    server.use(
+      listHandler(),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        marks.push((await request.json()) as { key: string; isPurchased: boolean })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Select all in Pantry' }))
+
+    // The bar names what it has hold of before you act on it.
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(screen.getByText(/Whole aisle — Pantry/)).toBeInTheDocument()
+    // In selection mode the row checkbox means membership, and says so.
+    expect(screen.getByRole('checkbox', { name: 'Select Flour' })).toBeChecked()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tick 1' }))
+
+    await waitFor(() => expect(marks).toHaveLength(1))
+    expect(marks[0]).toMatchObject({ key: 'flour', isPurchased: true, isSuppressed: false })
+    // The selection is spent, and the bar goes with it.
+    expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+  })
+
+  it('lets go of the selection without touching anything', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Select all in Produce' }))
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('1 selected')).not.toBeInTheDocument()
+    // Back to meaning "bought" — and Carrot was already ticked.
+    expect(screen.getByRole('checkbox', { name: 'Carrot' })).toBeChecked()
+  })
+
+  it('keeps the scanner on the list itself, not behind a finish screen', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    const scan = await screen.findByRole('link', { name: /scan receipt/i })
+    expect(scan).toHaveAttribute('href', '/scan?mode=receipt')
   })
 })
 
