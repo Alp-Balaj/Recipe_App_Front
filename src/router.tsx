@@ -18,6 +18,7 @@ import {
   BrowsePage,
   ChatPage,
   FeedPage,
+  FoodScanPage,
   LoginPage,
   MealPlanDayPage,
   MealPlanMonthPage,
@@ -91,6 +92,11 @@ export const routes: RouteObject[] = [
           { path: '/plan/week/:start', element: page(MealPlanWeekPage) },
           { path: '/plan/:date', element: page(MealPlanDayPage) },
           { path: '/shopping-list', element: page(ShoppingListPage) },
+          // Stream N (food scanner) — SANCTIONED ADDITIVE route registration,
+          // same discipline as the additive routes above. Not in navItems.ts:
+          // the tab bar is full, so the scanner is reached from the shopping
+          // list's "scan a receipt" entry and by URL.
+          { path: '/scan', element: page(FoodScanPage) },
           // stream D (governor) — SANCTIONED ADDITIVE route, same discipline as
           // the additive routes above. Role-gated INSIDE AdminPage (non-admins
           // get a full-page denial); the server enforces the real boundary.
