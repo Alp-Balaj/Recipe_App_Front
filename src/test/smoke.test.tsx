@@ -8,13 +8,13 @@ import { server } from './msw/server'
 describe('router shell (authenticated)', () => {
   it('redirects / to /discover', async () => {
     const router = renderRoute('/')
-    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
+    expect(await screen.findByText('DISCOVER')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/discover')
   })
 
   it('redirects unknown URLs to /discover instead of crashing', async () => {
     const router = renderRoute('/definitely/not/a/route')
-    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
+    expect(await screen.findByText('DISCOVER')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/discover')
   })
 
@@ -112,7 +112,7 @@ describe('route protection (guest access)', () => {
     const router = renderRoute('/discover', {
       auth: makeAuthValue({ user: null, status: 'unauthenticated' }),
     })
-    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
+    expect(await screen.findByText('DISCOVER')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/discover')
   })
 
@@ -121,7 +121,7 @@ describe('route protection (guest access)', () => {
       auth: makeAuthValue({ user: null, status: 'unauthenticated' }),
     })
     expect(await screen.findByRole('dialog', { name: 'Sign in' })).toBeInTheDocument()
-    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
+    expect(await screen.findByText('DISCOVER')).toBeInTheDocument()
     // No redirect: the URL stays put so signing in can land where the guest aimed.
     expect(router.state.location.pathname).toBe('/chat')
   })

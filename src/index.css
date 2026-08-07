@@ -1,4 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap');
+/* Discover redesign: Fraunces is the DISPLAY serif — section headers, the hero
+   title and the filter-sheet title only. Never buttons, body copy or nav; the
+   UI voice stays Hanken Grotesk. Loaded as its own @import so the UI face keeps
+   its own cache entry and a Fraunces failure degrades to the serif stack rather
+   than taking the whole page's type with it. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -9,6 +15,16 @@ html, body, #root { height: 100%; }
 body { margin: 0; }
 
 .scroll::-webkit-scrollbar { width: 0; height: 0; }
+
+/* Scan intent cards: the pointed-at (or keyboard-focused) card takes the accent
+   edge the mock draws on the selected one. An inset shadow rather than a 2px
+   border, so the state change never reflows the card by a pixel. Inline styles
+   can't express :hover, which is why this one rule lives here. */
+.intent-card:hover,
+.intent-card:focus-visible {
+  border-color: var(--accent-fill) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-fill), var(--cardsh) !important;
+}
 
 /* Chat assistant typing indicator (lane C / checkpoint 07). */
 @keyframes chat-typing {
@@ -30,6 +46,9 @@ body { margin: 0; }
   background: var(--bg);    /* fills safe-area zones behind the frame on mobile */
   color: var(--text);
   font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  /* One name for the display serif so the handful of Discover headlines that
+     use it never spell the fallback stack out five different ways. */
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
 }
 
 /* The frame is just the positioning context for the absolutely-positioned

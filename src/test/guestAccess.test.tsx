@@ -191,7 +191,7 @@ describe('guest interaction gating', () => {
   it('the Chat tab opens the login modal without navigating', async () => {
     const user = userEvent.setup()
     const router = renderGuestRoute('/discover')
-    await screen.findByText('Explore recipes')
+    await screen.findByText('DISCOVER')
 
     await user.click(screen.getByRole('button', { name: 'Chat' }))
 
@@ -206,7 +206,7 @@ describe('guest CTA + modal dismissal', () => {
   it('shows the persistent sign-in CTA to guests and opens the modal from it', async () => {
     const user = userEvent.setup()
     renderGuestRoute('/discover')
-    await screen.findByText('Explore recipes')
+    await screen.findByText('DISCOVER')
 
     await user.click(screen.getByRole('button', { name: 'Log in / Sign up' }))
 
@@ -216,7 +216,7 @@ describe('guest CTA + modal dismissal', () => {
   it('the login modal is dismissible (the ✕ closes it)', async () => {
     const user = userEvent.setup()
     renderGuestRoute('/discover')
-    await screen.findByText('Explore recipes')
+    await screen.findByText('DISCOVER')
 
     await user.click(screen.getByRole('button', { name: 'Log in / Sign up' }))
     await screen.findByRole('dialog', { name: 'Sign in' })

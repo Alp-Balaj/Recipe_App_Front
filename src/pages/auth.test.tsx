@@ -15,7 +15,7 @@ describe('LoginPage', () => {
     await user.type(screen.getByLabelText('Password'), 'goodpassword')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(await screen.findByText('Explore recipes')).toBeInTheDocument()
+    expect(await screen.findByText('DISCOVER')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/discover')
     expect(localStorage.getItem('recipe_app_auth')).toContain('alice')
   })
@@ -116,7 +116,7 @@ describe('ProfileTab logout', () => {
     await user.type(await screen.findByLabelText('Username or email'), 'carol')
     await user.type(screen.getByLabelText('Password'), 'goodpassword')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
-    await screen.findByText('Explore recipes')
+    await screen.findByText('DISCOVER')
 
     // Navigate to the profile tab (bottom nav in the mobile test layout).
     await user.click(screen.getByRole('button', { name: /profile/i }))
