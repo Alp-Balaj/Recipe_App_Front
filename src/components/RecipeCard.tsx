@@ -19,7 +19,19 @@ import { resolveImageUrl } from '@/lib/images'
 import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 import { label } from '@/api/vocabulary'
 
-type RecipeCardVariant = 'browse' | 'mine' | 'suggestion'
+/**
+ * Discover redesign (editorial front page) adds two ADDITIVE variants rather
+ * than a second card component: the sections below the hero are a new LAYOUT of
+ * the same RecipeResponse, and the consolidation this file exists to protect is
+ * exactly the thing a "just for Discover" card would undo.
+ *
+ *   editorialLead — one text-over-image card heading a section
+ *   editorialRow  — the dense thumbnail rows under it
+ *
+ * Both take `dense` for the desktop three-column scale, and both let the caller
+ * replace the meta line (From-your-people rows show an author, not a time).
+ */
+type RecipeCardVariant = 'browse' | 'mine' | 'suggestion' | 'editorialLead' | 'editorialRow'
 
 /**
  * Optional like/save affordances (social-feed cp06, ADDITIVE — cards without
@@ -46,6 +58,15 @@ interface RecipeCardProps {
   onDelete?: () => void
   /** Like/save action row (browse-style cards; cp06). */
   social?: RecipeCardSocial
+  /**
+   * Editorial variants only: replaces the default "20 min · Easy" meta line.
+   * "From your people" passes an avatar + name + relative time instead.
+   */
+  meta?: ReactNode
+  /** Editorial lead only: the pill in the image's top-left (e.g. "15 min"). */
+  badge?: ReactNode
+  /** Editorial variants only: the tighter desktop three-column scale. */
+  dense?: boolean
 }
 
 const tagBadgeStyle = { background: 'var(--tagbg)', borderColor: 'var(--tagborder)', color: 'var(--tagcol)' } as const
@@ -70,16 +91,159 @@ function linkProps(recipe: RecipeResponse, onOpen: () => void) {
 // cp07: imageUrl goes through resolveImageUrl — cp04 uploads return RELATIVE
 // urls (/images/…) that must be fetched via the /api proxy prefix.
 function Banner({ recipe, height = 104 }: { recipe: RecipeResponse; height?: number }) {
-  const bg = recipe.imageUrl
-    ? { backgroundImage: `url(${resolveImageUrl(recipe.imageUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : { background: gradientFor(recipe.id || recipe.title) }
-  return <div style={{ height, ...bg }} />
+  return <div style={{ height, ...imageBackground(recipe) }} />
 }
 
-export default function RecipeCard({ recipe, variant, onOpen, onEdit, onDelete, social }: RecipeCardProps) {
+/** center/cover the recipe photo, or the deterministic warm gradient fallback. */
+function imageBackground(recipe: RecipeResponse): CSSProperties {
+  return recipe.imageUrl
+    ? {
+        backgroundImage: `url(${resolveImageUrl(recipe.imageUrl)})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
+    : { background: gradientFor(recipe.id || recipe.title) }
+}
+
+export default function RecipeCard({
+  recipe,
+  variant,
+  onOpen,
+  onEdit,
+  onDelete,
+  social,
+  meta,
+  badge,
+  dense,
+}: RecipeCardProps) {
   if (variant === 'suggestion') return <SuggestionCardBody recipe={recipe} onOpen={onOpen} />
+  if (variant === 'editorialLead')
+    return <EditorialLeadBody recipe={recipe} onOpen={onOpen} meta={meta} badge={badge} dense={dense} />
+  if (variant === 'editorialRow')
+    return <EditorialRowBody recipe={recipe} onOpen={onOpen} meta={meta} dense={dense} />
   return (
     <BannerCardBody recipe={recipe} variant={variant} onOpen={onOpen} onEdit={onEdit} onDelete={onDelete} social={social} />
+  )
+}
+
+// ── Editorial: the lead image card + the rows under it ──────────────────────
+
+/** "20 min · Easy" — what an editorial card says when the caller says nothing. */
+function editorialMeta(recipe: RecipeResponse): string {
+  const parts: string[] = []
+  if (recipe.totalTimeMinutes) parts.push(formatMinutes(recipe.totalTimeMinutes))
+  parts.push(recipe.difficulty)
+  return parts.join(' · ')
+}
+
+function EditorialLeadBody({
+  recipe,
+  onOpen,
+  meta,
+  badge,
+  dense,
+}: {
+  recipe: RecipeResponse
+  onOpen: () => void
+  meta?: ReactNode
+  badge?: ReactNode
+  dense?: boolean
+}) {
+  return (
+    <div
+      {...linkProps(recipe, onOpen)}
+      style={{
+        position: 'relative',
+        height: dense ? 150 : 180,
+        borderRadius: dense ? 16 : 18,
+        overflow: 'hidden',
+        cursor: 'pointer',
+        marginBottom: dense ? 6 : 8,
+        ...imageBackground(recipe),
+      }}
+    >
+      {badge != null && (
+        <span
+          style={{
+            position: 'absolute',
+            top: 9,
+            left: 9,
+            borderRadius: 999,
+            padding: '3px 9px',
+            fontSize: 10.5,
+            fontWeight: 800,
+            background: 'var(--tagbg)',
+            color: 'var(--tagcol)',
+          }}
+        >
+          {badge}
+        </span>
+      )}
+      {/* The scrim is a fixed dark ramp, not a token: it sits on a photograph,
+          so it has to hold white text in either theme. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          padding: dense ? '30px 12px 11px' : '34px 13px 13px',
+          background: 'linear-gradient(180deg, rgba(42,38,29,0) 0%, rgba(42,38,29,0.82) 70%)',
+          color: '#fffef9',
+        }}
+      >
+        <div style={{ fontSize: dense ? 14 : 15, fontWeight: 800 }}>{recipe.title}</div>
+        <div style={{ fontSize: dense ? 11 : 11.5, color: 'rgba(255,254,249,0.8)', marginTop: 2 }}>
+          {meta ?? editorialMeta(recipe)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EditorialRowBody({
+  recipe,
+  onOpen,
+  meta,
+  dense,
+}: {
+  recipe: RecipeResponse
+  onOpen: () => void
+  meta?: ReactNode
+  dense?: boolean
+}) {
+  const thumb = dense ? 52 : 58
+  return (
+    <div
+      {...linkProps(recipe, onOpen)}
+      style={{
+        display: 'flex',
+        gap: dense ? 11 : 12,
+        alignItems: 'center',
+        padding: dense ? '8px 0' : '9px 0',
+        cursor: 'pointer',
+      }}
+    >
+      <div style={{ width: thumb, height: thumb, borderRadius: 12, flexShrink: 0, ...imageBackground(recipe) }} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: dense ? 13.5 : 14.5, fontWeight: 800 }}>{recipe.title}</div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: dense ? 11.5 : 12,
+            color: 'var(--muted)',
+            marginTop: 2,
+          }}
+        >
+          {meta ?? editorialMeta(recipe)}
+        </div>
+      </div>
+      {/* The chevron is mobile-only: the desktop columns are narrow enough that
+          it would eat title width for an affordance the whole row already has. */}
+      {!dense && <div style={{ color: 'var(--muted)' }}>›</div>}
+    </div>
   )
 }
 

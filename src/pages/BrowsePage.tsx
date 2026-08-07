@@ -1,21 +1,56 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+// ─────────────────────────────────────────────────────────────────────────
+// Discover (/discover) — the editorial front page (Discover redesign).
+//
+// Was: a header, a search field, a row of difficulty pills, an always-open
+// cuisine/tag panel, and then one flat "Trending now" card list. Every visitor
+// paid a screenful of controls before reaching a recipe, and the page had no
+// opinion about what to cook.
+//
+// Now the page has two modes, and which one you get is decided by whether you
+// have asked it anything:
+//
+//   BROWSING (no search, no filters) — the front page. One cover story, the
+//   scan band, then three ruled departments (Trending / Quick tonight / From
+//   your people). Editorial, finite, no pagination: it is a front page, not a
+//   catalogue.
+//
+//   SEARCHING (any filter or search term) — the flat result list with Load
+//   more, unchanged from before. A query deserves results, not a magazine.
+//
+// The filter controls moved into a sheet behind a "Filters (n)" button; the
+// count on that button is the only filter state shown outside it. The search
+// wiring (300ms debounce → server-side ?search=) and the pagination are
+// untouched — this is a composition change, not a data one.
+// ─────────────────────────────────────────────────────────────────────────
+
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SocialRecipeCard from '@/components/SocialRecipeCard'
 import StateBlock from '@/components/ui/StateBlock'
+import Avatar from '@/components/Avatar'
+import DiscoverHero from '@/components/discover/DiscoverHero'
+import EditorialSection, { type EditorialItem } from '@/components/discover/EditorialSection'
+import FiltersSheet, { type FilterSelection } from '@/components/discover/FiltersSheet'
+import ScanBand from '@/components/discover/ScanBand'
 import { useOpenRecipe } from '@/components/recipeCanvas'
+import { useFeed } from '@/hooks/useFeed'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useRecipeList, type BrowseFilters } from '@/hooks/useRecipeList'
-import type { Cuisine, RecipeTag } from '@/api/types'
-import { CUISINES, TAGS, label } from '@/api/vocabulary'
-import type { Difficulty, RecipeResponse } from '@/api/types'
-
-const DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
+import { TAGS } from '@/api/vocabulary'
+import { formatRelativeTime } from '@/lib/relativeTime'
+import type { Cuisine, Difficulty, RecipeResponse, RecipeTag } from '@/api/types'
 
 /**
  * How long typing has to settle before the search term reaches the wire.
  * Matches IngredientNameField's debounce, the app's other type-ahead.
  */
 const SEARCH_DEBOUNCE_MS = 300
+
+/** "Quick tonight" — anything you could plausibly start after getting home. */
+const QUICK_MAX_MINUTES = 20
+
+/** Recipes per department: one lead image card plus two rows. */
+const SECTION_SIZE = 3
 
 export default function BrowsePage() {
   // BrowsePage also renders as the canvas BACKDROP, where `useLocation()` is a
@@ -30,7 +65,10 @@ export default function BrowsePage() {
   const [difficulty, setDifficulty] = useState<Difficulty | undefined>(undefined)
   const [tags, setTags] = useState<RecipeTag[]>([])
   const [search, setSearch] = useState('')
-  const [showFilters, setShowFilters] = useState(true)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  // "All ›" on Trending: the catalogue, on request. Nothing else opens it, so
+  // the front page stays the default every time you arrive.
+  const [browseAll, setBrowseAll] = useState(false)
 
   // open-loops slice 2: search moved to the SERVER. It used to filter only the
   // pages already loaded, so a recipe sitting on page four did not exist for
@@ -77,7 +115,13 @@ export default function BrowsePage() {
     return out
   }, [data])
 
-  const hasActiveFilters = !!cuisine || !!difficulty || tags.length > 0 || !!search.trim()
+  // The number on the Filters button. Search is deliberately NOT counted: it
+  // has its own visible field, and counting it would make the button claim a
+  // filter the sheet cannot show you.
+  const activeFilterCount = (difficulty ? 1 : 0) + (cuisine ? 1 : 0) + tags.length
+  const hasActiveFilters = activeFilterCount > 0 || !!search.trim()
+  const isEditorial = !hasActiveFilters && !browseAll
+
   const clearFilters = () => {
     setCuisine('')
     setDifficulty(undefined)
@@ -85,8 +129,36 @@ export default function BrowsePage() {
     setSearch('')
   }
 
-  const addTag = (t: RecipeTag) => setTags((prev) => (prev.includes(t) ? prev : [...prev, t]))
-  const removeTag = (t: RecipeTag) => setTags((prev) => prev.filter((x) => x !== t))
+  const applyFilters = (next: FilterSelection) => {
+    setCuisine(next.cuisine)
+    setDifficulty(next.difficulty)
+    setTags(next.tags)
+  }
+
+  // Tag ranking for the sheet's first eight chips. There is no usage-count
+  // endpoint, so this is an honest client-side estimate over the page already
+  // loaded — most-tagged first, with the rest of the vocabulary behind it in
+  // its canonical order so nothing is ever unreachable.
+  const tagRanking = useMemo(() => {
+    const counts = new Map<RecipeTag, number>()
+    for (const r of recipes) {
+      for (const t of r.tags) counts.set(t, (counts.get(t) ?? 0) + 1)
+    }
+    return [...TAGS].sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))
+  }, [recipes])
+
+  // ── The front page's departments ──────────────────────────────────────────
+  // All three read the list the page has ALREADY loaded — no second query, no
+  // maxTime param the backend does not have. A department with nothing in it
+  // renders nothing rather than an apologetic empty card.
+  const hero = recipes[0]
+  const trending = recipes.slice(1, 1 + SECTION_SIZE)
+  const quick = useMemo(() => {
+    const spoken = new Set(recipes.slice(0, 1 + SECTION_SIZE).map((r) => r.id))
+    return recipes
+      .filter((r) => !spoken.has(r.id) && r.totalTimeMinutes > 0 && r.totalTimeMinutes <= QUICK_MAX_MINUTES)
+      .slice(0, SECTION_SIZE)
+  }, [recipes])
 
   const pageStyle: CSSProperties = {
     position: 'absolute',
@@ -96,8 +168,8 @@ export default function BrowsePage() {
     padding: isDesktop ? '28px 34px 40px' : '26px 18px 16px',
   }
 
-  // ── Body: states, then the recipe surface (grid on desktop, list on mobile) ──
-  const body = isLoading ? (
+  // ── Result list: states, then the recipe surface (grid desktop, list mobile) ──
+  const results = isLoading ? (
     <StateBlock title="Loading recipes…" body="Fetching the latest from the kitchen." />
   ) : isError ? (
     <StateBlock
@@ -120,18 +192,16 @@ export default function BrowsePage() {
   ) : (
     <>
       {isDesktop ? (
-        // Design 4a: a plain auto-fill card grid. minmax(260px) lands on three
-        // columns at the design's content width and degrades to two/one when
-        // the recipe canvas pane is open.
+        // A plain auto-fill card grid. minmax(260px) lands on three columns at
+        // the design's content width and degrades to two/one when the recipe
+        // canvas pane is open.
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 20 }}>
           {recipes.map((r) => (
             <SocialRecipeCard key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />
           ))}
         </div>
       ) : (
-        recipes.map((r) => (
-          <SocialRecipeCard key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />
-        ))
+        recipes.map((r) => <SocialRecipeCard key={r.id} recipe={r} onOpen={() => openRecipe(r.id)} />)
       )}
 
       <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 12px' }}>
@@ -152,8 +222,35 @@ export default function BrowsePage() {
     </>
   )
 
-  // Search field + Filters toggle + difficulty pills, shared by both layouts —
-  // the design sizes them differently per breakpoint but the wiring is one set.
+  // ── The three departments ────────────────────────────────────────────────
+  const departments = (
+    <>
+      <EditorialSection
+        index={1}
+        title="Trending"
+        isDesktop={isDesktop}
+        items={trending.map((recipe) => ({ recipe }))}
+        onOpen={openRecipe}
+        onSeeAll={() => setBrowseAll(true)}
+      />
+      <EditorialSection
+        index={2}
+        title="Quick tonight"
+        isDesktop={isDesktop}
+        items={quick.map((recipe, i): EditorialItem => ({
+          recipe,
+          // The lead card wears the time as a pill over the photo; the rows
+          // keep it in the meta line, so it is never said twice.
+          badge: i === 0 ? `${recipe.totalTimeMinutes} min` : undefined,
+        }))}
+        onOpen={openRecipe}
+        onSeeAll={() => setTags(['Quick'])}
+      />
+      <FromYourPeople isDesktop={isDesktop} onOpen={openRecipe} onSeeAll={() => navigate('/feed')} />
+    </>
+  )
+
+  // ── Masthead pieces, shared by both breakpoints ──────────────────────────
   const searchField = (
     <div
       style={{
@@ -161,18 +258,20 @@ export default function BrowsePage() {
         alignItems: 'center',
         gap: isDesktop ? 10 : 9,
         flex: 1,
-        minWidth: isDesktop ? 280 : 0,
+        minWidth: 0,
         background: isDesktop ? 'var(--surface)' : 'var(--surface2)',
         border: '1px solid var(--border)',
         borderRadius: 13,
-        padding: isDesktop ? '12px 16px' : '10px 14px',
+        padding: isDesktop ? '11px 15px' : '10px 14px',
       }}
     >
-      <span aria-hidden style={{ color: 'var(--muted)', fontSize: isDesktop ? 16 : 15 }}>⌕</span>
+      <span aria-hidden style={{ color: 'var(--muted)', fontSize: isDesktop ? 16 : 15 }}>
+        ⌕
+      </span>
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder={isDesktop ? 'Search recipes, ingredients, cuisines…' : 'Search recipes, ingredients…'}
+        placeholder="Search recipes, ingredients…"
         aria-label="Search recipes"
         style={{
           flex: 1,
@@ -188,10 +287,10 @@ export default function BrowsePage() {
     </div>
   )
 
-  const filtersToggle = (
+  const filtersButton = (
     <button
-      onClick={() => setShowFilters((s) => !s)}
-      aria-expanded={showFilters}
+      onClick={() => setSheetOpen(true)}
+      aria-haspopup="dialog"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -208,275 +307,160 @@ export default function BrowsePage() {
         cursor: 'pointer',
       }}
     >
-      <span aria-hidden>⚙</span> Filters
+      {activeFilterCount > 0 ? `Filters (${activeFilterCount})` : 'Filters'}
     </button>
   )
 
-  const difficultyPills = (
-    <>
-      <Pill active={!difficulty} desktop={isDesktop} onClick={() => setDifficulty(undefined)}>
-        All levels
-      </Pill>
-      {DIFFICULTIES.map((d) => (
-        <Pill
-          key={d}
-          active={difficulty === d}
-          desktop={isDesktop}
-          onClick={() => setDifficulty(difficulty === d ? undefined : d)}
-        >
-          {d}
-        </Pill>
-      ))}
-    </>
-  )
+  const today = new Date()
 
   return (
-    <div className="scroll" style={pageStyle}>
-      {isDesktop ? (
-        <>
-          {/* Design 4a: title block on the left, the New-recipe CTA opposite. */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-end',
-              justifyContent: 'space-between',
-              gap: 20,
-              flexWrap: 'wrap',
-              marginBottom: 22,
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>
-                Explore recipes
-              </div>
-              <div style={{ fontSize: 14, color: 'var(--muted)', marginTop: 4 }}>
-                Public recipes from the community and your own.
-              </div>
-            </div>
-            <button onClick={() => navigate('/recipes/new')} style={newRecipeBtn}>
-              <span aria-hidden>＋</span> New recipe
-            </button>
-          </div>
-
-          {/* One row: search, then the difficulty pills inline beside it. */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
-            {searchField}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {difficultyPills}
-              {filtersToggle}
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Design 3a: stacked header, then search + Filters, then a
-              full-bleed scrollable pill row. */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
-            <div style={{ flex: 1, minWidth: '100%' }}>
-              <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>
-                Explore recipes
-              </div>
-              <div style={{ fontSize: 13.5, color: 'var(--muted)', marginTop: 3 }}>
-                Public recipes from the community and your own.
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: '1 1 100%' }}>
+    <>
+      <div className="scroll" style={pageStyle}>
+        {isDesktop ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
+            <div style={{ ...eyebrow, flexShrink: 0 }}>DISCOVER · {longDate(today)}</div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, width: 420, maxWidth: '100%' }}>
               {searchField}
-              {filtersToggle}
+              {filtersButton}
             </div>
           </div>
-
-          <div
-            className="scroll"
-            style={{ display: 'flex', gap: 9, overflowX: 'auto', margin: '0 -18px 8px', padding: '0 18px 2px' }}
-          >
-            {difficultyPills}
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'baseline', marginBottom: 12 }}>
+            <div style={eyebrow}>DISCOVER</div>
+            <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{shortDate(today)}</div>
           </div>
-        </>
-      )}
+        )}
 
-      {/* Advanced filters — cuisine + tag inputs (toggle via the Filters button). */}
-      {showFilters && (
-        <AdvancedFilters
+        {isEditorial && hero && (
+          <>
+            <DiscoverHero recipe={hero} isDesktop={isDesktop} onOpen={() => openRecipe(hero.id)} />
+            <ScanBand isDesktop={isDesktop} />
+          </>
+        )}
+
+        {/* Mobile keeps search under the fold — the cover story is what the
+            page leads with, and a search field above it would say otherwise. */}
+        {!isDesktop && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+            {searchField}
+            {filtersButton}
+          </div>
+        )}
+
+        {browseAll && !hasActiveFilters && (
+          <button type="button" onClick={() => setBrowseAll(false)} style={backToFrontPage}>
+            ‹ Back to Discover
+          </button>
+        )}
+
+        {/* No cover story means there is nothing to make a front page out of —
+            loading, an error, or a genuinely empty catalogue. The result list
+            already says each of those properly, so it stands in. */}
+        {!isEditorial || !hero ? (
+          results
+        ) : isDesktop ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 28 }}>{departments}</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>{departments}</div>
+        )}
+      </div>
+
+      {/* Outside the scroll container on purpose: the Modal backdrop is
+          position:absolute, and inside a scrolled box it would ride the
+          content instead of covering the frame. */}
+      {sheetOpen && (
+        <FiltersSheet
           cuisine={cuisine}
+          difficulty={difficulty}
           tags={tags}
-          onCuisine={setCuisine}
-          onAddTag={addTag}
-          onRemoveTag={removeTag}
+          tagRanking={tagRanking}
+          onApply={applyFilters}
+          onClose={() => setSheetOpen(false)}
         />
       )}
-
-      {hasActiveFilters && (
-        <button onClick={clearFilters} style={clearBtn}>
-          Clear filters
-        </button>
-      )}
-
-      {/* Section heading (matches the design's "Trending now"). */}
-      {!isLoading && !isError && recipes.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', margin: isDesktop ? '0 0 16px' : '14px 0 14px' }}>
-          <div style={{ fontSize: isDesktop ? 19 : 17, fontWeight: 800, color: 'var(--text)' }}>Trending now</div>
-        </div>
-      )}
-
-      {body}
-    </div>
+    </>
   )
 }
 
-// ── Advanced filters (cuisine + tags) ────────────────────────────────────────
+// ── § C③ "From your people" ─────────────────────────────────────────────────
 
-// Stream G: both controls were free-text inputs. They are a select and a chip
-// list now for a reason beyond tidiness — an unrecognised cuisine or tag is a
-// 400 from the backend since the vocabularies closed, so a text field here
-// would let a user type their way into an error page. It also ends the older,
-// quieter failure: "Italian" typed into the tag box matched nothing and looked
-// like an empty catalogue rather than a mistake.
-function AdvancedFilters({
-  cuisine,
-  tags,
-  onCuisine,
-  onAddTag,
-  onRemoveTag,
+/**
+ * The followed-authors department.
+ *
+ * Split into its own component so `useFeed` only mounts — and only fetches — on
+ * the front page: the flat result list has no use for it, and a filter query
+ * should not drag a social request along with it.
+ *
+ * Reuses the existing GET /feed?scope=following the Feed tab's second tab
+ * already drives (same query key, so the two share a cache) rather than asking
+ * the backend for a Discover-shaped endpoint.
+ */
+function FromYourPeople({
+  isDesktop,
+  onOpen,
+  onSeeAll,
 }: {
-  cuisine: Cuisine | ''
-  tags: RecipeTag[]
-  onCuisine: (v: Cuisine | '') => void
-  onAddTag: (t: RecipeTag) => void
-  onRemoveTag: (t: RecipeTag) => void
+  isDesktop: boolean
+  onOpen: (recipeId: string) => void
+  onSeeAll: () => void
 }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 4 }}>
-      <select
-        value={cuisine}
-        onChange={(e) => onCuisine(e.target.value as Cuisine | '')}
-        aria-label="Filter by cuisine"
-        style={{ ...inputStyle, minWidth: 180 }}
-      >
-        <option value="">Any cuisine</option>
-        {CUISINES.map((c) => (
-          <option key={c} value={c}>
-            {label(c)}
-          </option>
-        ))}
-      </select>
+  const { data } = useFeed('following')
+  const items = data?.pages[0]?.items ?? []
 
-      {/* Every tag, always visible. The picker in the authoring form groups
-          them because an author is composing; here the user is scanning for
-          one they already have in mind, so a single flat set reads faster. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-        {TAGS.map((t) => {
-          const active = tags.includes(t)
-          return (
-            <button
-              key={t}
-              onClick={() => (active ? onRemoveTag(t) : onAddTag(t))}
-              aria-pressed={active}
-              aria-label={active ? `Remove tag ${label(t)}` : `Filter by tag ${label(t)}`}
-              style={
-                active
-                  ? { ...tagChip, background: 'var(--accent)', color: 'var(--accent-ink)', borderColor: 'var(--accent)' }
-                  : tagChip
-              }
-            >
-              {label(t)}
-            </button>
-          )
-        })}
-      </div>
-    </div>
+  const editorial: EditorialItem[] = items.slice(0, SECTION_SIZE).map((item) => ({
+    recipe: item.recipe,
+    // Who cooked it and when — the reason this section exists at all. It
+    // replaces the time/difficulty meta rather than joining it.
+    meta: (
+      <>
+        <Avatar username={item.author.username} profileImageUrl={item.author.profileImageUrl} seed={item.author.id} size={18} />
+        {item.author.username} · {formatRelativeTime(item.recipe.createdAt)}
+      </>
+    ),
+  }))
+
+  return (
+    <EditorialSection
+      index={3}
+      title="From your people"
+      isDesktop={isDesktop}
+      items={editorial}
+      onOpen={onOpen}
+      onSeeAll={editorial.length > 0 ? onSeeAll : undefined}
+    />
   )
 }
 
-/** Difficulty filter pill. The design draws it as a rounded capsule on mobile
- *  and a squarer, roomier button in the desktop filter row. */
-function Pill({
-  active,
-  desktop,
-  onClick,
-  children,
-}: {
-  active: boolean
-  desktop?: boolean
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        flexShrink: 0,
-        fontSize: desktop ? 13.5 : 13,
-        fontWeight: 600,
-        padding: desktop ? '11px 17px' : '8px 16px',
-        borderRadius: desktop ? 11 : 999,
-        border: `1px solid ${active ? 'var(--accent-fill)' : 'var(--border)'}`,
-        background: active ? 'var(--accent-fill)' : 'var(--inputbg)',
-        color: active ? 'var(--accent-ink)' : 'var(--muted)',
-        cursor: 'pointer',
-        userSelect: 'none',
-        fontFamily: 'inherit',
-      }}
-    >
-      {children}
-    </button>
-  )
+// ── Dates ───────────────────────────────────────────────────────────────────
+
+/** "Thu 7 Aug" — the mobile eyebrow's right-hand side. */
+function shortDate(date: Date): string {
+  return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+/** "THURSDAY 7 AUGUST" — the desktop masthead runs it into the DISCOVER label. */
+function longDate(date: Date): string {
+  return date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()
 }
 
 // ── Inline styles ───────────────────────────────────────────────────────────
 
-const inputStyle: CSSProperties = {
-  flex: 1,
-  minWidth: 140,
-  fontSize: 13.5,
-  fontFamily: 'inherit',
-  padding: '10px 13px',
-  borderRadius: 12,
-  border: '1px solid var(--border)',
-  background: 'var(--inputbg)',
-  color: 'var(--text)',
-  outline: 'none',
+const eyebrow: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: '0.13em',
+  color: 'var(--muted)',
 }
 
-const tagChip: CSSProperties = {
-  fontSize: 12.5,
-  fontWeight: 600,
-  padding: '5px 11px',
-  borderRadius: 999,
+const backToFrontPage: CSSProperties = {
   border: 'none',
-  background: 'var(--chipbg)',
-  color: 'var(--chipcol)',
+  background: 'transparent',
   cursor: 'pointer',
   fontFamily: 'inherit',
-}
-
-const clearBtn: CSSProperties = {
-  fontSize: 12.5,
+  fontSize: 13,
   fontWeight: 700,
   color: 'var(--accent)',
-  background: 'transparent',
-  border: 'none',
-  cursor: 'pointer',
-  padding: '8px 0 0',
-  fontFamily: 'inherit',
-}
-
-const newRecipeBtn: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexShrink: 0,
-  cursor: 'pointer',
-  border: 'none',
-  borderRadius: 13,
-  padding: '12px 20px',
-  fontFamily: 'inherit',
-  fontSize: 14,
-  fontWeight: 800,
-  background: 'var(--accent-fill)',
-  color: 'var(--accent-ink)',
+  padding: '0 0 12px',
 }
 
 const loadMoreBtn: CSSProperties = {

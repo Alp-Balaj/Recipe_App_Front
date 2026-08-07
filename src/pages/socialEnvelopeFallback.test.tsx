@@ -165,7 +165,10 @@ describe('RecipeDetailPage envelope fallback (F1)', () => {
     )
     // Browse first: the card derives a cache-only, all-unknown envelope entry
     // (list surfaces deliberately do NOT fetch — no N-per-page fan-out).
+    // A search term is what puts the SocialRecipeCard list on /discover since
+    // the redesign — the front page's editorial cards carry no envelope at all.
     renderRoute('/discover')
+    await userEvent.type(await screen.findByLabelText('Search recipes'), 'udon')
     expect(await screen.findByText('Upgraded udon')).toBeInTheDocument()
     expect(socialRequests).toBe(0)
 

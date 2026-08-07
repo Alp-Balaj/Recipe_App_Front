@@ -52,7 +52,7 @@ describe('the notification bell', () => {
 
   it('is not rendered for a guest', async () => {
     renderGuestRoute('/discover')
-    await screen.findByText('Explore recipes')
+    await screen.findByText('DISCOVER')
 
     expect(screen.queryByRole('link', { name: /Notifications/ })).not.toBeInTheDocument()
   })

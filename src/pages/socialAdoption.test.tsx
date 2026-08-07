@@ -139,6 +139,16 @@ describe('RecipeDetailPage social adoption', () => {
   })
 })
 
+/**
+ * The Discover redesign made /discover open on an editorial front page whose
+ * cards are covers and rows, not social cards. The flat SocialRecipeCard list —
+ * what these tests are about — is what a search or a filter puts back, so they
+ * ask for it the way a user would.
+ */
+async function searchToResultList(term: string) {
+  await userEvent.type(await screen.findByLabelText('Search recipes'), term)
+}
+
 describe('BrowsePage social adoption', () => {
   it('browse cards carry like/save and like POSTs through the shared hook', async () => {
     const requests: string[] = []
@@ -155,6 +165,7 @@ describe('BrowsePage social adoption', () => {
       }),
     )
     renderRoute('/discover')
+    await searchToResultList('bao')
 
     expect(await screen.findByText('Browsable bao')).toBeInTheDocument()
     // Unknown envelope → no count shown, affordance reads "not yet liked".
@@ -179,6 +190,7 @@ describe('BrowsePage social adoption', () => {
       }),
     )
     renderRoute('/discover')
+    await searchToResultList('satay')
 
     expect(await screen.findByText('Savable satay')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Save recipe' }))
