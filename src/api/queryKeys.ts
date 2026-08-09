@@ -162,12 +162,26 @@ export const queryKeys = {
   admin: {
     /** Everything the admin surface reads — invalidate after any admin action. */
     all: ['admin'] as const,
-    /** GET /admin/overview — the three counts. */
+    /** GET /admin/overview — counts + AI-today (Admin Rework §5.1). */
     overview: () => ['admin', 'overview'] as const,
     /** GET /admin/reports keyset-paged queue, keyed by status filter (useInfiniteQuery). */
     reports: (status: string) => ['admin', 'reports', status] as const,
     /** GET /admin/audit — the append-only action log, newest first. */
     audit: () => ['admin', 'audit'] as const,
+
+    // Admin Rework (stream W0-FE) — SANCTIONED ADDITIVE EDIT to this frozen module,
+    // same rationale as the blocks above. Nothing already here changed.
+    /** GET /admin/users offset-paged browser, keyed by every filter (search/status/sort/page). */
+    users: (params: { search?: string; status?: string; sort?: string; page?: number }) =>
+      [...queryKeys.admin.all, 'users', params] as const,
+    /** GET /admin/users/{id} — one user's identity + moderation state. */
+    user: (id: string) => [...queryKeys.admin.all, 'user', id] as const,
+    /** GET /admin/users/{id}/usage — today + all-time AI usage and remaining budget. */
+    userUsage: (id: string) => [...queryKeys.admin.all, 'userUsage', id] as const,
+    /** GET /admin/events keyset-paged feed, keyed by category filter (useInfiniteQuery). */
+    events: (category?: string) => [...queryKeys.admin.all, 'events', category ?? 'all'] as const,
+    /** GET /admin/recipes/{id} — the read-only admin recipe view. */
+    recipe: (id: string) => [...queryKeys.admin.all, 'recipe', id] as const,
   },
 
   // open-loops slice 3 — SANCTIONED ADDITIVE EDIT to this frozen module, same rationale
