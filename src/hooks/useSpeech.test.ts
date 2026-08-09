@@ -47,4 +47,17 @@ describe('useSpeech', () => {
     unmount()
     expect(stubs.synth.cancelCount).toBe(2)
   })
+
+  it('ignores onerror from replaced utterances — rapid re-speak scenario', () => {
+    const { result } = renderHook(() => useSpeech())
+    act(() => result.current.speak('a'))
+    act(() => result.current.speak('b'))
+    // Fire the FIRST utterance's onerror (async cancellation callback)
+    // It should NOT clear the speaking state because B is still playing
+    act(() => stubs.spoken[0].onerror?.())
+    expect(result.current.speaking).toBe(true)
+    // Then fire the second's onend
+    act(() => stubs.spoken[1].onend?.())
+    expect(result.current.speaking).toBe(false)
+  })
 })

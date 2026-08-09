@@ -14,7 +14,7 @@
 // default voice is the one thing every platform ships working.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface SpeechApi {
   supported: boolean
@@ -31,14 +31,22 @@ export function useSpeech(): SpeechApi {
     'speechSynthesis' in window &&
     typeof window.SpeechSynthesisUtterance === 'function'
   const [speaking, setSpeaking] = useState(false)
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
 
   const speak = useCallback(
     (text: string) => {
       if (!supported || !text) return
       window.speechSynthesis.cancel()
       const utterance = new window.SpeechSynthesisUtterance(text)
-      utterance.onend = () => setSpeaking(false)
-      utterance.onerror = () => setSpeaking(false)
+      utteranceRef.current = utterance
+      utterance.onend = () => {
+        if (utteranceRef.current !== utterance) return
+        setSpeaking(false)
+      }
+      utterance.onerror = () => {
+        if (utteranceRef.current !== utterance) return
+        setSpeaking(false)
+      }
       setSpeaking(true)
       window.speechSynthesis.speak(utterance)
     },
@@ -47,13 +55,17 @@ export function useSpeech(): SpeechApi {
 
   const cancel = useCallback(() => {
     if (!supported) return
+    utteranceRef.current = null
     window.speechSynthesis.cancel()
     setSpeaking(false)
   }, [supported])
 
   useEffect(() => {
     if (!supported) return
-    return () => window.speechSynthesis.cancel()
+    return () => {
+      utteranceRef.current = null
+      window.speechSynthesis.cancel()
+    }
   }, [supported])
 
   return { supported, speaking, speak, cancel }
