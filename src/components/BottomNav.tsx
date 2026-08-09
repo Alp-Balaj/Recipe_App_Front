@@ -1,14 +1,36 @@
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { requiresAuth, useAuthGate } from '@/auth/AuthGateContext'
 import { PlusIcon } from './navIcons'
 import { NAV_ITEMS, activeTab } from './navItems'
 import { useBackdropPath } from './recipeCanvas'
+
+/**
+ * The chat composer docks its own send button in the FAB's slot, and the two
+ * were landing on top of each other: send sits at bottom 86 (--nav-h 74 + 12
+ * of padding) / right 18 at 42px, the FAB at bottom 88 / right 16 at 52px with
+ * z-index 5 — so the FAB enclosed 40 of send's 42 vertical pixels and won the
+ * tap. Users read the "+" AS send, because it was standing exactly where send
+ * should be.
+ *
+ * Hiding it here rather than nudging it: on /chat the FAB is the third route to
+ * a recipe, competing with grounded search and the generator that already live
+ * on that screen, and it is the only one of the three that is not what the page
+ * is for. Every other tab keeps it. Guests never reach this branch — /chat is
+ * account-only (requiresAuth), so the sign-in CTA that shares this slot cannot
+ * collide the same way.
+ */
+function hidesFab(pathname: string): boolean {
+  return pathname === '/chat' || pathname.startsWith('/chat/')
+}
 
 export default function BottomNav() {
   const navigate = useNavigate()
   const { isGuest, promptLogin, requireAuth } = useAuthGate()
   // An open recipe overlays the page it was opened from — keep that tab lit.
   const current = activeTab(useBackdropPath())
+  // Deliberately the REAL path, not the backdrop: a recipe opened from chat is
+  // a full overlay with no composer under it, so the FAB is welcome there.
+  const onChat = hidesFab(useLocation().pathname)
 
   // Guest access (D5): the tab bar keeps every tab; tapping an account-only
   // destination opens the login prompt instead of navigating.
@@ -48,7 +70,7 @@ export default function BottomNav() {
         >
           Log in / Sign up
         </button>
-      ) : (
+      ) : onChat ? null : (
         <button
           onClick={() => go('/recipes/new')}
           aria-label="New recipe"
