@@ -39,7 +39,7 @@
 //      failure this surface must not have.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import Modal from '@/components/ui/Modal'
 import type { RecipeIngredient, RecipeResponse, RecipeStep } from '@/api/types'
@@ -54,6 +54,9 @@ import { isQuotaError } from '@/api/generation'
 import { useCookTimers, formatClock } from '@/hooks/useCookTimers'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
+import { useSpeech } from '@/hooks/useSpeech'
+import { usePushToTalk, type PushToTalkState } from '@/hooks/usePushToTalk'
+import { composeSpokenStep, matchCommand, speakClock, type VoiceCommand } from '@/lib/cookVoice'
 import {
   MAX_SERVINGS,
   MIN_SERVINGS,
@@ -97,6 +100,15 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
   const timers = useCookTimers()
   const wakeLockHeld = useWakeLock(true)
 
+  // ── Voice (stream O) ─────────────────────────────────────────────────────
+  // The audio arbiter lives HERE, not in the hooks: half-duplex (stop the mic
+  // before speaking — the mic must not hear the app), the timer alarm
+  // interrupts speech and never the reverse, and every utterance dies with
+  // the state that queued it (step change, sheet close, unmount).
+  const speech = useSpeech()
+  const [readAloud, setReadAloud] = useState(false)
+  const spokenIndexRef = useRef(index)
+
   // The cook-and-rate write lives HERE, not in the finish panel, and the reason
   // is a bug the browser pass found rather than a preference. Firing a mutation
   // from a panel's mount effect works in tests and breaks in a dev browser:
@@ -121,6 +133,150 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
 
   const step = steps[index]
   const last = index === steps.length - 1
+
+  // One pipeline for every transcript, both mic buttons: grammar first — a
+  // match acts immediately and costs nothing; a non-match lands in the
+  // assistant's DRAFT and the user taps send. A misheard phrase must never
+  // become a paid model call by itself (the scanner's confirm-then-write
+  // shape, applied to spend).
+  const [voiceDraft, setVoiceDraft] = useState<{ text: string; id: number } | null>(null)
+  const voiceDraftSeq = useRef(0)
+
+  const runCommand = (command: VoiceCommand) => {
+    if (!step) return
+    switch (command) {
+      case 'next':
+        // Boundary no-ops get a spoken confirmation — the one case where the
+        // action is not visible on screen (nothing moves).
+        if (last) say('That was the last step.')
+        else setIndex((n) => Math.min(steps.length - 1, n + 1))
+        break
+      case 'back':
+        if (index === 0) say("You're on the first step.")
+        else setIndex((n) => Math.max(0, n - 1))
+        break
+      case 'repeat':
+        say(spokenStep()) // an explicit ask — speaks even with the toggle off
+        break
+      case 'startTimer': {
+        // State-aware, mirroring the on-screen affordances in StepFacts: no
+        // entry shows ▷ Start, paused shows ▷ Resume, running shows ⏸ Pause
+        // (nothing to start), done shows ✓ Done (a fresh "start" restarts it).
+        // The bug this fixes: unconditionally calling start() over a PAUSED
+        // timer at 3:20 remaining silently threw that progress away — "start
+        // the timer" is not what the screen offers in that state; "resume" is.
+        const duration = step.durationSeconds ?? 0
+        const timer = timers.timers[index]
+        if (!timer) {
+          if (duration > 0) timers.start(index, duration)
+          else say('This step has no timer.')
+        } else if (timer.done) {
+          if (duration > 0) timers.start(index, duration)
+          else say('This step has no timer.')
+        } else if (timer.running) {
+          say('The timer is already running.')
+        } else {
+          timers.resume(index)
+        }
+        break
+      }
+      case 'pauseTimer': {
+        // The one moment a cook most needs "stop timer" is while the alarm is
+        // RINGING — and pause() preserves `done`, so it would do nothing.
+        // Ringing dismisses (reset, the same action the ✓ Done chip takes);
+        // running goes silent (pause, visibly); already paused says so rather
+        // than the misleading "no timer is running" copy; anything else has
+        // nothing to stop.
+        const timer = timers.timers[index]
+        if (timer?.done) timers.reset(index)
+        else if (timer?.running) timers.pause(index)
+        else if (timer) say('The timer is already paused.')
+        else say('No timer is running on this step.')
+        break
+      }
+      case 'howLong': {
+        const timer = timers.timers[index]
+        if (timer && !timer.done) say(speakClock(timer.remaining))
+        else say('No timer is running on this step.')
+        break
+      }
+    }
+  }
+
+  const handleTranscript = (raw: string) => {
+    const command = matchCommand(raw)
+    if (command) {
+      runCommand(command)
+      return
+    }
+    voiceDraftSeq.current += 1
+    setVoiceDraft({ text: raw, id: voiceDraftSeq.current })
+    setAssistantOpen(true)
+  }
+
+  const ptt = usePushToTalk(handleTranscript)
+
+  // Half-duplex, listening half: the mic must not hear the app, so a tap
+  // silences any speech BEFORE recognition opens. Never auto-resumed after
+  // speech — the next listen is the next tap.
+  const onMic = () => {
+    if (ptt.state === 'listening') {
+      ptt.stop()
+      return
+    }
+    speech.cancel()
+    ptt.start()
+  }
+
+  const spokenStep = useCallback(() => {
+    if (!step) return ''
+    const used = referencedIngredients(step, scaled)
+    return composeSpokenStep({ description: step.description, used, factor, servings })
+  }, [step, scaled, factor, servings])
+
+  // Half-duplex, speaking half: recognition is stopped before any utterance.
+  // say() is the ONE door to speech output so the rule cannot be forgotten at
+  // a call site. Depends on ptt.stop (referentially stable from the hook)
+  // rather than closing over the whole ptt object, so this never pins a
+  // stale mic reference from an earlier render.
+  const say = useCallback(
+    (text: string) => {
+      ptt.stop()
+      speech.speak(text)
+    },
+    [ptt.stop, speech.speak],
+  )
+
+  // Read the step on arrival while the toggle is on; kill leftovers when it is
+  // off. spokenIndexRef stops the toggle's own tap-speech (a user gesture,
+  // which iOS requires for first audio) from being repeated here, and never
+  // starts speech on mount (ref is seeded with the initial index).
+  useEffect(() => {
+    if (!step) return
+    if (spokenIndexRef.current === index) return
+    spokenIndexRef.current = index
+    if (readAloud) say(spokenStep())
+    else speech.cancel()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, readAloud, step, say, spokenStep, speech.cancel])
+
+  // The alarm outranks speech: a ringing timer is the one sound a cook must
+  // not miss, and the two-tone beep should never fight a paragraph of prose.
+  //
+  // This has to key on an EDGE, not the `ringing` LEVEL: if one timer's
+  // ✓ Done chip is already up, `ringing` is already true, and a SECOND timer
+  // hitting zero mid-speech leaves it true → true — a level-triggered effect
+  // never re-fires, and that second beep collides with whatever is being
+  // read. So the count of done-and-undismissed timers is tracked across
+  // renders, and speech is cancelled whenever that count goes UP, catching
+  // every new alarm rather than only the first.
+  const doneCount = timers.activeSteps.filter((i) => timers.timers[i].done).length
+  const doneCountRef = useRef(0)
+  useEffect(() => {
+    if (doneCount > doneCountRef.current) speech.cancel()
+    doneCountRef.current = doneCount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doneCount, speech.cancel])
 
   // Arrow keys move through the method. Modal traps Tab for focus, so the
   // arrows are what is left for a laptop propped on a counter — and they are
@@ -152,6 +308,18 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
         title={frozen.title}
         wakeLockHeld={wakeLockHeld}
         onExit={onExit}
+        readAloudSupported={speech.supported}
+        readAloud={readAloud}
+        onToggleReadAloud={() => {
+          if (readAloud) {
+            setReadAloud(false)
+            speech.cancel()
+          } else {
+            setReadAloud(true)
+            spokenIndexRef.current = index
+            say(spokenStep()) // from the gesture — iOS unlocks audio here
+          }
+        }}
       />
 
       <ServingsRow
@@ -208,6 +376,9 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
           logCook()
         }}
         onAsk={() => setAssistantOpen(true)}
+        micSupported={ptt.supported}
+        micState={ptt.state}
+        onMic={onMic}
       />
 
       {assistantOpen && (
@@ -215,7 +386,23 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
           recipe={frozen}
           servings={servings}
           requireAuth={requireAuth}
-          onClose={() => setAssistantOpen(false)}
+          voiceDraft={voiceDraft}
+          micSupported={ptt.supported}
+          micState={ptt.state}
+          onMic={onMic}
+          onAnswer={(answer, refused) => {
+            if (!readAloud) return
+            say(refused ? `The assistant declined this one. ${answer}` : answer)
+          }}
+          onClose={() => {
+            speech.cancel() // utterances die with the sheet that queued them
+            // The sheet unmounts on close; without this, the NEXT hand-opened
+            // sheet would remount its voiceDraft effect against this same
+            // stale transcript (already sent, or never sent) and clobber a
+            // blank draft with old words.
+            setVoiceDraft(null)
+            setAssistantOpen(false)
+          }}
         />
       )}
 
@@ -248,12 +435,18 @@ function Header({
   title,
   wakeLockHeld,
   onExit,
+  readAloudSupported,
+  readAloud,
+  onToggleReadAloud,
 }: {
   index: number
   count: number
   title: string
   wakeLockHeld: boolean
   onExit: () => void
+  readAloudSupported: boolean
+  readAloud: boolean
+  onToggleReadAloud: () => void
 }) {
   return (
     <div style={{ flexShrink: 0 }}>
@@ -276,6 +469,27 @@ function Header({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {/* Exists iff speechSynthesis does — the wake-lock badge's honesty
+              rule. Hidden, not disabled, on browsers without the API. */}
+          {readAloudSupported && (
+            <button
+              onClick={onToggleReadAloud}
+              aria-label={readAloud ? 'Stop reading aloud' : 'Read steps aloud'}
+              aria-pressed={readAloud}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: readAloud ? 'var(--accent)' : 'var(--surface2)',
+                color: readAloud ? 'var(--accent-ink)' : 'var(--text)',
+                border: 'none',
+                fontSize: 16,
+                cursor: 'pointer',
+              }}
+            >
+              🔊
+            </button>
+          )}
           {/* Shown only when a lock is actually HELD. A badge that claimed to
               keep the screen awake on a browser without the API would be worse
               than saying nothing — the promise is what people rely on. */}
@@ -600,6 +814,9 @@ function Footer({
   onNext,
   onFinish,
   onAsk,
+  micSupported,
+  micState,
+  onMic,
 }: {
   last: boolean
   atStart: boolean
@@ -607,24 +824,53 @@ function Footer({
   onNext: () => void
   onFinish: () => void
   onAsk: () => void
+  micSupported: boolean
+  micState: PushToTalkState
+  onMic: () => void
 }) {
   return (
     <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 12 }}>
-      <button
-        onClick={onAsk}
-        style={{
-          alignSelf: 'flex-start',
-          background: 'none',
-          border: 'none',
-          color: 'var(--accent)',
-          fontSize: 14,
-          fontWeight: 700,
-          cursor: 'pointer',
-          padding: '2px 0',
-        }}
-      >
-        ✻ Ask about this recipe
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <button
+          onClick={onAsk}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--accent)',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+            padding: '2px 0',
+          }}
+        >
+          ✻ Ask about this recipe
+        </button>
+        {micSupported && micState !== 'denied' && (
+          <button
+            onClick={onMic}
+            aria-label="Voice input"
+            aria-pressed={micState === 'listening'}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              background: micState === 'listening' ? 'var(--accent)' : 'var(--surface2)',
+              color: micState === 'listening' ? 'var(--accent-ink)' : 'var(--text)',
+              border: 'none',
+              fontSize: 16,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            🎤
+          </button>
+        )}
+        {micSupported && micState === 'denied' && (
+          <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+            Microphone access is off — voice input unavailable.
+          </span>
+        )}
+      </div>
       <div style={{ display: 'flex', gap: 10 }}>
         <Button
           onClick={onPrev}
@@ -660,11 +906,21 @@ function AssistantSheet({
   recipe,
   servings,
   requireAuth,
+  voiceDraft,
+  micSupported,
+  micState,
+  onMic,
+  onAnswer,
   onClose,
 }: {
   recipe: RecipeResponse
   servings: number
   requireAuth: () => boolean
+  voiceDraft: { text: string; id: number } | null
+  micSupported: boolean
+  micState: PushToTalkState
+  onMic: () => void
+  onAnswer: (answer: string, refused: boolean) => void
   onClose: () => void
 }) {
   const [turns, setTurns] = useState<Turn[]>([])
@@ -672,13 +928,26 @@ function AssistantSheet({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [callsRemaining, setCallsRemaining] = useState<number | null>(null)
+  const [trimmedNote, setTrimmedNote] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     // Optional call, not just an optional ref: jsdom has no scrollIntoView, and
     // an assistant that throws while scrolling would take cook mode down with it.
     endRef.current?.scrollIntoView?.({ block: 'end' })
   }, [turns, pending])
+
+  // A transcript is a DRAFT, not a send — the user confirms spend, and the
+  // visible text is where recognition errors get fixed. Truncation to the
+  // backend's limit happens HERE, said out loud inline, never silently at
+  // send time. Keyed on voiceDraft.id so the same words twice still land.
+  useEffect(() => {
+    if (!voiceDraft) return
+    setDraft(voiceDraft.text.slice(0, COOK_QUESTION_MAX_LENGTH))
+    setTrimmedNote(voiceDraft.text.length > COOK_QUESTION_MAX_LENGTH)
+    inputRef.current?.focus()
+  }, [voiceDraft])
 
   const send = async () => {
     const question = draft.trim()
@@ -694,6 +963,7 @@ function AssistantSheet({
     // never shows a question that was never asked (D18 point 2).
     setTurns((prev) => [...prev, { role: 'user', content: question }])
     setDraft('')
+    setTrimmedNote(false)
 
     try {
       const result = await askCookAssistant(recipe.id, {
@@ -705,6 +975,7 @@ function AssistantSheet({
       })
       setTurns((prev) => [...prev, { role: 'assistant', content: result.answer, refused: result.refused }])
       setCallsRemaining(result.budget.callsRemaining)
+      onAnswer(result.answer, result.refused)
     } catch (err) {
       setTurns((prev) => prev.slice(0, -1))
       setDraft(question)
@@ -836,6 +1107,12 @@ function AssistantSheet({
         </div>
       )}
 
+      {trimmedNote && (
+        <div style={{ flexShrink: 0, fontSize: 12.5, color: 'var(--muted)', marginBottom: 8 }}>
+          Heard more than {COOK_QUESTION_MAX_LENGTH} characters — trimmed to fit.
+        </div>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -844,6 +1121,7 @@ function AssistantSheet({
         style={{ flexShrink: 0, display: 'flex', gap: 8 }}
       >
         <input
+          ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={COOK_QUESTION_MAX_LENGTH}
@@ -861,6 +1139,32 @@ function AssistantSheet({
             outline: 'none',
           }}
         />
+        {micSupported && micState !== 'denied' && (
+          <button
+            type="button"
+            onClick={onMic}
+            aria-label="Voice input"
+            aria-pressed={micState === 'listening'}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              background: micState === 'listening' ? 'var(--accent)' : 'var(--surface2)',
+              color: micState === 'listening' ? 'var(--accent-ink)' : 'var(--text)',
+              border: 'none',
+              fontSize: 16,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            🎤
+          </button>
+        )}
+        {micSupported && micState === 'denied' && (
+          <span style={{ fontSize: 12.5, color: 'var(--muted)', alignSelf: 'center', flexShrink: 0 }}>
+            Microphone access is off — voice input unavailable.
+          </span>
+        )}
         <Button
           type="submit"
           disabled={pending || draft.trim().length === 0}

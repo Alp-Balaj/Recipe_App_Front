@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -7,6 +7,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
 import CookMode from './CookMode'
 import type { RecipeResponse } from '@/api/types'
+import { installSpeechStubs, removeSpeechApis, type SpeechStubs } from '@/test/speech'
 
 // Stream M. The five things cook mode promises, each tested as a promise rather
 // than as a render: the timer really counts the clock, the wake lock is only
@@ -503,5 +504,371 @@ describe('CookMode — finishing', () => {
     await userEvent.click(await screen.findByText('Done'))
 
     expect(onExit).toHaveBeenCalled()
+  })
+})
+
+// ── Read-aloud (stream O) ────────────────────────────────────────────────
+
+// The fixture's step 1 already fits what these need: a 120s duration (the
+// alarm-wins case) and an ingredient reference (butter, so the spoken form
+// carries a "Using: …" clause worth asserting on).
+describe('CookMode — read-aloud (stream O)', () => {
+  let stubs: SpeechStubs
+
+  beforeEach(() => {
+    stubs = installSpeechStubs()
+  })
+
+  it('hides the toggle entirely when speechSynthesis is absent', () => {
+    removeSpeechApis()
+    renderCookMode()
+    expect(screen.queryByRole('button', { name: /read steps aloud/i })).toBeNull()
+  })
+
+  it('speaks the current step when toggled on, from the tap itself', async () => {
+    renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+
+    expect(stubs.spoken).toHaveLength(1)
+    expect(stubs.spoken[0].text).toContain('Melt the butter in a heavy pan.')
+  })
+
+  it('speaks each step change while on, and the spoken text carries the scale sentence at 2x', async () => {
+    renderCookMode() // fixture: baseServings 4
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+
+    // Double the servings 4 → 8 via the existing ServingsRow control, then
+    // advance — the toggle's own tap-speech must not be the one we assert on.
+    await userEvent.click(screen.getByLabelText('One more serving'))
+    await userEvent.click(screen.getByLabelText('One more serving'))
+    await userEvent.click(screen.getByLabelText('One more serving'))
+    await userEvent.click(screen.getByLabelText('One more serving'))
+    await userEvent.click(screen.getByText('Next →'))
+
+    const lastSpoken = stubs.spoken[stubs.spoken.length - 1]
+    expect(lastSpoken.text).toMatch(/the spoken amounts are the ones to follow/)
+  })
+
+  it('does NOT speak on step change while off, and cancels leftovers', async () => {
+    renderCookMode()
+    await userEvent.click(screen.getByText('Next →'))
+    expect(stubs.spoken).toHaveLength(0)
+  })
+
+  // Fake timers throughout, fireEvent rather than userEvent — the same reason
+  // the "CookMode — timers" describe block above uses it: userEvent schedules
+  // its own timers between pointer events, which fights vi.advanceTimersByTime.
+  it('a ringing timer cancels speech — the alarm always wins', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture step 1: durationSeconds 120
+
+    await act(() => void fireEvent.click(screen.getByRole('button', { name: /read steps aloud/i })))
+    const cancelsBefore = stubs.synth.cancelCount
+
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(121_000))
+
+    expect(stubs.synth.cancelCount).toBeGreaterThan(cancelsBefore)
+    vi.useRealTimers()
+  })
+
+  it('unmounting the overlay cancels the global queue', async () => {
+    const { unmount } = renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+    unmount()
+
+    expect(stubs.synth.cancelCount).toBeGreaterThanOrEqual(2)
+  })
+})
+
+// ── Push-to-talk (stream O) ──────────────────────────────────────────────
+
+// Grammar first: a match acts immediately and free; a non-match lands in the
+// assistant's draft and costs nothing until the user taps send. The fixture's
+// step 1 duration (120s) is what "how long left" reads from.
+describe('CookMode — push-to-talk (stream O)', () => {
+  let stubs: SpeechStubs
+
+  beforeEach(() => {
+    stubs = installSpeechStubs()
+  })
+
+  const tapMic = async () => {
+    await userEvent.click(screen.getAllByRole('button', { name: /voice input/i })[0])
+  }
+
+  it('hides the mic when no recognition API exists (Firefox)', () => {
+    const w = window as unknown as Record<string, unknown>
+    delete w.SpeechRecognition
+    delete w.webkitSpeechRecognition
+    renderCookMode()
+    expect(screen.queryByRole('button', { name: /voice input/i })).toBeNull()
+  })
+
+  it('a spoken command drives the existing handler: "next" advances the step', async () => {
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('next'))
+    expect(screen.getByText(/step 2 of/i)).toBeInTheDocument()
+  })
+
+  it('"how long left" answers from the timer, spoken', async () => {
+    renderCookMode() // fixture step 1: durationSeconds 120
+    await userEvent.click(screen.getByRole('button', { name: /start/i }))
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('how long left'))
+    expect(stubs.spoken[stubs.spoken.length - 1].text).toMatch(/^(2 minutes|1 minute 5[0-9] seconds)/)
+  })
+
+  it('a non-match lands in the assistant DRAFT and is NOT sent', async () => {
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('can I use margarine instead of butter'))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    expect(input).toHaveValue('can I use margarine instead of butter')
+    expect(screen.queryAllByTestId('cook-turn')).toHaveLength(0) // nothing sent
+  })
+
+  it('an over-long transcript is truncated in the draft and says so inline', async () => {
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('x'.repeat(600)))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    expect((input as HTMLInputElement).value).toHaveLength(500)
+    expect(screen.getByText(/trimmed/i)).toBeInTheDocument()
+  })
+
+  it('HALF-DUPLEX: tapping the mic silences speech first; speaking stops the mic', async () => {
+    renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+    const cancels = stubs.synth.cancelCount
+    await tapMic()
+    expect(stubs.synth.cancelCount).toBeGreaterThan(cancels) // mic tap killed speech
+    // now the reverse: speaking (step change) aborts a live mic
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(stubs.recognitions[stubs.recognitions.length - 1].aborted).toBe(true)
+  })
+
+  it('a denied mic becomes one inline explanation, not a re-prompt loop', async () => {
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitError('not-allowed'))
+    expect(screen.getByText(/microphone access/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /voice input/i })).toBeNull()
+    expect(stubs.recognitions).toHaveLength(1)
+  })
+
+  it('a refused answer is SPOKEN as a refusal when read-aloud is on', async () => {
+    server.use(
+      http.post('*/recipes/:id/cook/ask', () =>
+        HttpResponse.json({
+          answer: 'That is not about this recipe.',
+          refused: true,
+          budget: {
+            dailyCallLimit: 50,
+            callsUsed: 1,
+            callsRemaining: 49,
+            dailyTokenLimit: 1,
+            tokensUsed: 0,
+            tokensRemaining: 1,
+            resetsAtUtc: '2026-08-07T00:00:00Z',
+          },
+        }),
+      ),
+    )
+    renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+    await userEvent.click(screen.getByText('✻ Ask about this recipe'))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    await userEvent.type(input, 'who won the league')
+    await userEvent.click(screen.getByText('Ask'))
+    await screen.findByText('That is not about this recipe.') // wait for the exchange to render
+    const lastSpoken = stubs.spoken[stubs.spoken.length - 1]
+    expect(lastSpoken.text).toMatch(/declined/i)
+    expect(lastSpoken.text).toContain('That is not about this recipe.')
+  })
+
+  // REGRESSION: voiceDraft used to outlive the sheet. The sheet unmounts on
+  // close, but the parent's voiceDraft state did not — so the NEXT hand-opened
+  // sheet remounted its draft-intake effect against the SAME old transcript
+  // (already sent) and clobbered a blank box with stale words.
+  it('sending a voice question, then closing and reopening the sheet, does not resurrect the old draft', async () => {
+    server.use(
+      http.post('*/recipes/:id/cook/ask', () =>
+        HttpResponse.json({
+          answer: 'Yes, margarine works here.',
+          refused: false,
+          budget: {
+            dailyCallLimit: 50,
+            callsUsed: 1,
+            callsRemaining: 49,
+            dailyTokenLimit: 1,
+            tokensUsed: 0,
+            tokensRemaining: 1,
+            resetsAtUtc: '2026-08-07T00:00:00Z',
+          },
+        }),
+      ),
+    )
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('can I use margarine instead of butter'))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    expect(input).toHaveValue('can I use margarine instead of butter')
+    await userEvent.click(screen.getByText('Ask'))
+    await screen.findByText('Yes, margarine works here.')
+
+    await userEvent.click(screen.getByRole('button', { name: /close the assistant/i }))
+    await userEvent.click(screen.getByText('✻ Ask about this recipe'))
+
+    const reopened = await screen.findByLabelText(/ask about this recipe/i)
+    expect(reopened).toHaveValue('')
+    expect(screen.queryByText(/trimmed/i)).toBeNull()
+  })
+
+  // REGRESSION guard for the type="button" fix: the sheet's own mic button
+  // sits inside the ask <form>, and a button with no explicit type defaults to
+  // "submit" — a mic tap would otherwise fire send() instead of opening the mic.
+  it('tapping the mic inside the sheet does not submit the form', async () => {
+    let posted = false
+    server.use(
+      http.post('*/recipes/:id/cook/ask', () => {
+        posted = true
+        return HttpResponse.json({
+          answer: 'unused',
+          refused: false,
+          budget: {
+            dailyCallLimit: 50,
+            callsUsed: 1,
+            callsRemaining: 49,
+            dailyTokenLimit: 1,
+            tokensUsed: 0,
+            tokensRemaining: 1,
+            resetsAtUtc: '2026-08-07T00:00:00Z',
+          },
+        })
+      }),
+    )
+    renderCookMode()
+    await userEvent.click(screen.getByText('✻ Ask about this recipe'))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    await userEvent.type(input, 'can I use oil?')
+
+    // Footer's mic is index 0; the sheet's own, inside the form, is the last.
+    const micButtons = screen.getAllByRole('button', { name: /voice input/i })
+    await userEvent.click(micButtons[micButtons.length - 1])
+
+    expect(posted).toBe(false)
+    expect(input).toHaveValue('can I use oil?')
+  })
+
+  it('closing the sheet cancels speech', async () => {
+    renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+    await userEvent.click(screen.getByText('✻ Ask about this recipe'))
+    const cancels = stubs.synth.cancelCount
+    await userEvent.click(screen.getByRole('button', { name: /close the assistant/i }))
+    expect(stubs.synth.cancelCount).toBeGreaterThan(cancels)
+  })
+
+  // AUTHORIZED ADDITION: pauseTimer used to call timers.pause() unconditionally,
+  // which preserves `done` — so "stop timer" while the alarm was RINGING did
+  // nothing, the one moment a cook most needs it to do something. It must
+  // dismiss (reset), not just go quiet.
+  it('"stop timer" while ringing dismisses the alarm, not just silences it', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture step 1: durationSeconds 120
+    await act(() => void fireEvent.click(screen.getByRole('button', { name: /start/i })))
+    await act(() => vi.advanceTimersByTimeAsync(121_000))
+    expect(screen.getByText('✓ Done')).toBeInTheDocument()
+
+    await act(() => void fireEvent.click(screen.getAllByRole('button', { name: /voice input/i })[0]))
+    act(() => stubs.recognitions[0].emitFinal('stop timer'))
+
+    expect(screen.queryByText('✓ Done')).not.toBeInTheDocument()
+    expect(screen.getByText('▷ Start')).toBeInTheDocument() // reset, not just paused
+    expect(screen.getByText('Step 1 of 3')).toBeInTheDocument() // no crash
+    vi.useRealTimers()
+  })
+
+  // AUTHORIZED ADDITION (Finding 1): startTimer used to call timers.start()
+  // UNCONDITIONALLY, which restarts from full — "start the timer" spoken over
+  // a paused timer at 1:40 remaining used to silently reset it to 2:00. The
+  // on-screen control in that state is ▷ Resume, and the voice command has to
+  // mirror it: resume, not restart.
+  it('"start timer" spoken over a PAUSED timer resumes — remaining is preserved, not reset', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture step 1: durationSeconds 120
+
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(20_000))
+    await act(() => void fireEvent.click(screen.getByText('⏸ Pause')))
+    expect(screen.getByText('1:40')).toBeInTheDocument()
+
+    await act(() => void fireEvent.click(screen.getAllByRole('button', { name: /voice input/i })[0]))
+    act(() => stubs.recognitions[0].emitFinal('start timer'))
+
+    // Resumed, not restarted: reads 1:40 right after the command, not 2:00...
+    expect(screen.getByText('1:40')).toBeInTheDocument()
+    expect(screen.getByText('⏸ Pause')).toBeInTheDocument() // running again
+    // ...and counts DOWN from there.
+    await act(() => vi.advanceTimersByTimeAsync(10_000))
+    expect(screen.getByText('1:30')).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  // AUTHORIZED ADDITION (Finding 1): the mirror case — "start timer" spoken
+  // while the timer is already RUNNING must not touch it (no reset, no
+  // restart) and should say so, the same way pauseTimer already speaks
+  // instead of silently no-opping.
+  it('"start timer" while already running leaves the timer untouched and speaks feedback', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture step 1: durationSeconds 120
+
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(20_000))
+    expect(screen.getByText('1:40')).toBeInTheDocument()
+
+    await act(() => void fireEvent.click(screen.getAllByRole('button', { name: /voice input/i })[0]))
+    act(() => stubs.recognitions[0].emitFinal('start timer'))
+
+    // Untouched: still counting from where it was, still running.
+    expect(screen.getByText('1:40')).toBeInTheDocument()
+    expect(screen.getByText('⏸ Pause')).toBeInTheDocument()
+    expect(stubs.spoken[stubs.spoken.length - 1].text).toMatch(/already running/i)
+    vi.useRealTimers()
+  })
+
+  // AUTHORIZED ADDITION (Finding 2): the alarm-interrupts-speech effect used
+  // to key on `timers.ringing`, a LEVEL rather than an EDGE. If one timer's
+  // ✓ Done chip is already up, `ringing` is already true — so a SECOND timer
+  // reaching zero while speech is in flight leaves `ringing` true → true, a
+  // level-triggered effect never re-fires, and the second alarm's beep
+  // collides with whatever prose is being read. Diffing the count of done,
+  // undismissed timers catches that second alarm too.
+  it('a second timer finishing mid-speech cancels it, even with an earlier alarm still undismissed', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture: step 1 durationSeconds 120, step 2 durationSeconds 1500
+
+    await act(() => void fireEvent.click(screen.getByRole('button', { name: /read steps aloud/i })))
+
+    // Step 1's timer finishes and its ✓ Done chip stays up, undismissed —
+    // `ringing` is already true from here on.
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(121_000))
+    expect(screen.getByText('✓ Done')).toBeInTheDocument()
+
+    // Move to step 2 — read-aloud speaks it, i.e. speech is now in flight.
+    await act(() => void fireEvent.click(screen.getByText('Next →')))
+    const cancelsBefore = stubs.synth.cancelCount
+
+    // Start step 2's timer and let IT finish too, while step 1's chip is
+    // still up. A level check on `ringing` (true the whole time) would never
+    // fire again here; the count must go from 1 done timer to 2.
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(1_500_000))
+
+    expect(stubs.synth.cancelCount).toBeGreaterThan(cancelsBefore)
+    vi.useRealTimers()
   })
 })
