@@ -31,13 +31,15 @@ const STATIC_PAGE_IMPORT = /import\s+[^{;]*?\s+from\s+['"](?:@\/|\.\/|\.\.\/)pag
 
 describe('route-level code splitting', () => {
   it('declares every page lazily in one place', () => {
-    // 19 page components + the `page()` helper. If a twentieth page module
+    // 25 page components + the `page()` helper. If a twenty-sixth page module
     // is ever added to the router it belongs here too, and this count is the
     // reminder. (Stream K raised it from 16 when /welcome's OnboardingPage
     // landed; L raised it to 18 for /recipes/import; N raised it to 19 for
-    // /scan — three streams in, the reminder keeps working as intended.)
+    // /scan; Admin Rework's W0-FE raised it to 25, swapping the single
+    // AdminPage chunk for AdminLayout + one chunk per admin tab/detail page —
+    // four streams in, the reminder keeps working as intended.)
     const pages = Object.keys(routeChunks).filter((k) => k !== 'page')
-    expect(pages).toHaveLength(19)
+    expect(pages).toHaveLength(25)
 
     // React.lazy returns an exotic object, not a function component — the
     // $$typeof tag is what distinguishes it from a directly-imported page.
