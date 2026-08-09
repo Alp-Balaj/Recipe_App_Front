@@ -159,20 +159,38 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
         say(spokenStep()) // an explicit ask — speaks even with the toggle off
         break
       case 'startTimer': {
+        // State-aware, mirroring the on-screen affordances in StepFacts: no
+        // entry shows ▷ Start, paused shows ▷ Resume, running shows ⏸ Pause
+        // (nothing to start), done shows ✓ Done (a fresh "start" restarts it).
+        // The bug this fixes: unconditionally calling start() over a PAUSED
+        // timer at 3:20 remaining silently threw that progress away — "start
+        // the timer" is not what the screen offers in that state; "resume" is.
         const duration = step.durationSeconds ?? 0
-        if (duration > 0) timers.start(index, duration)
-        else say('This step has no timer.')
+        const timer = timers.timers[index]
+        if (!timer) {
+          if (duration > 0) timers.start(index, duration)
+          else say('This step has no timer.')
+        } else if (timer.done) {
+          if (duration > 0) timers.start(index, duration)
+          else say('This step has no timer.')
+        } else if (timer.running) {
+          say('The timer is already running.')
+        } else {
+          timers.resume(index)
+        }
         break
       }
       case 'pauseTimer': {
         // The one moment a cook most needs "stop timer" is while the alarm is
         // RINGING — and pause() preserves `done`, so it would do nothing.
         // Ringing dismisses (reset, the same action the ✓ Done chip takes);
-        // running goes silent (pause, visibly); anything else has nothing to
-        // stop.
+        // running goes silent (pause, visibly); already paused says so rather
+        // than the misleading "no timer is running" copy; anything else has
+        // nothing to stop.
         const timer = timers.timers[index]
         if (timer?.done) timers.reset(index)
         else if (timer?.running) timers.pause(index)
+        else if (timer) say('The timer is already paused.')
         else say('No timer is running on this step.')
         break
       }
@@ -244,10 +262,21 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
 
   // The alarm outranks speech: a ringing timer is the one sound a cook must
   // not miss, and the two-tone beep should never fight a paragraph of prose.
+  //
+  // This has to key on an EDGE, not the `ringing` LEVEL: if one timer's
+  // ✓ Done chip is already up, `ringing` is already true, and a SECOND timer
+  // hitting zero mid-speech leaves it true → true — a level-triggered effect
+  // never re-fires, and that second beep collides with whatever is being
+  // read. So the count of done-and-undismissed timers is tracked across
+  // renders, and speech is cancelled whenever that count goes UP, catching
+  // every new alarm rather than only the first.
+  const doneCount = timers.activeSteps.filter((i) => timers.timers[i].done).length
+  const doneCountRef = useRef(0)
   useEffect(() => {
-    if (timers.ringing) speech.cancel()
+    if (doneCount > doneCountRef.current) speech.cancel()
+    doneCountRef.current = doneCount
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timers.ringing, speech.cancel])
+  }, [doneCount, speech.cancel])
 
   // Arrow keys move through the method. Modal traps Tab for focus, so the
   // arrows are what is left for a laptop propped on a counter — and they are
@@ -805,7 +834,6 @@ function Footer({
         <button
           onClick={onAsk}
           style={{
-            alignSelf: 'flex-start',
             background: 'none',
             border: 'none',
             color: 'var(--accent)',

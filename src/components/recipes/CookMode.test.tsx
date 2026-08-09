@@ -790,4 +790,85 @@ describe('CookMode — push-to-talk (stream O)', () => {
     expect(screen.getByText('Step 1 of 3')).toBeInTheDocument() // no crash
     vi.useRealTimers()
   })
+
+  // AUTHORIZED ADDITION (Finding 1): startTimer used to call timers.start()
+  // UNCONDITIONALLY, which restarts from full — "start the timer" spoken over
+  // a paused timer at 1:40 remaining used to silently reset it to 2:00. The
+  // on-screen control in that state is ▷ Resume, and the voice command has to
+  // mirror it: resume, not restart.
+  it('"start timer" spoken over a PAUSED timer resumes — remaining is preserved, not reset', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture step 1: durationSeconds 120
+
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(20_000))
+    await act(() => void fireEvent.click(screen.getByText('⏸ Pause')))
+    expect(screen.getByText('1:40')).toBeInTheDocument()
+
+    await act(() => void fireEvent.click(screen.getAllByRole('button', { name: /voice input/i })[0]))
+    act(() => stubs.recognitions[0].emitFinal('start timer'))
+
+    // Resumed, not restarted: reads 1:40 right after the command, not 2:00...
+    expect(screen.getByText('1:40')).toBeInTheDocument()
+    expect(screen.getByText('⏸ Pause')).toBeInTheDocument() // running again
+    // ...and counts DOWN from there.
+    await act(() => vi.advanceTimersByTimeAsync(10_000))
+    expect(screen.getByText('1:30')).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  // AUTHORIZED ADDITION (Finding 1): the mirror case — "start timer" spoken
+  // while the timer is already RUNNING must not touch it (no reset, no
+  // restart) and should say so, the same way pauseTimer already speaks
+  // instead of silently no-opping.
+  it('"start timer" while already running leaves the timer untouched and speaks feedback', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture step 1: durationSeconds 120
+
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(20_000))
+    expect(screen.getByText('1:40')).toBeInTheDocument()
+
+    await act(() => void fireEvent.click(screen.getAllByRole('button', { name: /voice input/i })[0]))
+    act(() => stubs.recognitions[0].emitFinal('start timer'))
+
+    // Untouched: still counting from where it was, still running.
+    expect(screen.getByText('1:40')).toBeInTheDocument()
+    expect(screen.getByText('⏸ Pause')).toBeInTheDocument()
+    expect(stubs.spoken[stubs.spoken.length - 1].text).toMatch(/already running/i)
+    vi.useRealTimers()
+  })
+
+  // AUTHORIZED ADDITION (Finding 2): the alarm-interrupts-speech effect used
+  // to key on `timers.ringing`, a LEVEL rather than an EDGE. If one timer's
+  // ✓ Done chip is already up, `ringing` is already true — so a SECOND timer
+  // reaching zero while speech is in flight leaves `ringing` true → true, a
+  // level-triggered effect never re-fires, and the second alarm's beep
+  // collides with whatever prose is being read. Diffing the count of done,
+  // undismissed timers catches that second alarm too.
+  it('a second timer finishing mid-speech cancels it, even with an earlier alarm still undismissed', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture: step 1 durationSeconds 120, step 2 durationSeconds 1500
+
+    await act(() => void fireEvent.click(screen.getByRole('button', { name: /read steps aloud/i })))
+
+    // Step 1's timer finishes and its ✓ Done chip stays up, undismissed —
+    // `ringing` is already true from here on.
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(121_000))
+    expect(screen.getByText('✓ Done')).toBeInTheDocument()
+
+    // Move to step 2 — read-aloud speaks it, i.e. speech is now in flight.
+    await act(() => void fireEvent.click(screen.getByText('Next →')))
+    const cancelsBefore = stubs.synth.cancelCount
+
+    // Start step 2's timer and let IT finish too, while step 1's chip is
+    // still up. A level check on `ringing` (true the whole time) would never
+    // fire again here; the count must go from 1 done timer to 2.
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(1_500_000))
+
+    expect(stubs.synth.cancelCount).toBeGreaterThan(cancelsBefore)
+    vi.useRealTimers()
+  })
 })
