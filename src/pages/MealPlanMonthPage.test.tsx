@@ -124,6 +124,46 @@ describe('the month view', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?m=2026-08'))
   })
 
+  // The regression the strip exists to prevent: the week link used to live in
+  // the desktop-only rail, which left /plan/week/:start with no front door at
+  // all on a phone. These run on the default (mobile) matchMedia stub.
+  describe('the week strip', () => {
+    it('gives every row of the grid its own way into that week', async () => {
+      stubMonth()
+      renderRoute('/plan?m=2026-07')
+
+      const weeks = await screen.findAllByRole('link', { name: /^week of /i })
+      expect(weeks.map((link) => link.getAttribute('href'))).toEqual([
+        '/plan/week/2026-06-29',
+        '/plan/week/2026-07-06',
+        '/plan/week/2026-07-13',
+        '/plan/week/2026-07-20',
+        '/plan/week/2026-07-27',
+      ])
+    })
+
+    it("carries the row's coverage and the days it covers", async () => {
+      stubMonth()
+      renderRoute('/plan?m=2026-07')
+
+      const strip = await screen.findByRole('link', { name: /week of 2026-07-27/i })
+      await waitFor(() => expect(within(strip).getByText('5/21')).toBeInTheDocument())
+      expect(within(strip).getByText('27 Jul – 2 Aug')).toBeInTheDocument()
+    })
+
+    // Density is real, not decoration: at 339px the strip has room for coverage
+    // and the range, and the desktop keeps the rail's other two figures.
+    it('leaves cook time and dish count to the desktop, where they fit', async () => {
+      stubMonth()
+      renderRoute('/plan?m=2026-07')
+
+      const strip = await screen.findByRole('link', { name: /week of 2026-07-27/i })
+      await waitFor(() => expect(within(strip).getByText('5/21')).toBeInTheDocument())
+      expect(within(strip).queryByText('2h 35m')).not.toBeInTheDocument()
+      expect(within(strip).queryByText('3 dishes')).not.toBeInTheDocument()
+    })
+  })
+
   describe('on desktop', () => {
     beforeEach(() => goDesktop())
 
@@ -153,14 +193,27 @@ describe('the month view', () => {
       })
     })
 
-    it('lays the month out Monday-first, with a column for the week', async () => {
+    it('lays the month out Monday-first, seven columns and no eighth', async () => {
       stubMonth()
       renderRoute('/plan?m=2026-07')
 
       await waitFor(() => expect(screen.getByText('Mon')).toBeInTheDocument())
-      for (const day of ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Week']) {
+      for (const day of ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
         expect(screen.getByText(day)).toBeInTheDocument()
       }
+      // The rail's 76px column and the "Week" heading over it are gone — that
+      // width went back to the seven day cells when the strip took its place.
+      expect(screen.queryByText('Week')).not.toBeInTheDocument()
+    })
+
+    // The rail's 76px could hold three stacked figures and nothing else. The
+    // strip has the row's whole width, so the range stops being unaffordable.
+    it('names the days the week covers, which the rail had no room for', async () => {
+      stubMonth()
+      renderRoute('/plan?m=2026-07')
+
+      const strip = await screen.findByRole('link', { name: /week of 2026-07-27/i })
+      await waitFor(() => expect(within(strip).getByText('27 Jul – 2 Aug')).toBeInTheDocument())
     })
 
     it("names the week's dishes in the day cells", async () => {
