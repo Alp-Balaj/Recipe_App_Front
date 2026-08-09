@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { InfiniteData } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
@@ -15,10 +15,23 @@ import { useChatApi } from '@/components/chat/ChatApiContext'
 import ConversationDrawer from '@/components/chat/ConversationDrawer'
 import { flattenConversations, useConversations } from '@/components/chat/useConversations'
 import MessageBubble, { TypingBubble } from '@/components/chat/MessageBubble'
-import GenerateRecipeCard from '@/components/chat/GenerateRecipeCard'
+import CreatePanel, { CreateHandoff } from '@/components/chat/CreatePanel'
+import { useCreateRecipe, MAX_PROMPT_LENGTH } from '@/components/chat/useCreateRecipe'
+import { SearchIcon, SendArrowIcon, SparkIcon } from '@/components/chat/chatIcons'
 import StateBlock from '@/components/ui/StateBlock'
 
 const PAGE_LIMIT = 20
+
+/**
+ * Which engine the composer is talking to.
+ *
+ * It rides in the QUERY STRING (`?mode=create`), not the path, because
+ * `src/router.tsx` is frozen — a mode is a state of the chat surface, not a
+ * seventh route, and this way the choice survives a refresh and a shared link
+ * without registering anything. Anything other than `create` means library, so
+ * a mangled URL degrades to the grounded tab rather than the spending one.
+ */
+type ChatMode = 'library' | 'create'
 
 // The send mutation resolves to one of two shapes: a further turn in the active
 // conversation, or a brand-new conversation (which also carries its summary so
@@ -34,14 +47,26 @@ type SendResult =
  * input sends a message and an assistant typing state shows while the reply is in
  * flight. On a fresh /chat the first send creates the conversation and routes to
  * its /chat/:id. The ☰ button opens the ConversationDrawer (switch/rename/delete).
+ *
+ * The page carries TWO engines and they are not interchangeable. Library is
+ * grounded — the assistant may only point at recipes that already exist. Create
+ * invents one and saves it, spending a call from a daily budget. They used to
+ * share a screen, each with its own text field, which left the composer unable
+ * to say which of them the next Enter would reach. Now they are tabs: one
+ * composer, and every visible thing about it — the tab, the header, the
+ * placeholder, the send icon — follows the mode.
  */
 export default function ChatPage() {
   const api = useChatApi()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { conversationId } = useParams()
-  const { mode, toggleMode } = useOutletContext<ThemeContextValue>()
+  const { mode: themeMode, toggleMode } = useOutletContext<ThemeContextValue>()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const chatMode: ChatMode = searchParams.get('mode') === 'create' ? 'create' : 'library'
+  const isCreate = chatMode === 'create'
 
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<string | null>(null)
@@ -49,6 +74,16 @@ export default function ChatPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const didInitialScroll = useRef(false)
+
+  function setChatMode(next: ChatMode) {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'create') params.set('mode', 'create')
+    else params.delete('mode')
+    // replace: switching engines is not a place worth stepping back through.
+    setSearchParams(params, { replace: true })
+    // A brief written for one engine is rarely the right prompt for the other.
+    setDraft('')
+  }
 
   // The conversation list feeds the header title (and the drawer). Cheap: one
   // shared cache, already loaded whenever the drawer has been opened.
@@ -136,16 +171,33 @@ export default function ChatPage() {
     didInitialScroll.current = false
   }, [conversationId])
 
+  // The generate lane. Mounted in both modes so a result survives a trip back to
+  // Library and in again — the tab is a view onto the same page, not a remount.
+  const create = useCreateRecipe(conversationId)
+
+  const overLength = isCreate && draft.trim().length > MAX_PROMPT_LENGTH
+  const canGenerate = !!draft.trim() && !overLength && !create.isPending && !create.isQuotaSpent
+  const canSend = isCreate ? canGenerate : !!draft.trim() && !send.isPending
+  const showEmptyState = !isCreate && !conversationId && !pending && !send.isPending
+
   function submit() {
     const content = draft.trim()
-    if (!content || send.isPending) return
+    if (!content) return
+
+    if (isCreate) {
+      if (!canGenerate) return
+      setDraft('')
+      create.submit(content)
+      requestAnimationFrame(scrollToBottom)
+      return
+    }
+
+    if (send.isPending) return
     setDraft('')
     setPending(content)
     send.mutate(content)
     requestAnimationFrame(scrollToBottom)
   }
-
-  const showEmptyState = !conversationId && !pending && !send.isPending
 
   return (
     <>
@@ -210,9 +262,32 @@ export default function ChatPage() {
                   textOverflow: 'ellipsis',
                 }}
               >
-                {activeTitle ?? 'What are we cooking?'}
+                {isCreate ? 'Create a recipe' : activeTitle ?? 'What are we cooking?'}
               </div>
-              <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 3 }}>AI recipe assistant</div>
+              {/* These tabs stand where an "AI recipe assistant" subtitle used to.
+                  That line was decoration — it named the page, which the user had
+                  just tapped to get to. The tabs say something the user cannot
+                  otherwise know: which of two engines is listening. */}
+              <div role="tablist" aria-label="Chat mode" style={tabRow}>
+                <button
+                  role="tab"
+                  aria-selected={!isCreate}
+                  onClick={() => setChatMode('library')}
+                  style={{ ...tabBase, ...(isCreate ? tabIdle : tabLibraryOn) }}
+                >
+                  <SearchIcon size={13} />
+                  Library
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={isCreate}
+                  onClick={() => setChatMode('create')}
+                  style={{ ...tabBase, ...(isCreate ? tabCreateOn : tabIdle) }}
+                >
+                  <SparkIcon size={13} />
+                  Create
+                </button>
+              </div>
             </div>
           </div>
           {!isDesktop && (
@@ -236,13 +311,13 @@ export default function ChatPage() {
                 flexShrink: 0,
               }}
             >
-              {mode === 'dark' ? '☀' : '☾'}
+              {themeMode === 'dark' ? '☀' : '☾'}
             </button>
           )}
         </div>
 
         {/* Scroll-back: load older messages */}
-        {history.hasNextPage && (
+        {!isCreate && history.hasNextPage && (
           <div style={{ textAlign: 'center', marginBottom: 14 }}>
             <button
               onClick={() => history.fetchNextPage()}
@@ -263,7 +338,7 @@ export default function ChatPage() {
           </div>
         )}
 
-        {conversationId && history.isLoading && <StateBlock title="Loading…" />}
+        {!isCreate && conversationId && history.isLoading && <StateBlock title="Loading…" />}
 
         {/* New-conversation welcome (no active thread yet). */}
         {showEmptyState && (
@@ -284,12 +359,10 @@ export default function ChatPage() {
           </div>
         )}
 
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
-        ))}
+        {!isCreate && messages.map((message) => <MessageBubble key={message.id} message={message} />)}
 
         {/* Optimistic pending turn + typing indicator */}
-        {pending && (
+        {!isCreate && pending && (
           <div
             style={{
               background: 'var(--accent)',
@@ -307,17 +380,33 @@ export default function ChatPage() {
             {pending}
           </div>
         )}
-        {send.isPending && <TypingBubble />}
+        {!isCreate && send.isPending && <TypingBubble />}
 
-        {/* Stream E: the generator sits at the FOOT of the thread, after whatever
-            the (grounded) assistant just suggested — "none of these? then write me
-            a new one" is the moment it belongs to, and the two modes of generation
-            end up on one screen. Hidden while a turn is in flight so the two AI
-            actions can't be fired at each other. */}
-        {!send.isPending && <GenerateRecipeCard conversationId={conversationId} />}
+        {/* Stream E kept the generator at the FOOT of the thread — "none of these?
+            then write me a new one" is the moment it belongs to. That moment is
+            still right; what changed is that taking it up now moves you to a
+            surface that says what it does, instead of dropping a second text
+            field into a thread that already had one. Hidden while a turn is in
+            flight so the two AI actions can't be fired at each other. */}
+        {!isCreate && !send.isPending && <CreateHandoff onCreate={() => setChatMode('create')} />}
+
+        {isCreate && (
+          <CreatePanel
+            state={create}
+            conversationTitle={activeTitle}
+            onSearchInstead={() => setChatMode('library')}
+          />
+        )}
       </div>
 
-      {/* Input bar */}
+      {/* Input bar.
+          z-index is load-bearing, not cosmetic: BottomNav's "+" FAB is painted
+          after this page and carries z-index 5, and at bottom 88 / right 16 it
+          enclosed 40 of send's 42 vertical pixels — so the button users were
+          pressing to send was the one that navigates to the manual recipe form.
+          BottomNav now hides that FAB on /chat, and this stacking context is the
+          belt to its braces: nothing floated over the page can silently swallow
+          send again. */}
       <div
         style={{
           position: 'absolute',
@@ -329,6 +418,7 @@ export default function ChatPage() {
           display: 'flex',
           gap: 9,
           alignItems: 'center',
+          zIndex: 6,
         }}
       >
         <input
@@ -340,8 +430,15 @@ export default function ChatPage() {
               submit()
             }
           }}
-          placeholder={conversationId ? 'Refine or ask something else…' : 'Ask for a recipe idea…'}
-          aria-label="Message the assistant"
+          placeholder={
+            isCreate
+              ? 'Describe a dish…'
+              : conversationId
+                ? 'Refine or ask something else…'
+                : 'Search my recipes…'
+          }
+          disabled={isCreate && (create.isPending || create.isQuotaSpent)}
+          aria-label={isCreate ? 'Describe the recipe to generate' : 'Message the assistant'}
           style={{
             flex: 1,
             background: 'var(--inputbg)',
@@ -352,31 +449,91 @@ export default function ChatPage() {
             color: 'var(--text)',
             fontFamily: 'inherit',
             outline: 'none',
+            minWidth: 0,
           }}
         />
+        {/*
+          The send button is where the two engines are easiest to confuse, so it
+          carries the distinction three ways. The ICON is the one that matters:
+          an arrow means "send this", a spark means "invent something". Colour
+          only agrees with it — in the light theme --olive IS --accent-fill
+          (index.css:233), one step off --accent, so a colour-only signal would
+          say nothing there and everything in dark. Shape survives both themes,
+          greyscale, and colourblindness.
+        */}
         <button
           onClick={submit}
-          disabled={!draft.trim() || send.isPending}
-          aria-label="Send message"
+          disabled={!canSend}
+          aria-label={isCreate ? 'Generate recipe' : 'Send message'}
           style={{
             flexShrink: 0,
             width: 42,
             height: 42,
             borderRadius: '50%',
-            background: 'var(--accent)',
+            background: isCreate ? 'var(--olive)' : 'var(--accent)',
             border: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--accent-ink)',
-            fontSize: 18,
-            cursor: !draft.trim() || send.isPending ? 'default' : 'pointer',
-            opacity: !draft.trim() || send.isPending ? 0.55 : 1,
+            color: isCreate ? 'var(--olive-ink)' : 'var(--accent-ink)',
+            cursor: canSend ? 'pointer' : 'default',
+            opacity: canSend ? 1 : 0.55,
           }}
         >
-          ↑
+          {isCreate ? <SparkIcon size={17} /> : <SendArrowIcon size={18} />}
         </button>
       </div>
+
+      {overLength && (
+        <div role="status" style={overLengthNotice}>
+          That's a long brief — keep it under {MAX_PROMPT_LENGTH} characters.
+        </div>
+      )}
     </>
   )
+}
+
+const tabRow: CSSProperties = { display: 'flex', gap: 6, marginTop: 7 }
+
+const tabBase: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  fontFamily: 'inherit',
+  fontSize: 13,
+  fontWeight: 700,
+  padding: '6px 12px 7px',
+  borderRadius: 999,
+  border: '1px solid transparent',
+  background: 'none',
+  cursor: 'pointer',
+}
+
+const tabIdle: CSSProperties = { color: 'var(--muted)' }
+
+const tabLibraryOn: CSSProperties = {
+  background: 'var(--accent-soft)',
+  color: 'var(--accent)',
+  borderColor: 'var(--border)',
+}
+
+const tabCreateOn: CSSProperties = {
+  background: 'var(--accent-soft)',
+  color: 'var(--olive)',
+  borderColor: 'var(--olive)',
+}
+
+const overLengthNotice: CSSProperties = {
+  position: 'absolute',
+  left: 18,
+  right: 18,
+  bottom: 'calc(var(--nav-h, 74px) + 64px)',
+  zIndex: 6,
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 10,
+  padding: '8px 12px',
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: 'var(--muted)',
 }

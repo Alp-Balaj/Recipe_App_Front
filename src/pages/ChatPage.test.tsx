@@ -98,6 +98,84 @@ describe('ChatPage — a single conversation', () => {
   })
 })
 
+describe('ChatPage — Library and Create modes', () => {
+  // The page carries two engines: grounded search over recipes that exist, and
+  // a generator that invents one and spends a daily AI call. They used to share
+  // a screen with a text field each, so the composer could not say which of
+  // them the next Enter would reach. These cases pin the cues that now answer
+  // that question before the user commits to anything.
+
+  it('opens in Library, and the composer talks to the assistant', async () => {
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }), `/chat/${CONV_1}`)
+
+    expect(await screen.findByRole('tab', { name: /Library/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /Create/ })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByLabelText('Message the assistant')).toBeInTheDocument()
+  })
+
+  it('switching to Create swaps the surface, the composer and the send action', async () => {
+    const user = userEvent.setup()
+    const router = renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }), `/chat/${CONV_1}`)
+    await screen.findByText(/Tell me what you're craving/i)
+
+    await user.click(screen.getByRole('tab', { name: /Create/ }))
+
+    // The mode rides in the query string, not the path — router.tsx is frozen.
+    await waitFor(() => expect(router.state.location.search).toBe('?mode=create'))
+    expect(router.state.location.pathname).toBe(`/chat/${CONV_1}`)
+
+    // A different engine, said four ways: header, tab, composer label, send action.
+    expect(screen.getByText('Create a recipe')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Create/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('Describe the recipe to generate')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Generate recipe' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Message the assistant')).not.toBeInTheDocument()
+
+    // And the grounded thread is not left underneath to be mistaken for output.
+    expect(screen.queryByText(/Tell me what you're craving/i)).not.toBeInTheDocument()
+  })
+
+  it('says which thread it is drawing context from', async () => {
+    // generateRecipe sends conversationId, which both records provenance and
+    // feeds the generator the thread's recent messages. The user should know.
+    const user = userEvent.setup()
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 3 }), `/chat/${CONV_1}`)
+    await screen.findByText(/Tell me what you're craving/i)
+
+    await user.click(screen.getByRole('tab', { name: /Create/ }))
+    expect(await screen.findByText(/Using context from/)).toHaveTextContent('Weeknight dinners')
+  })
+
+  it('the foot-of-thread handoff is the route into Create, and carries no second input', async () => {
+    const user = userEvent.setup()
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }), `/chat/${CONV_1}`)
+    await screen.findByText(/Tell me what you're craving/i)
+
+    const handoff = screen.getByRole('button', { name: /Write me a new one/ })
+    await user.click(handoff)
+
+    expect(await screen.findByLabelText('Describe the recipe to generate')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Write me a new one/ })).not.toBeInTheDocument()
+  })
+
+  it('returns to Library, dropping the mode from the URL', async () => {
+    const user = userEvent.setup()
+    const router = renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }), `/chat/${CONV_1}?mode=create`)
+
+    await user.click(await screen.findByRole('tab', { name: /Library/ }))
+
+    await waitFor(() => expect(router.state.location.search).toBe(''))
+    expect(await screen.findByLabelText('Message the assistant')).toBeInTheDocument()
+  })
+
+  it('treats an unknown mode as Library rather than the surface that spends', async () => {
+    renderChat(createMockChatApi({ latencyMs: 0, seedCount: 1 }), `/chat/${CONV_1}?mode=banana`)
+
+    expect(await screen.findByLabelText('Message the assistant')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Library/ })).toHaveAttribute('aria-selected', 'true')
+  })
+})
+
 describe('ChatPage — multiple conversations', () => {
   it('a first send on /chat creates a conversation and deep-links to /chat/:id', async () => {
     const user = userEvent.setup()
