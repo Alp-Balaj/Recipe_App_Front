@@ -81,7 +81,7 @@ export function useAdminMutation() {
   }
 }
 
-export function CountTile({ label, value, accent }: { label: string; value?: number; accent?: boolean }) {
+export function CountTile({ label, value, accent, sub }: { label: string; value?: number; accent?: boolean; sub?: string }) {
   return (
     <div style={countTile}>
       <div style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted)', fontWeight: 700 }}>
@@ -99,6 +99,11 @@ export function CountTile({ label, value, accent }: { label: string; value?: num
       >
         {value ?? '—'}
       </div>
+      {sub && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+          {sub}
+        </div>
+      )}
     </div>
   )
 }
