@@ -36,6 +36,27 @@ export default function FollowListPage() {
 
   const [term, setTerm] = useState('')
   const [q, setQ] = useState('')
+
+  // Both routes share ONE lazy() identity (so Rollup keeps this a single
+  // chunk) and react-router renders `match.route.element` with no `key`, so
+  // switching tabs reconciles this component IN PLACE rather than
+  // remounting it — `term`/`q` are plain state and would otherwise survive
+  // the switch, leaving the Following list filtered by whatever the reader
+  // typed on Followers. Reset both when `kind` changes instead of relying on
+  // a remount.
+  //
+  // A mid-flight debounce timer cannot land after this and re-apply the old
+  // term: setTerm('') here changes `term`, and React re-runs effects by
+  // comparing each effect's OWN dependency array across renders — so the
+  // debounce effect below (keyed on [term]) always tears down its previous
+  // setTimeout (scheduled for the old term) before scheduling a new one for
+  // the reset value, regardless of the order these two effects are declared
+  // in.
+  useEffect(() => {
+    setTerm('')
+    setQ('')
+  }, [kind])
+
   useEffect(() => {
     const t = setTimeout(() => setQ(term.trim()), 300)
     return () => clearTimeout(t)

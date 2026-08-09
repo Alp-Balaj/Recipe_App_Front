@@ -90,10 +90,19 @@ describe('FollowListPage', () => {
     expect(screen.queryByRole('link', { name: /View full profile/ })).not.toBeInTheDocument()
   })
 
-  it('switching tabs clears the selection', async () => {
+  it('switching tabs clears the selection AND the search term', async () => {
     setViewport(true)
     server.use(
-      http.get('*/users/:id/following', () => HttpResponse.json({ items: [], nextCursor: null })),
+      http.get('*/users/:id/following', ({ request }) => {
+        const q = new URL(request.url).searchParams.get('q')
+        // Unfiltered → a real row; filtered by a leaked "zzz" → nothing. So
+        // whichever renders after the switch tells us directly whether the
+        // term survived.
+        return HttpResponse.json({
+          items: q ? [] : [makeFollowUser({ id: 'u3', username: 'chandra', recipeCount: 3 })],
+          nextCursor: null,
+        })
+      }),
     )
     const router = renderRoute('/users/target-1/followers?u=u1')
 
@@ -101,11 +110,22 @@ describe('FollowListPage', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?u=u1'))
     expect(await screen.findByRole('link', { name: /View full profile/ })).toBeInTheDocument()
 
+    // Type a term and switch tabs immediately, BEFORE the 300ms debounce can
+    // fire — this is the race the fix must close: a stale timer landing on
+    // the Following tab and re-applying the old term via setQ.
+    await userEvent.type(screen.getByRole('searchbox'), 'zzz')
     await userEvent.click(await screen.findByRole('link', { name: 'Following' }))
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/users/target-1/following'))
     expect(router.state.location.search).toBe('')
     expect(screen.queryByRole('link', { name: /View full profile/ })).not.toBeInTheDocument()
+
+    // The search box is empty and the Following tab's UNFILTERED list is
+    // showing — not the filtered-to-nothing result a leaked "zzz" (whether
+    // from surviving state or a stale debounce timer) would produce. This
+    // `waitFor` runs well past 300ms, so a timer that fires late is caught.
+    await waitFor(() => expect(screen.getByRole('searchbox')).toHaveValue(''))
+    expect(await screen.findByText('chandra')).toBeInTheDocument()
   })
 
   it('distinguishes an empty search from an empty list', async () => {
@@ -126,6 +146,35 @@ describe('FollowListPage', () => {
 
     expect(await screen.findByText('No one matching “zzz”', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.queryByText('No followers yet')).not.toBeInTheDocument()
+  })
+
+  it('debounces the search: rapid keystrokes fire one request, not one per keystroke', async () => {
+    setViewport(true)
+    let filteredRequests = 0
+    server.use(
+      http.get('*/users/:id/followers', ({ request }) => {
+        const q = new URL(request.url).searchParams.get('q')
+        if (q) filteredRequests += 1
+        return HttpResponse.json({
+          items: q ? [] : [makeFollowUser({ id: 'u1', username: 'mira_cooks' })],
+          nextCursor: null,
+        })
+      }),
+    )
+    renderRoute('/users/target-1/followers')
+
+    await screen.findByText('mira_cooks')
+    // Three keystrokes in quick succession. Without debouncing, each of "z",
+    // "zz", "zzz" would independently reach the query key and fire its own
+    // request; with debouncing only the settled trailing value ("zzz") does.
+    await userEvent.type(screen.getByRole('searchbox'), 'zzz')
+
+    await screen.findByText('No one matching “zzz”', {}, { timeout: 3000 })
+    // Give any (incorrectly) un-debounced intermediate requests time to land
+    // before counting.
+    await waitFor(() => expect(filteredRequests).toBeGreaterThanOrEqual(1))
+
+    expect(filteredRequests).toBe(1)
   })
 
   it('following from a row updates the row and the pane together', async () => {
