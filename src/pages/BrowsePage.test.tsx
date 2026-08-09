@@ -127,6 +127,35 @@ describe('BrowsePage', () => {
     expect(urls.every((u) => !u.includes('cursor='))).toBe(true)
   })
 
+  // Measured in headless Chromium: a title that is one unbroken token laid out a
+  // 548px box inside a ~305px card at 320/360/375/414px alike. The title is a
+  // FLEX ITEM, so its width floors at min-content — unlike the description
+  // beneath it, which is a block and merely clips. That difference is the whole
+  // bug, and min-width:0 + overflow-wrap is what removes the floor.
+  it('keeps an unbreakable title from setting the card width', async () => {
+    const user = userEvent.setup()
+    server.use(
+      listHandler(() =>
+        HttpResponse.json({
+          items: [
+            makeRecipe({ title: 'Grandmas_extra_special_sunday_pot_roast_with_root_vegetables' }),
+          ],
+          nextCursor: null,
+        }),
+      ),
+    )
+    renderRoute('/discover')
+    expect(await screen.findByRole('link', { name: /^Cover story/ })).toBeInTheDocument()
+    // The editorial front page renders no browse cards; a filter switches to
+    // the flat list, which is where the browse variant lives.
+    await openFilters(user)
+    await user.click(screen.getByRole('button', { name: 'Medium' }))
+    await user.click(screen.getByRole('button', { name: 'Show results' }))
+
+    const title = await screen.findByTestId('recipe-card-title')
+    expect(title).toHaveStyle({ overflowWrap: 'anywhere', minWidth: '0px' })
+  })
+
   it('counts the active filters on the trigger', async () => {
     const user = userEvent.setup()
     server.use(listHandler(() => HttpResponse.json({ items: [makeRecipe()], nextCursor: null })))

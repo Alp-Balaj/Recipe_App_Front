@@ -22,9 +22,15 @@ interface SocialRecipeCardProps {
    * KNOWS savedByMe is true — the recipe came from the saved list).
    */
   seed?: Partial<SocialEnvelope>
+  /**
+   * Which RecipeCard layout to wear. The social wiring stays here whichever it
+   * is — that single seam is the whole point of this component, so the Saved
+   * tab's compact row must NOT grow its own copy of it.
+   */
+  variant?: 'browse' | 'savedRow'
 }
 
-export default function SocialRecipeCard({ recipe, onOpen, seed }: SocialRecipeCardProps) {
+export default function SocialRecipeCard({ recipe, onOpen, seed, variant = 'browse' }: SocialRecipeCardProps) {
   const envelope = useSocialEnvelope(recipe.id, seed)
   const { toggleLike, toggleSave } = useSocialMutations()
   const { requireAuth } = useAuthGate()
@@ -32,7 +38,7 @@ export default function SocialRecipeCard({ recipe, onOpen, seed }: SocialRecipeC
   return (
     <RecipeCard
       recipe={recipe}
-      variant="browse"
+      variant={variant}
       onOpen={onOpen}
       social={{
         likeCount: envelope.likeCount,

@@ -58,7 +58,13 @@ export default function ProfileSavedTab() {
   return (
     <>
       {recipes.map((r) => (
-        <SocialRecipeCard key={r.id} recipe={r} seed={{ savedByMe: true }} onOpen={() => openRecipe(r.id)} />
+        <SocialRecipeCard
+          key={r.id}
+          recipe={r}
+          variant="savedRow"
+          seed={{ savedByMe: true }}
+          onOpen={() => openRecipe(r.id)}
+        />
       ))}
 
       <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0 12px' }}>
