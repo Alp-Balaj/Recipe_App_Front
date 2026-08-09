@@ -17,6 +17,12 @@
 //   SEARCHING (any filter or search term) — the flat result list with Load
 //   more, unchanged from before. A query deserves results, not a magazine.
 //
+//   A DEPARTMENT ("All ›" on a section) — the same flat list, but titled and
+//   with "‹ Back to Discover" over it, because you got here by following a link
+//   rather than by asking a question, and a link you did not mean to follow has
+//   to be undoable. See `Department` below for why this is state of its own and
+//   not just a filter.
+//
 // The filter controls moved into a sheet behind a "Filters (n)" button; the
 // count on that button is the only filter state shown outside it. The search
 // wiring (300ms debounce → server-side ?search=) and the pagination are
@@ -52,6 +58,46 @@ const QUICK_MAX_MINUTES = 20
 /** Recipes per department: one lead image card plus two rows. */
 const SECTION_SIZE = 3
 
+/**
+ * A department drilled into from its "All ›" link — the flat result list, but
+ * named, so it is obvious what you are looking at and how to leave.
+ *
+ * This exists because the two "All ›" links used to leave by different doors:
+ * Trending set a `browseAll` flag (which had a back button) while Quick tonight
+ * wrote `['Quick']` straight into the user's tag state (which had none — the
+ * only way out was opening the Filters sheet and un-picking a chip the user had
+ * never picked). Modelling the view itself makes a link-applied filter
+ * distinguishable from a user-applied one, which is what lets it be undone.
+ */
+interface Department {
+  title: string
+  subtitle: string
+  /**
+   * Rides along with the query, but is deliberately NEVER written into `tags`:
+   * the sheet must keep showing only what the user chose, or "Filters (1)"
+   * would claim a filter they did not pick and Back would have nothing to undo.
+   */
+  tags?: RecipeTag[]
+}
+
+const TRENDING_VIEW: Department = {
+  title: 'Trending',
+  subtitle: 'The whole catalogue.',
+}
+
+/**
+ * Note the honest subtitle. The front-page section is computed client-side from
+ * `totalTimeMinutes <= QUICK_MAX_MINUTES`, but this view filters by the `Quick`
+ * TAG, because the list endpoint has no max-time parameter — so a 15-minute
+ * recipe nobody tagged is in the section and not in here. Saying "under 20
+ * minutes" would promise a set the query cannot return.
+ */
+const QUICK_VIEW: Department = {
+  title: 'Quick tonight',
+  subtitle: 'Tagged quick — on the table fast.',
+  tags: ['Quick'],
+}
+
 export default function BrowsePage() {
   // BrowsePage also renders as the canvas BACKDROP, where `useLocation()` is a
   // /recipes/:id URL — useOpenRecipe carries the real backdrop through.
@@ -66,9 +112,10 @@ export default function BrowsePage() {
   const [tags, setTags] = useState<RecipeTag[]>([])
   const [search, setSearch] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
-  // "All ›" on Trending: the catalogue, on request. Nothing else opens it, so
-  // the front page stays the default every time you arrive.
-  const [browseAll, setBrowseAll] = useState(false)
+  // The department you drilled into via "All ›", or null for the front page.
+  // Only those links open it, so the front page stays the default every time
+  // you arrive.
+  const [department, setDepartment] = useState<Department | null>(null)
 
   // open-loops slice 2: search moved to the SERVER. It used to filter only the
   // pages already loaded, so a recipe sitting on page four did not exist for
@@ -85,8 +132,13 @@ export default function BrowsePage() {
   }, [search])
 
   const filters: BrowseFilters = useMemo(
-    () => ({ cuisine: cuisine || undefined, difficulty, tags, search: debouncedSearch }),
-    [cuisine, difficulty, tags, debouncedSearch],
+    () => ({
+      cuisine: cuisine || undefined,
+      difficulty,
+      tags: department?.tags ? [...department.tags, ...tags] : tags,
+      search: debouncedSearch,
+    }),
+    [cuisine, difficulty, tags, debouncedSearch, department],
   )
 
   const {
@@ -120,7 +172,7 @@ export default function BrowsePage() {
   // filter the sheet cannot show you.
   const activeFilterCount = (difficulty ? 1 : 0) + (cuisine ? 1 : 0) + tags.length
   const hasActiveFilters = activeFilterCount > 0 || !!search.trim()
-  const isEditorial = !hasActiveFilters && !browseAll
+  const isEditorial = !hasActiveFilters && !department
 
   const clearFilters = () => {
     setCuisine('')
@@ -129,10 +181,20 @@ export default function BrowsePage() {
     setSearch('')
   }
 
+  // A department and a question of your own are mutually exclusive: asking one
+  // closes the other. That is what keeps "‹ Back to Discover" honest — clearing
+  // the department always lands on the front page, never on a still-filtered
+  // list wearing a button that promised otherwise.
   const applyFilters = (next: FilterSelection) => {
     setCuisine(next.cuisine)
     setDifficulty(next.difficulty)
     setTags(next.tags)
+    setDepartment(null)
+  }
+
+  const changeSearch = (term: string) => {
+    setSearch(term)
+    if (term.trim()) setDepartment(null)
   }
 
   // Tag ranking for the sheet's first eight chips. There is no usage-count
@@ -185,9 +247,17 @@ export default function BrowsePage() {
           ? `Nothing matches "${search.trim()}" — searched titles, descriptions and ingredients.`
           : hasActiveFilters
             ? 'No recipes match these filters yet. Try loosening them.'
-            : 'Nothing here yet — be the first to add a recipe.'
+            : department?.tags
+              ? `Nothing in ${department.title} yet.`
+              : 'Nothing here yet — be the first to add a recipe.'
       }
-      action={hasActiveFilters ? { label: 'Clear filters', onClick: clearFilters } : undefined}
+      action={
+        hasActiveFilters
+          ? { label: 'Clear filters', onClick: clearFilters }
+          : department
+            ? { label: 'Back to Discover', onClick: () => setDepartment(null) }
+            : undefined
+      }
     />
   ) : (
     <>
@@ -231,7 +301,7 @@ export default function BrowsePage() {
         isDesktop={isDesktop}
         items={trending.map((recipe) => ({ recipe }))}
         onOpen={openRecipe}
-        onSeeAll={() => setBrowseAll(true)}
+        onSeeAll={() => setDepartment(TRENDING_VIEW)}
       />
       <EditorialSection
         index={2}
@@ -244,7 +314,7 @@ export default function BrowsePage() {
           badge: i === 0 ? `${recipe.totalTimeMinutes} min` : undefined,
         }))}
         onOpen={openRecipe}
-        onSeeAll={() => setTags(['Quick'])}
+        onSeeAll={() => setDepartment(QUICK_VIEW)}
       />
       <FromYourPeople isDesktop={isDesktop} onOpen={openRecipe} onSeeAll={() => navigate('/feed')} />
     </>
@@ -270,7 +340,7 @@ export default function BrowsePage() {
       </span>
       <input
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => changeSearch(e.target.value)}
         placeholder="Search recipes, ingredients…"
         aria-label="Search recipes"
         style={{
@@ -347,10 +417,29 @@ export default function BrowsePage() {
           </div>
         )}
 
-        {browseAll && !hasActiveFilters && (
-          <button type="button" onClick={() => setBrowseAll(false)} style={backToFrontPage}>
-            ‹ Back to Discover
-          </button>
+        {/* The department's masthead. No result count: the list is paginated,
+            so any number here would be "how many are loaded", not how many
+            there are. */}
+        {department && (
+          <div style={{ marginBottom: 16 }}>
+            <button type="button" onClick={() => setDepartment(null)} style={backToFrontPage}>
+              ‹ Back to Discover
+            </button>
+            <div style={{ borderTop: '1px solid var(--text)', paddingTop: 8 }}>
+              <h1
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontSize: isDesktop ? 24 : 22,
+                  fontWeight: 600,
+                  margin: 0,
+                  color: 'var(--text)',
+                }}
+              >
+                {department.title}
+              </h1>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 3 }}>{department.subtitle}</div>
+            </div>
+          </div>
         )}
 
         {/* No cover story means there is nothing to make a front page out of —
