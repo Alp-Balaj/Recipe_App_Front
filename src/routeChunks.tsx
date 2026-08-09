@@ -42,8 +42,20 @@ export const MealPlanMonthPage = lazy(() => import('./pages/MealPlanMonthPage'))
 export const MealPlanDayPage = lazy(() => import('./pages/MealPlanDayPage'))
 export const ShoppingListPage = lazy(() => import('./pages/ShoppingListPage'))
 export const FoodScanPage = lazy(() => import('./pages/FoodScanPage'))
-export const AdminPage = lazy(() => import('./pages/AdminPage'))
 export const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+
+// Admin Rework (stream W0-FE, Task 6) — the old single-page AdminPage chunk
+// is replaced by the tabbed admin section: one lazy chunk for the layout
+// (role gate + tab strip) and one per tab/detail page, so a non-admin still
+// never downloads any of it and each Wave-1 stream's rewrite of its own tab
+// stays its own chunk.
+export const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'))
+export const AdminDashboardTab = lazy(() => import('./pages/admin/AdminDashboardTab'))
+export const AdminReportsTab = lazy(() => import('./pages/admin/AdminReportsTab'))
+export const AdminUsersTab = lazy(() => import('./pages/admin/AdminUsersTab'))
+export const AdminUserDetailPage = lazy(() => import('./pages/admin/AdminUserDetailPage'))
+export const AdminRecipePage = lazy(() => import('./pages/admin/AdminRecipePage'))
+export const AdminEventsTab = lazy(() => import('./pages/admin/AdminEventsTab'))
 
 /**
  * What a route shows while its chunk is in flight.

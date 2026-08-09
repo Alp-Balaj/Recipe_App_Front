@@ -14,7 +14,13 @@ import AppShell from './components/AppShell'
 // at the page rather than above the shell.
 import {
   page,
-  AdminPage,
+  AdminLayout,
+  AdminDashboardTab,
+  AdminReportsTab,
+  AdminUsersTab,
+  AdminUserDetailPage,
+  AdminRecipePage,
+  AdminEventsTab,
   BrowsePage,
   ChatPage,
   FeedPage,
@@ -98,9 +104,27 @@ export const routes: RouteObject[] = [
           // list's "scan a receipt" entry and by URL.
           { path: '/scan', element: page(FoodScanPage) },
           // stream D (governor) — SANCTIONED ADDITIVE route, same discipline as
-          // the additive routes above. Role-gated INSIDE AdminPage (non-admins
+          // the additive routes above. Role-gated INSIDE AdminLayout (non-admins
           // get a full-page denial); the server enforces the real boundary.
-          { path: '/admin', element: page(AdminPage) },
+          //
+          // Admin Rework (stream W0-FE, Task 6) — REVIEWED EDIT: the single
+          // /admin route becomes a layout with nested tab routes. Not an
+          // additive route in the frozen-router sense (the path itself isn't
+          // new), so it lands as its own commit per that rule; every child
+          // path is new (reports/users/users:id/recipes:id/events) and none
+          // reorders or removes anything else in this array.
+          {
+            path: '/admin',
+            element: page(AdminLayout),
+            children: [
+              { index: true, element: page(AdminDashboardTab) },
+              { path: 'reports', element: page(AdminReportsTab) },
+              { path: 'users', element: page(AdminUsersTab) },
+              { path: 'users/:id', element: page(AdminUserDetailPage) },
+              { path: 'recipes/:id', element: page(AdminRecipePage) },
+              { path: 'events', element: page(AdminEventsTab) },
+            ],
+          },
           // open-loops slice 3 — SANCTIONED ADDITIVE route registration, same
           // discipline as the social-feed, chat-ai and meal-planning additive
           // routes above. Deliberately NOT in navItems.ts: six tabs is already
