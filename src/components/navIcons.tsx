@@ -104,6 +104,77 @@ export function PlusIcon({ size = 20, style }: IconProps) {
   )
 }
 
+// ── Feed action glyphs (feed redesign, 2026-08-09) ──────────────────────────
+//
+// The desktop feed's action row used text symbols (♡ ◌ ↗ ⚐), which was the
+// main "unfinished" tell in the old design: they come from different Unicode
+// blocks, so they never lined up, and there was no honest filled state — ⚑ for
+// "saved" reads as a flag, not as the same bookmark filled in.
+//
+// These four ride the same 24×24 grid as everything above. `filled` is the
+// active state (liked / saved): the SAME path, painted rather than stroked, so
+// the shape does not move when it activates. Colour still comes from the
+// caller's `currentColor` — `var(--muted)` idle, `var(--accent)` active.
+
+/** Filled variants paint the path and drop the stroke — same geometry, no jump. */
+function FilledSvg({ size = 20, style, children }: IconProps & { children: React.ReactNode }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+      focusable="false"
+      style={{ display: 'block', flexShrink: 0, ...style }}
+    >
+      {children}
+    </svg>
+  )
+}
+
+const HEART_PATH = 'M12 20.3S4.2 15.4 4.2 10.4a4.3 4.3 0 0 1 7.8-2.5 4.3 4.3 0 0 1 7.8 2.5c0 5-7.8 9.9-7.8 9.9z'
+const BOOKMARK_PATH = 'M7 3.6h10a1.4 1.4 0 0 1 1.4 1.4v15.4L12 16.7l-6.4 3.7V5a1.4 1.4 0 0 1 1.4-1.4z'
+
+/** Like — outline by default, painted once the caller has liked it. */
+export function HeartIcon({ filled, ...props }: IconProps & { filled?: boolean }) {
+  return filled ? (
+    <FilledSvg {...props}>
+      <path d={HEART_PATH} />
+    </FilledSvg>
+  ) : (
+    <Svg {...props}>
+      <path d={HEART_PATH} />
+    </Svg>
+  )
+}
+
+/** Save — the same outline/filled pair as the heart. */
+export function BookmarkIcon({ filled, ...props }: IconProps & { filled?: boolean }) {
+  return filled ? (
+    <FilledSvg {...props}>
+      <path d={BOOKMARK_PATH} />
+    </FilledSvg>
+  ) : (
+    <Svg {...props}>
+      <path d={BOOKMARK_PATH} />
+    </Svg>
+  )
+}
+
+/** Share — an arrow leaving a tray. Stateless: sharing has no "on". */
+export function ShareIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 15.4V4.3M12 4.3 8.4 7.9M12 4.3l3.6 3.6" />
+      <path d="M5.2 13.6v5a1.8 1.8 0 0 0 1.8 1.8h10a1.8 1.8 0 0 0 1.8-1.8v-5" />
+    </Svg>
+  )
+}
+
+// The comment glyph is deliberately NOT a new icon: ChatIcon above is already
+// the speech bubble the design asks for, and a second one would drift from it.
+
 /** Theme toggle — sun (shown in dark mode) and moon (shown in light mode). */
 export function SunIcon(props: IconProps) {
   return (

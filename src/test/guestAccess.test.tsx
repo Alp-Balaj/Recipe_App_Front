@@ -53,6 +53,8 @@ function makeFeedItem(over: Partial<FeedItemResponse> = {}): FeedItemResponse {
     ratingCount: 0,
     cookedByMe: false,
     myRating: null,
+    madeItCount: 0,
+    recentMakers: [],
     ...over,
   }
 }

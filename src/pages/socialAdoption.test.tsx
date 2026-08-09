@@ -91,6 +91,8 @@ describe('RecipeDetailPage social adoption', () => {
               ratingCount: 0,
               cookedByMe: false,
               myRating: null,
+              madeItCount: 0,
+              recentMakers: [],
             },
           ],
           nextCursor: null,

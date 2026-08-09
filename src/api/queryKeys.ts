@@ -65,6 +65,17 @@ export const queryKeys = {
      */
     list: (scope?: 'forYou' | 'following') =>
       scope ? (['feed', 'list', scope] as const) : (['feed', 'list'] as const),
+
+    /**
+     * Feed redesign (2026-08-09, sanctioned additive edit): GET /feed/activity —
+     * the rail's "cooking right now" strip, keyed per scope like the lists.
+     *
+     * It sits under `all` on purpose, even though the optimistic social patches
+     * cannot meaningfully patch it (an activity row is a past event, not a
+     * count): a caller invalidating the whole feed subtree after a follow SHOULD
+     * refresh whose activity is eligible, which is exactly what this key buys.
+     */
+    activity: (scope: 'forYou' | 'following') => ['feed', 'activity', scope] as const,
   },
 
   // social-feed cp06 — SANCTIONED ADDITIVE EDIT to this frozen module (same

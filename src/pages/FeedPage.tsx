@@ -7,35 +7,59 @@
 //   • Following — followed authors only, no fallback (scope=following); empty
 //     renders a follow prompt.
 // Two presentations of the same data + social wiring:
-//   • Desktop (design 2b): a centered column of FeedPostCards plus a discovery
-//     right rail (cooks + trending tags, both derived from the feed; For You
-//     suggests only not-yet-followed cooks, Following lists "Cooks you follow").
+//   • Desktop (feed redesign, 2026-08-09) — an editorial page, a sibling of the
+//     redesigned Discover: a dated masthead, Fraunces section headings with
+//     rules, and a rhythm of hero → 2-up grid → horizontal post per page of
+//     four, beside a sticky rail whose four modules each do a real job.
 //   • Mobile (design 1e): an immersive, full-bleed scroll-snap feed
-//     (ImmersiveFeedCard) with the tab switcher floated on top.
+//     (ImmersiveFeedCard) with the tab switcher floated on top. UNCHANGED by
+//     the redesign — the desktop rework stops at the isDesktop branch.
 // Both share the optimistic like/save through useSocialMutations and the same
 // comment affordance (page tracks which card's comments are open). Empty /
 // error / loading use the shared StateBlock.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useMemo, useState, type ComponentProps, type CSSProperties, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import FeedPostCard from '@/components/FeedPostCard'
+import FeedPostCard, { type FeedCardVariant } from '@/components/FeedPostCard'
+import FeedRail from '@/components/feed/FeedRail'
 import ImmersiveFeedCard from '@/components/ImmersiveFeedCard'
-import Avatar from '@/components/Avatar'
 import StateBlock from '@/components/ui/StateBlock'
 import { useOpenRecipe } from '@/components/recipeCanvas'
 import { useAuth } from '@/auth/AuthContext'
 import { useAuthGate } from '@/auth/AuthGateContext'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useFeed } from '@/hooks/useFeed'
-import { useFollowList } from '@/hooks/useFollowList'
+import { useFollowedIds } from '@/hooks/useFollowedIds'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
-import type { FeedItemResponse, FeedScope, UserSummaryResponse } from '@/api/social'
+import type { FeedItemResponse, FeedScope } from '@/api/social'
+
+/**
+ * The desktop rhythm: each page of the feed is laid out hero → two grid cards →
+ * one horizontal card, then repeats. It is a cycle rather than a one-off so a
+ * "Load more" doesn't dump an undifferentiated stack under the composed first
+ * screen — every batch gets the same editorial shape.
+ */
+const CYCLE: FeedCardVariant[] = ['hero', 'grid', 'grid', 'horizontal']
+
+/**
+ * The per-item wiring both card families share (the immersive mobile card takes
+ * the same set). Named so the column below can pass it through without the
+ * props widening to `unknown`.
+ */
+type CardWiring = Pick<
+  ComponentProps<typeof FeedPostCard>,
+  'onOpen' | 'onOpenAuthor' | 'onToggleLike' | 'onToggleSave' | 'commentsOpen' | 'onToggleComments'
+>
 
 export default function FeedPage() {
   const navigate = useNavigate()
   const openRecipe = useOpenRecipe()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
+  // The rail is the first thing to go when the pane narrows — never the hero.
+  // 252px sidebar + ~1180px of pane is where the three-column reading breaks.
+  const hasRoomForRail = useMediaQuery('(min-width: 1432px)')
+  const { user } = useAuth()
   const [tab, setTab] = useState<FeedScope>('forYou')
   const {
     data,
@@ -47,9 +71,14 @@ export default function FeedPage() {
     isFetchingNextPage,
     isFetching,
   } = useFeed(tab)
-  const { toggleLike, toggleSave } = useSocialMutations()
+  const { toggleLike, toggleSave, toggleFollow } = useSocialMutations()
   const { requireAuth } = useAuthGate()
   const [openCommentsId, setOpenCommentsId] = useState<string | null>(null)
+
+  // Who the caller already follows — the hero's Follow/Following pill and the
+  // rail's suggestions must not disagree, so one source feeds both. Only worth
+  // walking on desktop, where something renders it.
+  const followedIds = useFollowedIds(isDesktop && !!user)
 
   const selectTab = (next: FeedScope) => {
     if (next === tab) return
@@ -75,7 +104,7 @@ export default function FeedPage() {
     return out
   }, [data])
 
-  const cardProps = (item: FeedItemResponse) => ({
+  const cardProps = (item: FeedItemResponse): CardWiring => ({
     // The feed stays behind the canvas — see recipeCanvas.ts.
     onOpen: () => openRecipe(item.recipe.id),
     onOpenAuthor: () => navigate(`/users/${item.author.id}`),
@@ -93,6 +122,11 @@ export default function FeedPage() {
     onToggleComments: () =>
       setOpenCommentsId((cur) => (cur === item.recipe.id ? null : item.recipe.id)),
   })
+
+  const onToggleFollow = (userId: string, next: boolean) => {
+    if (!requireAuth()) return
+    toggleFollow.mutate({ userId, next })
+  }
 
   const loadMore = (
     <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 14px' }}>
@@ -180,27 +214,258 @@ export default function FeedPage() {
     )
   }
 
-  // ── Desktop: centered feed column + discovery right rail (design 2b) ────────
+  // ── Desktop: the editorial page (feed redesign) ────────────────────────────
+  // No pill on the caller's own post (you cannot follow yourself) and none for
+  // a guest, who has no follow graph to show — an inert control reads as broken.
+  const heroFollow = (item: FeedItemResponse) =>
+    user && item.author.id !== user.userId
+      ? {
+          following: followedIds.has(item.author.id),
+          onToggle: (next: boolean) => onToggleFollow(item.author.id, next),
+        }
+      : undefined
+
   return (
-    <div className="scroll" style={{ position: 'absolute', inset: 0, bottom: 'var(--nav-h, 74px)', overflowY: 'auto', padding: '28px 30px 40px' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 18 }}>
-        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>Feed</div>
-        <FeedTabs tab={tab} onSelect={selectTab} />
+    <div
+      className="scroll"
+      style={{ position: 'absolute', inset: 0, bottom: 'var(--nav-h, 74px)', overflowY: 'auto', padding: '28px 34px 48px' }}
+    >
+      {/* Masthead — the same dated eyebrow Discover wears, so the two pages
+          read as siblings rather than as two different products. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 22 }}>
+        <div style={{ ...eyebrow, flexShrink: 0 }}>FEED · {longDate(new Date())}</div>
+        <div style={{ marginLeft: 'auto' }}>
+          <FeedTabs tab={tab} onSelect={selectTab} />
+        </div>
       </div>
 
       {stateBlock ? (
         stateBlock
       ) : (
         <div style={{ display: 'flex', gap: 30, alignItems: 'flex-start' }}>
-          <div style={{ flex: 1, minWidth: 0, maxWidth: 620, margin: '0 auto' }}>
-            {items.map((item) => (
-              <FeedPostCard key={item.recipe.id} item={item} {...cardProps(item)} />
-            ))}
-            {loadMore}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <FeedColumn
+              items={items}
+              tab={tab}
+              hasNextPage={!!hasNextPage}
+              loadMore={loadMore}
+              cardProps={cardProps}
+              heroFollow={heroFollow}
+              followedCount={followedIds.size}
+              onFindCooks={() => navigate('/discover')}
+            />
           </div>
-          <DiscoveryRail items={items} tab={tab} onOpenAuthor={(id) => navigate(`/users/${id}`)} />
+          {hasRoomForRail && (
+            <FeedRail
+              items={items}
+              tab={tab}
+              followedIds={followedIds}
+              onOpenAuthor={(id) => navigate(`/users/${id}`)}
+              onOpenRecipe={(id) => openRecipe(id)}
+              onToggleFollow={onToggleFollow}
+            />
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── The desktop feed column ─────────────────────────────────────────────────
+
+/**
+ * Section headings are emitted for the FIRST cycle only. Later pages continue
+ * the rhythm without re-announcing "Also today" — the reader has already been
+ * told what shape the page has, and repeating the labels would turn them into
+ * decoration.
+ */
+function FeedColumn({
+  items,
+  tab,
+  hasNextPage,
+  loadMore,
+  cardProps,
+  heroFollow,
+  followedCount,
+  onFindCooks,
+}: {
+  items: FeedItemResponse[]
+  tab: FeedScope
+  hasNextPage: boolean
+  loadMore: ReactNode
+  cardProps: (item: FeedItemResponse) => CardWiring
+  heroFollow: (item: FeedItemResponse) => { following: boolean; onToggle: (next: boolean) => void } | undefined
+  followedCount: number
+  onFindCooks: () => void
+}) {
+  const blocks: ReactNode[] = []
+  let grid: ReactNode[] = []
+
+  const flushGrid = (key: string) => {
+    if (grid.length === 0) return
+    blocks.push(
+      <div key={`grid-${key}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22, marginBottom: 26 }}>
+        {grid}
+      </div>,
+    )
+    grid = []
+  }
+
+  items.forEach((item, index) => {
+    const slot = index % CYCLE.length
+    const variant = CYCLE[slot]
+    const firstCycle = index < CYCLE.length
+
+    // Headings introduce the first cycle's three movements. The Following tab
+    // frames the lead differently — it is a "since you were last here" batch,
+    // not a curated selection — and carries the count chip.
+    if (firstCycle && slot === 0) {
+      blocks.push(
+        <SectionHeading
+          key="h-lead"
+          label={tab === 'following' ? `New since ${lastVisitWeekday(item.recipe.createdAt)}` : 'Latest from your people'}
+          chip={tab === 'following' ? `${items.length} post${items.length === 1 ? '' : 's'}` : undefined}
+        />,
+      )
+    }
+    // On Following the 2-up grid belongs to the same "new" batch as the hero,
+    // so it gets no heading of its own.
+    if (firstCycle && slot === 1 && tab === 'forYou') {
+      flushGrid(`pre-${index}`)
+      blocks.push(<SectionHeading key="h-also" label="Also today" />)
+    }
+    if (firstCycle && slot === 3 && tab === 'forYou') {
+      flushGrid(`pre-${index}`)
+      blocks.push(<SectionHeading key="h-earlier" label="Earlier this week" />)
+    }
+
+    const card = (
+      <FeedPostCard
+        key={item.recipe.id}
+        item={item}
+        variant={variant}
+        {...cardProps(item)}
+        {...(variant === 'hero' ? { follow: heroFollow(item) } : {})}
+      />
+    )
+
+    if (variant === 'grid') {
+      grid.push(card)
+      return
+    }
+    flushGrid(`before-${index}`)
+    blocks.push(
+      variant === 'horizontal' ? (
+        <div key={`wrap-${item.recipe.id}`} style={{ marginBottom: 26 }}>
+          {card}
+        </div>
+      ) : (
+        card
+      ),
+    )
+  })
+  flushGrid('tail')
+
+  return (
+    <>
+      {blocks}
+      {/* The Following tab's end of list is a destination, not a full stop: an
+          exhausted followed feed is a prompt to follow more people. For You is
+          effectively endless, so it keeps the plain load-more affordance. */}
+      {tab === 'following' && !hasNextPage && items.length > 0 ? (
+        <>
+          <SectionHeading label="Caught up" />
+          <CaughtUpCard followedCount={followedCount} onFindCooks={onFindCooks} />
+        </>
+      ) : (
+        loadMore
+      )}
+    </>
+  )
+}
+
+function SectionHeading({ label, chip }: { label: string; chip?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
+      <div
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: 19,
+          fontWeight: 600,
+          letterSpacing: '-0.01em',
+          color: 'var(--text)',
+        }}
+      >
+        {label}
+      </div>
+      {chip && (
+        <span
+          style={{
+            fontSize: 11.5,
+            fontWeight: 800,
+            color: 'var(--accent)',
+            background: 'var(--chipbg)',
+            borderRadius: 999,
+            padding: '4px 10px',
+          }}
+        >
+          {chip}
+        </span>
+      )}
+      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+    </div>
+  )
+}
+
+function CaughtUpCard({ followedCount, onFindCooks }: { followedCount: number; onFindCooks: () => void }) {
+  return (
+    <div
+      style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 20,
+        padding: '26px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 20,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: 21,
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+            color: 'var(--text)',
+            marginBottom: 6,
+          }}
+        >
+          {followedCount > 0
+            ? `That's everything from your ${followedCount} cook${followedCount === 1 ? '' : 's'}`
+            : "That's everything for now"}
+        </div>
+        <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5, maxWidth: '52ch' }}>
+          Follow a few more and this tab fills up faster — or head to For You to see who else is cooking like you.
+        </div>
+      </div>
+      <button
+        onClick={onFindCooks}
+        style={{
+          flexShrink: 0,
+          cursor: 'pointer',
+          border: 'none',
+          borderRadius: 13,
+          padding: '12px 20px',
+          fontFamily: 'inherit',
+          fontSize: 13.5,
+          fontWeight: 800,
+          background: 'var(--accent-fill)',
+          color: 'var(--accent-ink)',
+        }}
+      >
+        Find cooks
+      </button>
     </div>
   )
 }
@@ -223,7 +488,7 @@ function FeedTabs({
   immersive?: boolean
 }) {
   return (
-    <div role="tablist" aria-label="Feed" style={{ display: 'flex', gap: immersive ? 18 : 20 }}>
+    <div role="tablist" aria-label="Feed" style={{ display: 'flex', gap: immersive ? 18 : 22 }}>
       {FEED_TABS.map(({ scope, label }) => {
         const active = scope === tab
         return (
@@ -276,101 +541,32 @@ function FeedHeading({ tab }: { tab: FeedScope }) {
   )
 }
 
-// ── Desktop discovery rail — cooks + trending tags, both derived from the ────
-// feed. Per-tab framing: For You suggests cooks the caller does NOT already
-// follow; Following relabels to the cooks whose posts fill that tab.
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
-function DiscoveryRail({
-  items,
-  tab,
-  onOpenAuthor,
-}: {
-  items: FeedItemResponse[]
-  tab: FeedScope
-  onOpenAuthor: (id: string) => void
-}) {
-  const { user } = useAuth()
-  // The caller's follow list, only needed to filter For You suggestions —
-  // Following-tab authors are followed by definition.
-  const followList = useFollowList(user?.userId, 'following', tab === 'forYou')
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = followList
-  useEffect(() => {
-    if (tab === 'forYou' && hasNextPage && !isFetchingNextPage) fetchNextPage()
-  }, [tab, hasNextPage, isFetchingNextPage, fetchNextPage])
+/** "SATURDAY 9 AUGUST" — the same masthead date Discover uses. */
+function longDate(date: Date): string {
+  return date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()
+}
 
-  const followedIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const page of followList.data?.pages ?? []) {
-      for (const u of page.items) ids.add(u.id)
-    }
-    return ids
-  }, [followList.data])
+/**
+ * "New since Thursday" — anchored on the NEWEST post in the tab, which is the
+ * only "since" the client can state truthfully: there is no last-visit
+ * timestamp anywhere in the app, so naming one would be a guess dressed as a
+ * fact. The newest post is genuinely the moment this batch starts.
+ */
+function lastVisitWeekday(newestCreatedAt: string): string {
+  const date = new Date(newestCreatedAt)
+  if (Number.isNaN(date.getTime())) return 'then'
+  return date.toLocaleDateString(undefined, { weekday: 'long' })
+}
 
-  const cooks = useMemo(() => {
-    const seen = new Map<string, UserSummaryResponse>()
-    for (const item of items) {
-      if (tab === 'forYou' && followedIds.has(item.author.id)) continue
-      if (!seen.has(item.author.id)) seen.set(item.author.id, item.author)
-    }
-    return Array.from(seen.values()).slice(0, 5)
-  }, [items, tab, followedIds])
+// ── Inline styles ───────────────────────────────────────────────────────────
 
-  const tags = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const item of items) {
-      for (const t of item.recipe.tags) counts.set(t, (counts.get(t) ?? 0) + 1)
-    }
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([t]) => t)
-  }, [items])
-
-  if (cooks.length === 0 && tags.length === 0) return null
-
-  return (
-    <aside style={{ width: 300, flexShrink: 0 }}>
-      {cooks.length > 0 && (
-        <>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 14 }}>
-            {tab === 'following' ? 'Cooks you follow' : 'Suggested cooks'}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
-            {cooks.map((c) => (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                <Avatar username={c.username} profileImageUrl={c.profileImageUrl} seed={c.id} size={40} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {c.username}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>In your feed</div>
-                </div>
-                <button
-                  onClick={() => onOpenAuthor(c.id)}
-                  style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent)', background: 'transparent', border: '1px solid var(--tagborder)', borderRadius: 999, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit' }}
-                >
-                  View
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {tags.length > 0 && (
-        <>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 14 }}>Trending tags</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {tags.map((t) => (
-              <span key={t} style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tagcol)', background: 'var(--tagbg)', border: '1px solid var(--tagborder)', borderRadius: 999, padding: '7px 13px' }}>
-                #{t}
-              </span>
-            ))}
-          </div>
-        </>
-      )}
-    </aside>
-  )
+const eyebrow: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 800,
+  letterSpacing: '0.13em',
+  color: 'var(--muted)',
 }
 
 const mobilePad: CSSProperties = {
@@ -384,7 +580,7 @@ const loadMoreBtn: CSSProperties = {
   cursor: 'pointer',
   border: '1px solid var(--border)',
   borderRadius: 13,
-  padding: '10px 18px',
+  padding: '11px 20px',
   fontFamily: 'inherit',
   fontSize: 13.5,
   fontWeight: 700,

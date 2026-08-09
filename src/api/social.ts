@@ -60,6 +60,12 @@ export interface FeedItemResponse {
   ratingCount: number
   cookedByMe: boolean
   myRating?: number | null
+  // Feed redesign (2026-08-09). madeItCount is how many DISTINCT people logged a cook —
+  // NOT the sum of their timesCooked, because "3 made this" is a claim about people.
+  // recentMakers is the server-capped handful of them (newest cook first) that the
+  // overlapping avatars beside the count render; it is [] when nobody has cooked it.
+  madeItCount: number
+  recentMakers: UserSummaryResponse[]
 }
 
 /**
@@ -88,6 +94,44 @@ export function getFeedPage(params: {
 }): Promise<FeedListResponse> {
   const { scope, cursor, limit, signal } = params
   return apiFetch<FeedListResponse>('/feed', { query: { scope, cursor, limit }, signal })
+}
+
+// ── Feed redesign (2026-08-09): the activity strip ──────────────────────────
+
+/** What a cook did. The verb the rail row renders comes from this. */
+export type FeedActivityKind = 'Posted' | 'Liked' | 'Saved' | 'Cooked'
+
+/**
+ * One row of GET /feed/activity: who, what they did, and which recipe it was about.
+ * `recipeTitle` is carried inline rather than a whole RecipeResponse — the row is one
+ * line of text and a link, and the recipe is always one the caller may see.
+ */
+export interface FeedActivityResponse {
+  actor: UserSummaryResponse
+  kind: FeedActivityKind
+  recipeId: string
+  recipeTitle: string
+  occurredAt: string
+}
+
+/** GET /feed/activity → 200. Cursor-free: `limit` caps the whole answer. */
+export interface FeedActivityListResponse {
+  items: FeedActivityResponse[]
+}
+
+/**
+ * GET /feed/activity — recent activity by cooks the caller follows (scope 'following',
+ * the default) or by anyone else (scope 'forYou'). One row per actor, newest first, never
+ * the caller's own actions. A guest gets 200 + an empty list rather than a 401, so the
+ * strip can mount on a guest's /feed without ending their session.
+ */
+export function getFeedActivity(params: {
+  scope?: FeedScope
+  limit?: number
+  signal?: AbortSignal
+}): Promise<FeedActivityListResponse> {
+  const { scope, limit, signal } = params
+  return apiFetch<FeedActivityListResponse>('/feed/activity', { query: { scope, limit }, signal })
 }
 
 /** POST /recipes/{id}/likes → 204 (idempotent). */
@@ -160,6 +204,7 @@ export const RATING_MAX = 5
  * (the backend pins the same parity with an integration test).
  */
 export type RecipeSocialResponse = Omit<FeedItemResponse, 'recipe'>
+// (The made-it pair rides that Omit for free, and an integration test pins the parity.)
 
 /**
  * GET /recipes/{id}/social → 200 | 404. Visibility identical to
