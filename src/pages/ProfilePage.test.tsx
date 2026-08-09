@@ -153,6 +153,72 @@ describe('ProfilePage — Saved tab', () => {
     await waitFor(() => expect(deletes).toEqual(['unsave-1']))
   })
 
+  // ── Overflow hardening ────────────────────────────────────────────────
+  // Measured in headless Chromium at 320/360/375/414px: a saved recipe whose
+  // title is one unbroken token laid out a 548px box inside a ~305px card, at
+  // every width. jsdom does no layout, so these pin the STRUCTURAL properties
+  // that make that impossible rather than the pixel result.
+
+  it('lays a saved recipe out as a compact row, not a banner card', async () => {
+    server.use(
+      http.get('*/users/me/saved-recipes', () =>
+        HttpResponse.json({
+          items: [
+            makeRecipe({
+              title: 'Bookmarked bibimbap',
+              description: 'A description the compact row deliberately drops.',
+              totalTimeMinutes: 35,
+              cuisineType: 'Korean',
+            }),
+          ],
+          nextCursor: null,
+        }),
+      ),
+    )
+    renderRoute('/profile')
+
+    await userEvent.click(await screen.findByRole('button', { name: '⚑ Saved' }))
+    const row = await screen.findByTestId('saved-row')
+    expect(within(row).getByText(/35 min/)).toBeInTheDocument()
+    expect(within(row).getByText(/Korean/)).toBeInTheDocument()
+    // The row trades the description for density — that is the whole point.
+    expect(
+      screen.queryByText('A description the compact row deliberately drops.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps an unbreakable title from setting the row width', async () => {
+    server.use(
+      http.get('*/users/me/saved-recipes', () =>
+        HttpResponse.json({
+          items: [
+            makeRecipe({ title: 'Grandmas_extra_special_sunday_pot_roast_with_root_vegetables' }),
+          ],
+          nextCursor: null,
+        }),
+      ),
+    )
+    renderRoute('/profile')
+
+    await userEvent.click(await screen.findByRole('button', { name: '⚑ Saved' }))
+    const title = await screen.findByTestId('saved-row-title')
+    // Without BOTH of these a single long token sets the flex item's
+    // min-content width and nothing downstream can shrink it.
+    expect(title).toHaveStyle({ overflowWrap: 'anywhere' })
+    expect(title.parentElement).toHaveStyle({ minWidth: '0px' })
+  })
+
+  it('gives the profile page no way to scroll sideways', async () => {
+    renderRoute('/profile')
+    await screen.findByRole('button', { name: '⚑ Saved' })
+
+    // position:absolute + overflowY:auto makes overflow-x compute to auto, and
+    // .scroll hides the scrollbar — so any overflow becomes a silent sideways
+    // slide. Horizontal scroll is never wanted here; remove the capability.
+    const page = document.querySelector('.scroll')
+    expect(page).toHaveStyle({ overflowX: 'hidden' })
+  })
+
   it('walks the saved keyset via Load more, passing nextCursor back verbatim', async () => {
     const cursors: (string | null)[] = []
     server.use(

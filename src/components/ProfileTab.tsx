@@ -586,20 +586,30 @@ function ShareToast({ text }: { text: string }) {
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 
+// overflowX is NOT decoration here. `position: absolute` + `overflowY: auto`
+// makes overflow-x compute to `auto` (CSS forbids one axis scrolling while the
+// other stays visible), and `.scroll` zeroes the scrollbar — so anything wider
+// than the column turns the page into a silent sideways slide with nothing on
+// screen to explain it. Horizontal scroll is never wanted on this page, so the
+// capability is removed rather than the symptom chased.
 const mobilePage: CSSProperties = {
   position: 'absolute',
   inset: 0,
   bottom: 'var(--nav-h, 74px)',
   overflowY: 'auto',
+  overflowX: 'hidden',
   padding: '54px 18px 16px',
 }
 
 // Padding lives on the inner wrapper so the cover banner bleeds edge to edge.
+// Same overflowX reasoning as mobilePage — the hazard is the container's, not
+// the breakpoint's, so leaving desktop out would just hide the next instance.
 const desktopPage: CSSProperties = {
   position: 'absolute',
   inset: 0,
   bottom: 'var(--nav-h, 74px)',
   overflowY: 'auto',
+  overflowX: 'hidden',
 }
 
 const contentHeader: CSSProperties = {

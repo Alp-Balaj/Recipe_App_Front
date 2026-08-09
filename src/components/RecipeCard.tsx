@@ -31,7 +31,23 @@ import { label } from '@/api/vocabulary'
  * Both take `dense` for the desktop three-column scale, and both let the caller
  * replace the meta line (From-your-people rows show an author, not a time).
  */
-type RecipeCardVariant = 'browse' | 'mine' | 'suggestion' | 'editorialLead' | 'editorialRow'
+/**
+ * savedRow — the profile Saved tab, added for the same reason as the editorial
+ * pair: a new LAYOUT of the same RecipeResponse, not a new card component.
+ *
+ * It exists because the banner card could not survive a narrow screen. Measured
+ * in headless Chromium at 320/360/375/414px, a saved recipe titled with one
+ * unbroken token laid out a 548px box inside a ~305px card AT EVERY WIDTH — the
+ * title had no overflow-wrap and sat in a flex row with no min-width:0, so the
+ * token set the box's min-content width and nothing could shrink it. The card's
+ * own overflow:hidden then cut the title mid-word, which reads as a rendering
+ * fault rather than a long name.
+ *
+ * The row is immune by construction: the text column is `flex: 1; min-width: 0`
+ * and the title wraps anywhere. It is also ~4x denser, which is what a saved
+ * list is for. It drops the description and tags to buy that.
+ */
+type RecipeCardVariant = 'browse' | 'mine' | 'suggestion' | 'editorialLead' | 'editorialRow' | 'savedRow'
 
 /**
  * Optional like/save affordances (social-feed cp06, ADDITIVE — cards without
@@ -116,6 +132,7 @@ export default function RecipeCard({
   badge,
   dense,
 }: RecipeCardProps) {
+  if (variant === 'savedRow') return <SavedRowBody recipe={recipe} onOpen={onOpen} social={social} />
   if (variant === 'suggestion') return <SuggestionCardBody recipe={recipe} onOpen={onOpen} />
   if (variant === 'editorialLead')
     return <EditorialLeadBody recipe={recipe} onOpen={onOpen} meta={meta} badge={badge} dense={dense} />
@@ -284,7 +301,17 @@ function BannerCardBody({
 
         <div style={{ padding: isMine ? '14px 16px 6px' : '15px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>{recipe.title}</div>
+            {/* A FLEX ITEM's width floors at its min-content width, so one
+                unbroken token in a title laid out a measured 548px box inside a
+                ~305px card — the description below is a block and merely clips,
+                which is why only this line needed fixing. min-width:0 removes
+                the floor; overflow-wrap lets the token actually break. */}
+            <div
+              data-testid="recipe-card-title"
+              style={{ fontSize: 18, fontWeight: 800, minWidth: 0, overflowWrap: 'anywhere' }}
+            >
+              {recipe.title}
+            </div>
             {isMine && (
               <span
                 style={{
@@ -389,6 +416,109 @@ function BannerCardBody({
       )}
     </div>
   )
+}
+
+/**
+ * The compact saved row: thumbnail, two-line title, one meta line, and the
+ * like/save pair. Everything that can grow is inside `flex: 1; min-width: 0`;
+ * everything that must not shrink is `flexShrink: 0`. There is no third state.
+ */
+function SavedRowBody({
+  recipe,
+  onOpen,
+  social,
+}: {
+  recipe: RecipeResponse
+  onOpen: () => void
+  social?: RecipeCardSocial
+}) {
+  const meta = [
+    `◷ ${formatMinutes(recipe.totalTimeMinutes)}`,
+    recipe.caloriesPerServing != null ? `${recipe.caloriesPerServing} kcal` : null,
+    recipe.cuisineType ? label(recipe.cuisineType) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <div data-testid="saved-row" style={savedRow}>
+      <div
+        {...linkProps(recipe, onOpen)}
+        style={{ display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', minWidth: 0, flex: 1 }}
+      >
+        <div style={{ width: 64, height: 64, borderRadius: 14, flexShrink: 0, ...imageBackground(recipe) }} />
+        {/* min-width:0 is the load-bearing half of the fix — without it a flex
+            item refuses to shrink below its min-content width, and one long
+            token makes that arbitrarily large. */}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div data-testid="saved-row-title" style={savedTitle}>
+            {recipe.title}
+          </div>
+          <div style={savedMeta}>{meta}</div>
+        </div>
+      </div>
+
+      {social && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+          <button
+            onClick={() => social.onToggleLike(!social.likedByMe)}
+            aria-pressed={social.likedByMe === true}
+            aria-label={social.likedByMe ? 'Unlike' : 'Like'}
+            style={{ ...socialBtn, padding: '6px 7px', color: social.likedByMe ? 'var(--accent)' : 'var(--muted)' }}
+          >
+            <span style={{ fontSize: 15 }}>{social.likedByMe ? '♥' : '♡'}</span>
+            {social.likeCount !== null && <span>{social.likeCount}</span>}
+          </button>
+          <button
+            onClick={() => social.onToggleSave(!social.savedByMe)}
+            aria-pressed={social.savedByMe === true}
+            aria-label={social.savedByMe ? 'Remove from saved' : 'Save recipe'}
+            style={{ ...socialBtn, padding: '6px 7px', color: social.savedByMe ? 'var(--accent)' : 'var(--muted)' }}
+          >
+            <span style={{ fontSize: 15 }}>⚑</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const savedRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  boxShadow: 'var(--cardsh)',
+  borderRadius: 16,
+  padding: 10,
+  marginBottom: 10,
+  minWidth: 0,
+}
+
+const savedTitle: CSSProperties = {
+  fontSize: 14.5,
+  fontWeight: 800,
+  lineHeight: 1.3,
+  // Two lines, then clip — but `anywhere` first, so a long token breaks instead
+  // of setting the width. Clamping alone would not have prevented the 548px box.
+  overflowWrap: 'anywhere',
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+}
+
+// One line, ellipsised — the same idiom RecipeListRow uses. Safe only because
+// the parent is min-width:0; nowrap inside an unshrinkable flex item is how you
+// build the overflow this row exists to prevent.
+const savedMeta: CSSProperties = {
+  fontSize: 12,
+  color: 'var(--muted)',
+  marginTop: 4,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
 }
 
 const socialBtn: CSSProperties = {
