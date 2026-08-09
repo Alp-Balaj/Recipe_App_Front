@@ -1,16 +1,21 @@
-// Admin Rework (stream FE-1, Task 15) — AdminDashboardTab. getAdminOverview is
-// mocked directly (rather than through MSW) so the fixed payload's shape is
-// exact and visible right here, next to the assertions it drives.
-import { describe, expect, it, vi } from 'vitest'
+// ─────────────────────────────────────────────────────────────────────────
+// Admin Rework (stream FE-1, Task 15) — AdminDashboardTab.
+//
+// Mocking approach: MSW, matching every other test in this codebase (no test
+// anywhere in src/ uses vi.mock for API modules). The plan's text suggested
+// vi.mock('../../api/admin'), but a module-factory mock replaces the WHOLE
+// module with the one function named here — every other admin.ts export in the
+// rendered tree silently becomes undefined, so the test only keeps passing as
+// long as nothing else on the route imports from admin.ts. Going through the
+// network layer avoids that trap and keeps the admin folder consistent.
+// ─────────────────────────────────────────────────────────────────────────
+
+import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
+import { server } from '@/test/msw/server'
 import { renderRoute, makeAuthValue, TEST_ADMIN } from '@/test/utils'
 import type { AdminOverviewResponse } from '@/api/admin'
-
-vi.mock('../../api/admin', () => ({
-  getAdminOverview: vi.fn(),
-}))
-
-import { getAdminOverview } from '../../api/admin'
 
 const overview: AdminOverviewResponse = {
   users: { total: 120, banned: 3, suspended: 2, admins: 4 },
@@ -32,9 +37,13 @@ const overview: AdminOverviewResponse = {
   },
 }
 
+function serveOverview(payload: AdminOverviewResponse) {
+  server.use(http.get('*/admin/overview', () => HttpResponse.json(payload)))
+}
+
 describe('AdminDashboardTab', () => {
   it('renders the banned-count subtitle, a lane row, and a top-consumer link', async () => {
-    vi.mocked(getAdminOverview).mockResolvedValue(overview)
+    serveOverview(overview)
 
     renderRoute('/admin', { auth: makeAuthValue({ user: TEST_ADMIN }) })
 
@@ -46,10 +55,7 @@ describe('AdminDashboardTab', () => {
   })
 
   it('shows the empty state when nobody used AI today', async () => {
-    vi.mocked(getAdminOverview).mockResolvedValue({
-      ...overview,
-      aiToday: { ...overview.aiToday, topUsers: [] },
-    })
+    serveOverview({ ...overview, aiToday: { ...overview.aiToday, topUsers: [] } })
 
     renderRoute('/admin', { auth: makeAuthValue({ user: TEST_ADMIN }) })
 
