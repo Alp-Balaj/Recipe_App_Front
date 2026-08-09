@@ -3,12 +3,13 @@
 // the old single-page AdminPage.tsx onto its own route. Reports now arrive
 // wrapped (spec §5.5: reporter + target-author context) — `const r =
 // item.report` below keeps every existing field access compiling and
-// working; the context line itself (reporter/targetAuthor display, the
-// "View recipe" link) lands in FE-4 (Task 18).
+// working. FE-4 (Task 18): the context line (reporter/targetAuthor display,
+// the "View recipe" link) is added below, under the report body.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useState, type CSSProperties } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { queryKeys } from '@/api/queryKeys'
 import { Badge } from '@/components/ui/badge'
 import { timeAgo } from '@/lib/time'
@@ -137,6 +138,22 @@ function ReportCard({
           “{r.details}”
         </div>
       )}
+
+      {/* Task 18: triage context — who reported it, who they're reporting, and
+          how many reports that target author already has against them. */}
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+        Reported by {item.reporter.username} · against {item.targetAuthor.username} (
+        {item.targetAuthor.totalReportsAgainst} reports total)
+        {r.targetType === 'Recipe' && targetId && (
+          <>
+            {' · '}
+            <Link to={`/admin/recipes/${targetId}`} style={linkBtn}>
+              View recipe
+            </Link>
+          </>
+        )}
+      </div>
+
       {!open && (
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
           {r.status} {r.resolvedByUsername ? `by ${r.resolvedByUsername}` : ''}
