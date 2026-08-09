@@ -95,6 +95,35 @@ describe('ProfilePage — Recipes tab (default)', () => {
     expect(screen.queryByText('Someone else')).not.toBeInTheDocument()
   })
 
+  // Measured on a 390px phone: the row card laid out 492px and its nowrap title
+  // 436px, pushing the page to scrollWidth 613 against clientWidth 390.
+  //
+  // The cause is the TRACK, not the row. `1fr` means `minmax(auto, 1fr)`, and
+  // that `auto` MINIMUM is the item's min-content — which a `white-space:nowrap`
+  // title makes as wide as the whole title. So the track refuses to be narrower
+  // than the longest title, and the row's own min-width:0 never gets a chance.
+  // `minmax(0, 1fr)` sets the floor to 0 and lets the ellipsis do its job.
+  it('gives the recipes grid a track that can shrink below its content', async () => {
+    server.use(
+      http.get('*/recipes', () =>
+        HttpResponse.json({
+          items: [
+            makeRecipe({
+              id: 'long-1',
+              title: 'Loaded Pindjur Noodle Bowl with Avocado and Crispy Chilli Oil',
+              createdByUserId: TEST_USER.userId,
+            }),
+          ],
+          nextCursor: null,
+        }),
+      ),
+    )
+    renderRoute('/profile')
+
+    const grid = await screen.findByTestId('recipes-grid')
+    expect(grid).toHaveStyle({ gridTemplateColumns: 'repeat(1, minmax(0, 1fr))' })
+  })
+
   it('shows an empty state with a create escape hatch when there are no recipes', async () => {
     const router = renderRoute('/profile')
     expect(await screen.findByText('No recipes yet')).toBeInTheDocument()
