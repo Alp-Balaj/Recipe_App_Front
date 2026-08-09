@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
@@ -386,5 +386,109 @@ describe('BrowsePage search', () => {
     await typeSearch('')
     // …and emptying the field brings it back.
     expect(await screen.findByRole('link', { name: 'Cover story: Clearable' })).toBeInTheDocument()
+  })
+})
+
+// ── Departments: the "All ›" drill-in, and the way back out ─────────────────
+//
+// Quick tonight's "All ›" used to write ['Quick'] into the user's own tag state.
+// That swapped the front page for a filtered list with NO way back: the only
+// exit was opening the Filters sheet and un-picking a chip the user had never
+// picked. The view is now state of its own, so it can be undone.
+describe('BrowsePage departments', () => {
+  /** Five recipes: one cover, three for Trending, and a spare for Quick tonight. */
+  function frontPageRecipes() {
+    return [
+      makeRecipe({ title: 'Cover dish' }),
+      makeRecipe({ title: 'Trending one' }),
+      makeRecipe({ title: 'Trending two' }),
+      makeRecipe({ title: 'Trending three' }),
+      makeRecipe({ title: 'Quick dish', totalTimeMinutes: 15 }),
+    ]
+  }
+
+  /** The "All ›" link belonging to one department — three sections carry one. */
+  function seeAllIn(title: string) {
+    const section = screen.getByRole('heading', { name: title, level: 2 }).closest('section')
+    if (!section) throw new Error(`No section around the "${title}" heading`)
+    return within(section as HTMLElement).getByRole('button', { name: 'All ›' })
+  }
+
+  it('titles the Quick tonight view and offers a way back to the front page', async () => {
+    const urls: string[] = []
+    server.use(
+      listHandler((url) => {
+        urls.push(url.pathname + url.search)
+        return HttpResponse.json({ items: frontPageRecipes(), nextCursor: null })
+      }),
+    )
+    renderRoute('/discover')
+    expect(await screen.findByRole('link', { name: 'Cover story: Cover dish' })).toBeInTheDocument()
+
+    await userEvent.click(seeAllIn('Quick tonight'))
+
+    // The results are named, so it is obvious what you are looking at…
+    expect(await screen.findByRole('heading', { name: 'Quick tonight', level: 1 })).toBeInTheDocument()
+    await waitFor(() => expect(urls.some((u) => u.includes('tags=Quick'))).toBe(true))
+    expect(screen.queryByRole('link', { name: /^Cover story/ })).toBeNull()
+
+    // …and one control leaves, instead of a hunt through the Filters sheet.
+    await userEvent.click(screen.getByRole('button', { name: '‹ Back to Discover' }))
+    expect(await screen.findByRole('link', { name: 'Cover story: Cover dish' })).toBeInTheDocument()
+    await waitFor(() => expect(urls[urls.length - 1]).not.toContain('tags=Quick'))
+  })
+
+  it('does not let the drill-in masquerade as a filter the user chose', async () => {
+    server.use(listHandler(() => HttpResponse.json({ items: frontPageRecipes(), nextCursor: null })))
+    renderRoute('/discover')
+    await screen.findByRole('link', { name: /^Cover story/ })
+
+    await userEvent.click(seeAllIn('Quick tonight'))
+    await screen.findByRole('heading', { name: 'Quick tonight', level: 1 })
+
+    // The Quick tag rides on the query, never in the sheet's state — a count
+    // here would claim a filter the user never picked, and clearing it in the
+    // sheet is exactly the confusing exit this view replaces.
+    expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument()
+  })
+
+  it('gives the Trending drill-in the same way back', async () => {
+    server.use(listHandler(() => HttpResponse.json({ items: frontPageRecipes(), nextCursor: null })))
+    renderRoute('/discover')
+    await screen.findByRole('link', { name: /^Cover story/ })
+
+    await userEvent.click(seeAllIn('Trending'))
+
+    expect(await screen.findByRole('heading', { name: 'Trending', level: 1 })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '‹ Back to Discover' }))
+    expect(await screen.findByRole('link', { name: /^Cover story/ })).toBeInTheDocument()
+  })
+
+  it('leaves the department when the user asks a question of their own', async () => {
+    const user = userEvent.setup()
+    const urls: string[] = []
+    server.use(
+      listHandler((url) => {
+        urls.push(url.pathname + url.search)
+        return HttpResponse.json({ items: frontPageRecipes(), nextCursor: null })
+      }),
+    )
+    renderRoute('/discover')
+    await screen.findByRole('link', { name: /^Cover story/ })
+
+    await user.click(seeAllIn('Quick tonight'))
+    await screen.findByRole('heading', { name: 'Quick tonight', level: 1 })
+
+    await openFilters(user)
+    await user.click(screen.getByRole('button', { name: 'Medium' }))
+    await user.click(screen.getByRole('button', { name: 'Show results' }))
+
+    // A filter of your own replaces the department rather than stacking onto
+    // it — otherwise "‹ Back to Discover" would clear the view and strand you
+    // on a still-filtered list, having promised the front page.
+    await waitFor(() => expect(urls[urls.length - 1]).toContain('difficulty=Medium'))
+    expect(urls[urls.length - 1]).not.toContain('tags=Quick')
+    expect(screen.queryByRole('button', { name: '‹ Back to Discover' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Quick tonight', level: 1 })).toBeNull()
   })
 })
