@@ -15,7 +15,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
+import { queryKeys } from '@/api/queryKeys'
 import { server } from '@/test/msw/server'
 import { makeFollowUser, makeUserProfile } from '@/test/msw/handlers'
 import { renderRoute } from '@/test/utils'
@@ -203,5 +205,76 @@ describe('FollowListPage', () => {
     // Both flip. If only one does, the caches disagreed.
     await waitFor(() => expect(screen.queryByText('Follow')).not.toBeInTheDocument())
     expect(screen.getAllByText(/Following/).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('a single follow action patches every cached follow list, not just the one on screen', async () => {
+    setViewport(true)
+    server.use(
+      http.get('*/users/:id/followers', () =>
+        HttpResponse.json({
+          items: [makeFollowUser({ id: 'u1', username: 'mira_cooks', followedByMe: false })],
+          nextCursor: null,
+        }),
+      ),
+      http.get('*/users/:id', ({ params }) =>
+        HttpResponse.json(
+          makeUserProfile({ id: String(params.id), username: 'mira_cooks', followedByMe: false }),
+        ),
+      ),
+      http.post('*/users/:id/follow', () => new HttpResponse(null, { status: 204 })),
+    )
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    // A follow list belonging to a DIFFERENT profile the reader visited earlier —
+    // seeded directly, never mounted by this render. The property under test is
+    // that the predicate reaches caches like this one, not just the one on screen;
+    // a key-based patch scoped to the visible route (target-1's followers) would
+    // leave this one stale.
+    client.setQueryData(queryKeys.users.following('target-2', ''), {
+      pageParams: [undefined],
+      pages: [
+        {
+          items: [makeFollowUser({ id: 'u1', username: 'mira_cooks', followedByMe: false })],
+          nextCursor: null,
+        },
+      ],
+    })
+
+    renderRoute('/users/target-1/followers?u=u1', { client })
+
+    await waitFor(() => expect(screen.getAllByText('Follow').length).toBe(2))
+    await userEvent.click(screen.getAllByText('Follow')[0])
+    await waitFor(() => expect(screen.queryByText('Follow')).not.toBeInTheDocument())
+
+    const other = client.getQueryData<{ pages: Array<{ items: Array<{ id: string; followedByMe: boolean }> }> }>(
+      queryKeys.users.following('target-2', ''),
+    )
+    expect(other?.pages[0].items[0].followedByMe).toBe(true)
+  })
+
+  it('a failed follow request rolls back the row AND the pane together', async () => {
+    setViewport(true)
+    server.use(
+      http.get('*/users/:id/followers', () =>
+        HttpResponse.json({
+          items: [makeFollowUser({ id: 'u1', username: 'mira_cooks', followedByMe: false })],
+          nextCursor: null,
+        }),
+      ),
+      http.get('*/users/:id', ({ params }) =>
+        HttpResponse.json(
+          makeUserProfile({ id: String(params.id), username: 'mira_cooks', followedByMe: false }),
+        ),
+      ),
+      http.post('*/users/:id/follow', () => new HttpResponse(null, { status: 500 })),
+    )
+    renderRoute('/users/target-1/followers?u=u1')
+
+    await waitFor(() => expect(screen.getAllByText('Follow').length).toBe(2))
+    await userEvent.click(screen.getAllByText('Follow')[0])
+
+    // The optimistic patch lands on both caches, then the 500 rolls BOTH back —
+    // the row and the pane must both read "Follow" again, not just one of them.
+    await waitFor(() => expect(screen.getAllByText('Follow').length).toBe(2))
   })
 })
