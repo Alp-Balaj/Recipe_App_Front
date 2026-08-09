@@ -15,12 +15,31 @@
 // confirm), "sheet" (a full-width top-aligned scroll sheet, e.g. the edit
 // form), "full" (an opaque full-bleed panel, e.g. cook mode), "bottom" (a
 // bottom sheet — ADDITIVE variant from social-feed cp06 for the mobile
-// comment sheet; existing variants untouched).
+// comment sheet), "anchored" (ADDITIVE, Discover desktop filters: an
+// undimmed panel hanging off the control that opened it). Existing variants
+// untouched by each addition.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
-type ModalVariant = 'center' | 'sheet' | 'full' | 'bottom'
+type ModalVariant = 'center' | 'sheet' | 'full' | 'bottom' | 'anchored'
+
+/**
+ * Where an `anchored` panel hangs inside the frame, in px from its edges.
+ *
+ * The CALLER owns this geometry, because only the caller knows where its
+ * trigger sits. Modal deliberately does not measure the trigger: the panel and
+ * the button are not DOM siblings (BrowsePage renders the sheet outside its
+ * scroll container on purpose), so a measured offset would have to survive
+ * scrolling the list underneath it — a moving anchor for a panel that should
+ * stay put.
+ */
+export interface ModalAnchor {
+  top?: number
+  right?: number
+  left?: number
+  width?: number
+}
 
 interface ModalProps {
   onClose: () => void
@@ -33,13 +52,22 @@ interface ModalProps {
    * instead of the opaque var(--backdrop) wall. Dimmed variants only.
    */
   frosted?: boolean
+  /** `anchored` only — ignored by every other variant. */
+  anchor?: ModalAnchor
   children: ReactNode
 }
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-export default function Modal({ onClose, label, variant = 'center', frosted = false, children }: ModalProps) {
+export default function Modal({
+  onClose,
+  label,
+  variant = 'center',
+  frosted = false,
+  anchor,
+  children,
+}: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Move focus into the dialog on open; restore it to the trigger on close.
@@ -87,10 +115,13 @@ export default function Modal({ onClose, label, variant = 'center', frosted = fa
     }
   }
 
-  const dimmed = variant !== 'full'
+  // "full" owns the whole frame, so there is no outside left to click. Every
+  // other variant closes on an outside click — including "anchored", which has
+  // no visible backdrop but still catches the click through a transparent one.
+  const closesOnOutsideClick = variant !== 'full'
   const onBackdropClick = (e: React.MouseEvent) => {
     // Only a click on the backdrop itself (not bubbled from the panel) closes.
-    if (dimmed && e.target === e.currentTarget) onClose()
+    if (closesOnOutsideClick && e.target === e.currentTarget) onClose()
   }
 
   return (
@@ -102,7 +133,7 @@ export default function Modal({ onClose, label, variant = 'center', frosted = fa
         aria-label={label}
         tabIndex={-1}
         className="scroll"
-        style={panelStyle(variant)}
+        style={panelStyle(variant, anchor)}
       >
         {children}
       </div>
@@ -113,6 +144,10 @@ export default function Modal({ onClose, label, variant = 'center', frosted = fa
 function backdropStyle(variant: ModalVariant, frosted: boolean): CSSProperties {
   const base: CSSProperties = { position: 'absolute', inset: 0, zIndex: variant === 'full' ? 20 : 10 }
   if (variant === 'full') return base
+  // Anchored panels leave the page visible and undimmed — the whole point is
+  // that you can see the results you are filtering. The layer still spans the
+  // frame so an outside click lands on it.
+  if (variant === 'anchored') return base
   // Frosted: translucent tint + blur (the tint alone still dims legibly in
   // browsers without backdrop-filter). Default: the opaque --backdrop wall.
   const dim: CSSProperties = frosted
@@ -142,8 +177,21 @@ function backdropStyle(variant: ModalVariant, frosted: boolean): CSSProperties {
   }
 }
 
-function panelStyle(variant: ModalVariant): CSSProperties {
+function panelStyle(variant: ModalVariant, anchor?: ModalAnchor): CSSProperties {
   if (variant === 'center') return { width: '100%', maxWidth: 380, outline: 'none' }
+  if (variant === 'anchored')
+    return {
+      position: 'absolute',
+      top: anchor?.top ?? 0,
+      right: anchor?.right,
+      left: anchor?.left,
+      width: anchor?.width ?? 560,
+      // Never wider than the frame it hangs in, whatever the caller asked for.
+      maxWidth: `calc(100% - ${(anchor?.right ?? 0) + (anchor?.left ?? 0) + 16}px)`,
+      maxHeight: `calc(100% - ${(anchor?.top ?? 0) + 16}px)`,
+      overflowY: 'auto',
+      outline: 'none',
+    }
   if (variant === 'bottom')
     return {
       width: '100%',
