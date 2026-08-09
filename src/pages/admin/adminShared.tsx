@@ -13,6 +13,20 @@ import { ApiError, ApiConflictError } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
 
 export function adminErrorMessage(error: unknown): string {
+  // Admin Rework FE-2 (Task 16): promote/demote tag their own thrown error
+  // with `.adminAction` (see AdminUserDetailPage's withRoleContext) before it
+  // reaches useAdminMutation's onError, so this stays the one dispatch point
+  // instead of useAdminMutation growing a context parameter every other tab
+  // would have to thread through too.
+  const roleAction = (error as { adminAction?: unknown } | null)?.adminAction
+  if (roleAction === 'promote' || roleAction === 'demote') {
+    if (error instanceof ApiConflictError) {
+      return 'Role already changed — refresh.'
+    }
+    if (error instanceof ApiError && error.status === 403) {
+      return "You can't change your own role."
+    }
+  }
   if (error instanceof ApiConflictError) {
     return 'Already in that state — someone (maybe you) got there first. Refreshing.'
   }
