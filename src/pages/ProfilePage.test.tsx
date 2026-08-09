@@ -360,13 +360,23 @@ describe('ProfilePage — desktop layout', () => {
   })
 })
 
-describe('ProfilePage — Followers overlay', () => {
-  it('opens the Followers list from the stat tile and links into a profile', async () => {
+describe('ProfilePage — Followers page', () => {
+  it('opens the followers page from the profile stat tile', async () => {
+    const router = renderRoute('/profile')
+
+    await userEvent.click(await screen.findByRole('button', { name: /Followers/ }))
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toMatch(/^\/users\/.+\/followers$/),
+    )
+  })
+
+  it('navigates the Followers list from the stat tile into a profile', async () => {
     useProfile({ followerCount: 1 })
     server.use(
       http.get('*/users/:id/followers', () =>
         HttpResponse.json({
-          items: [{ id: 'follower-1', username: 'chef_ana', profileImageUrl: null }],
+          items: [{ id: 'follower-1', username: 'chef_ana', profileImageUrl: null, recipeCount: 0, followedByMe: false }],
           nextCursor: null,
         }),
       ),
@@ -374,8 +384,9 @@ describe('ProfilePage — Followers overlay', () => {
     const router = renderRoute('/profile')
 
     await userEvent.click(await screen.findByRole('button', { name: '1 Followers' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Followers' })
-    const row = await within(dialog).findByRole('button', { name: /chef_ana/ })
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/users/${TEST_USER.userId}/followers`))
+
+    const row = await screen.findByRole('button', { name: /chef_ana/ })
     await userEvent.click(row)
     await waitFor(() => expect(router.state.location.pathname).toBe('/users/follower-1'))
   })
