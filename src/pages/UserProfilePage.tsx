@@ -13,15 +13,11 @@
 import { useMemo, type CSSProperties, type KeyboardEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { RecipeResponse } from '@/api/types'
-import { useAuth } from '@/auth/AuthContext'
-import { useAuthGate } from '@/auth/AuthGateContext'
-import Avatar from '@/components/Avatar'
 import StateBlock from '@/components/ui/StateBlock'
 import { useOpenRecipe } from '@/components/recipeCanvas'
+import ProfileSummary from '@/components/profile/ProfileSummary'
 import { isNotFound } from '@/hooks/useRecipe'
-import { useSocialMutations } from '@/hooks/useSocialMutations'
 import { useUserProfile, useUserRecipes } from '@/hooks/useUserProfile'
-import { cookingRankMeta } from '@/lib/cookingRank'
 import { resolveImageUrl } from '@/lib/images'
 import { gradientFor } from '@/pages/recipeVisuals'
 
@@ -37,8 +33,6 @@ export default function UserProfilePage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const openRecipe = useOpenRecipe()
-  const { user } = useAuth()
-  const isOwn = !!user && user.userId === id
 
   const { data: profile, isLoading, isError, error, refetch } = useUserProfile(id)
   const {
@@ -48,8 +42,6 @@ export default function UserProfilePage() {
     hasNextPage,
     isFetchingNextPage,
   } = useUserRecipes(id)
-  const { toggleFollow } = useSocialMutations()
-  const { requireAuth } = useAuthGate()
 
   const recipes = useMemo(() => {
     const seen = new Set<string>()
@@ -105,64 +97,7 @@ export default function UserProfilePage() {
         ←
       </button>
 
-      {/* Avatar block */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14 }}>
-        <Avatar
-          username={profile.username}
-          profileImageUrl={profile.profileImageUrl}
-          seed={profile.id}
-          size={76}
-        />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              letterSpacing: '-0.01em',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {profile.username}
-          </div>
-          <div style={{ marginTop: 5 }}>
-            <span style={rankChip}>✦ {profile.cookingRank} pts · {cookingRankMeta(profile.cookingRank).title}</span>
-          </div>
-        </div>
-      </div>
-
-      {profile.bio && (
-        <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 14 }}>
-          {profile.bio}
-        </div>
-      )}
-
-      {/* Counts */}
-      <div style={{ display: 'flex', gap: 9, marginBottom: 14 }}>
-        <Stat value={profile.followerCount} label={profile.followerCount === 1 ? 'Follower' : 'Followers'} />
-        <Stat value={profile.followingCount} label="Following" />
-        <Stat value={profile.recipeCount} label={profile.recipeCount === 1 ? 'Recipe' : 'Recipes'} />
-      </div>
-
-      {/* Follow / unfollow (hidden on your own profile — self-follow is a 400). */}
-      {isOwn ? (
-        <button onClick={() => navigate('/profile')} style={ownProfileBtn}>
-          This is you — open your profile
-        </button>
-      ) : (
-        <button
-          onClick={() => {
-            // Guest access (§4.4): gate before .mutate — no optimistic patch for guests.
-            if (!requireAuth()) return
-            toggleFollow.mutate({ userId: profile.id, next: !profile.followedByMe })
-          }}
-          aria-pressed={profile.followedByMe}
-          style={profile.followedByMe ? followingBtn : followBtn}
-        >
-          {profile.followedByMe ? '✓ Following' : 'Follow'}
-        </button>
-      )}
+      <ProfileSummary profile={profile} size="page" />
 
       {/* Recipe grid — 3 columns, the Instagram shape. */}
       <div style={gridLabel}>Recipes</div>
@@ -195,15 +130,6 @@ export default function UserProfilePage() {
 }
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
-
-function Stat({ value, label }: { value: number; label: string }) {
-  return (
-    <div style={statTile}>
-      <div style={{ fontSize: 17, fontWeight: 800 }}>{value}</div>
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 600 }}>{label}</div>
-    </div>
-  )
-}
 
 function GridTile({ recipe, onOpen }: { recipe: RecipeResponse; onOpen: () => void }) {
   return (
@@ -272,52 +198,6 @@ const backBtn: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   marginBottom: 14,
-}
-
-const rankChip: CSSProperties = {
-  display: 'inline-block',
-  fontSize: 11.5,
-  fontWeight: 700,
-  padding: '3px 10px',
-  borderRadius: 999,
-  background: 'var(--chipbg)',
-  color: 'var(--chipcol)',
-}
-
-const statTile: CSSProperties = {
-  flex: 1,
-  textAlign: 'center',
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 13,
-  padding: '9px 6px',
-}
-
-const followBtn: CSSProperties = {
-  width: '100%',
-  cursor: 'pointer',
-  border: 'none',
-  borderRadius: 13,
-  padding: '11px 16px',
-  fontFamily: 'inherit',
-  fontSize: 14,
-  fontWeight: 700,
-  background: 'var(--accent)',
-  color: 'var(--accent-ink)',
-}
-
-const followingBtn: CSSProperties = {
-  ...followBtn,
-  border: '1px solid var(--border)',
-  background: 'var(--surface2)',
-  color: 'var(--text)',
-}
-
-const ownProfileBtn: CSSProperties = {
-  ...followBtn,
-  border: '1px solid var(--border)',
-  background: 'var(--surface2)',
-  color: 'var(--text)',
 }
 
 const gridLabel: CSSProperties = {
