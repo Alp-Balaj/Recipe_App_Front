@@ -16,6 +16,20 @@ body { margin: 0; }
 
 .scroll::-webkit-scrollbar { width: 0; height: 0; }
 
+/* iOS Safari zooms the whole viewport whenever a focused form control computes
+   under 16px, and never zooms back out — every field in the app sits at
+   13.5–15px, so focusing one wrecked the layout on iPhone. `-webkit-touch-
+   callout` is WebKit-on-touch only, which keeps Android and desktop on the
+   design's smaller fields; the alternative (maximum-scale=1) would have killed
+   pinch-zoom for everyone. `!important` because inputs are styled inline. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Scan intent cards: the pointed-at (or keyboard-focused) card takes the accent
    edge the mock draws on the selected one. An inset shadow rather than a 2px
    border, so the state change never reflows the card by a pixel. Inline styles
