@@ -44,6 +44,7 @@ import {
   type CookedRecipeResponse,
   type FeedItemResponse,
   type FeedListResponse,
+  type FollowListResponse,
   type UserProfileResponse,
 } from '@/api/social'
 import type { RecipeListResponse } from '@/api/types'
@@ -194,6 +195,35 @@ function patchOneComment(
   )
 }
 
+/** Matches every cached follow list, whoever's profile it belongs to. */
+const FOLLOW_LIST_QUERIES = {
+  predicate: (query: { queryKey: readonly unknown[] }) =>
+    query.queryKey[0] === 'users' &&
+    (query.queryKey[1] === 'followers' || query.queryKey[1] === 'following'),
+} as const
+
+type FollowListCache = InfiniteData<FollowListResponse>
+
+/**
+ * Flip followedByMe on one person across EVERY cached follow list.
+ *
+ * A predicate rather than a key: the same person appears in the follow lists of
+ * every profile the reader has visited, and patching one key leaves the rest
+ * showing the opposite of what the preview pane shows.
+ */
+function patchFollowListCaches(queryClient: QueryClient, userId: string, next: boolean): void {
+  queryClient.setQueriesData<FollowListCache>(FOLLOW_LIST_QUERIES, (data) => {
+    if (!data) return data
+    return {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        items: page.items.map((u) => (u.id === userId ? { ...u, followedByMe: next } : u)),
+      })),
+    }
+  })
+}
+
 /** Snapshot every cached query under the given key prefixes for rollback. */
 function snapshotCaches(queryClient: QueryClient, keys: readonly (readonly unknown[])[]): Snapshot {
   return keys.flatMap((queryKey) => queryClient.getQueriesData({ queryKey }))
@@ -292,6 +322,10 @@ export function useSocialMutations() {
     onMutate: async ({ userId, next }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.users.profile(userId) })
       const snapshot = snapshotCaches(queryClient, [queryKeys.users.profile(userId)])
+      // snapshotCaches takes explicit keys; the follow lists are matched by predicate, so
+      // they are snapshotted here instead.
+      const followLists = queryClient.getQueriesData<FollowListCache>(FOLLOW_LIST_QUERIES)
+
       queryClient.setQueryData<UserProfileResponse>(queryKeys.users.profile(userId), (profile) =>
         !profile || profile.followedByMe === next
           ? profile
@@ -301,7 +335,9 @@ export function useSocialMutations() {
               followerCount: Math.max(0, profile.followerCount + (next ? 1 : -1)),
             },
       )
-      return { snapshot }
+      patchFollowListCaches(queryClient, userId, next)
+
+      return { snapshot, followLists }
     },
     onSuccess: () => {
       // The follow graph changed, so /feed contents (and its following/discover
@@ -309,7 +345,11 @@ export function useSocialMutations() {
       queryClient.invalidateQueries({ queryKey: queryKeys.feed.all })
     },
     onError: (_err, _vars, context) => {
-      if (context) restoreCaches(queryClient, context.snapshot)
+      if (!context) return
+      restoreCaches(queryClient, context.snapshot)
+      for (const [key, data] of context.followLists) {
+        queryClient.setQueryData(key, data)
+      }
     },
   })
 

@@ -127,4 +127,32 @@ describe('FollowListPage', () => {
     expect(await screen.findByText('No one matching “zzz”', {}, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.queryByText('No followers yet')).not.toBeInTheDocument()
   })
+
+  it('following from a row updates the row and the pane together', async () => {
+    setViewport(true)
+    server.use(
+      http.get('*/users/:id/followers', () =>
+        HttpResponse.json({
+          items: [makeFollowUser({ id: 'u1', username: 'mira_cooks', followedByMe: false })],
+          nextCursor: null,
+        }),
+      ),
+      http.get('*/users/:id', ({ params }) =>
+        HttpResponse.json(
+          makeUserProfile({ id: String(params.id), username: 'mira_cooks', followedByMe: false }),
+        ),
+      ),
+      http.post('*/users/:id/follow', () => new HttpResponse(null, { status: 204 })),
+    )
+    renderRoute('/users/target-1/followers?u=u1')
+
+    // The pane's control and the row's control both start unfollowed.
+    await waitFor(() => expect(screen.getAllByText('Follow').length).toBe(2))
+
+    await userEvent.click(screen.getAllByText('Follow')[0])
+
+    // Both flip. If only one does, the caches disagreed.
+    await waitFor(() => expect(screen.queryByText('Follow')).not.toBeInTheDocument())
+    expect(screen.getAllByText(/Following/).length).toBeGreaterThanOrEqual(2)
+  })
 })
