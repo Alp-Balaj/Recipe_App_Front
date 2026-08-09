@@ -1,9 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────
 // One row of a follow list. Shared by the desktop split and the phone list.
 //
-// The Follow button stops propagation: without it, following someone also
-// fires the row's select/navigate and yanks the user out of the list they
-// were working through.
+// Two sibling buttons inside a non-interactive <div> — never nested. Nesting
+// interactive content inside a <button> (even an ARIA `role="button"`) is
+// invalid per the HTML content model (axe-core's `nested-interactive` rule):
+// it renders fine but breaks the accessibility tree, since the outer
+// button's name-from-content would flatten every descendant into one
+// string. Siblings give each control its own unambiguous accessible name,
+// and no stopPropagation() is needed — there is no ancestor handler for a
+// click to leak into.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CSSProperties } from 'react'
@@ -19,48 +24,46 @@ interface Props {
 
 export default function FollowRow({ user, selected = false, onSelect, onToggleFollow }: Props) {
   return (
-    <button
-      onClick={onSelect}
-      aria-current={selected ? 'true' : undefined}
-      style={{ ...row, background: selected ? 'var(--accent-soft)' : 'transparent' }}
-    >
-      <Avatar username={user.username} profileImageUrl={user.profileImageUrl} seed={user.id} size={40} />
-      <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-        <span style={name}>{user.username}</span>
-        <span style={sub}>
-          {user.recipeCount} {user.recipeCount === 1 ? 'recipe' : 'recipes'}
+    <div style={{ ...row, background: selected ? 'var(--accent-soft)' : 'transparent' }}>
+      <button onClick={onSelect} aria-current={selected ? 'true' : undefined} style={selectBtn}>
+        <Avatar username={user.username} profileImageUrl={user.profileImageUrl} seed={user.id} size={40} />
+        <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+          <span style={name}>{user.username}</span>
+          <span style={sub}>
+            {user.recipeCount} {user.recipeCount === 1 ? 'recipe' : 'recipes'}
+          </span>
         </span>
-      </span>
-      <span
-        role="button"
-        tabIndex={0}
+      </button>
+      <button
+        onClick={() => onToggleFollow(!user.followedByMe)}
         aria-pressed={user.followedByMe}
-        onClick={(e) => {
-          e.stopPropagation()
-          onToggleFollow(!user.followedByMe)
-        }}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return
-          e.preventDefault()
-          e.stopPropagation()
-          onToggleFollow(!user.followedByMe)
-        }}
         style={user.followedByMe ? followingChip : followChip}
       >
         {user.followedByMe ? '✓ Following' : 'Follow'}
-      </span>
-    </button>
+      </button>
+    </div>
   )
 }
 
 const row: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 11,
+  gap: 8,
   width: '100%',
-  border: 'none',
   borderRadius: 11,
-  padding: '8px 8px',
+  padding: '4px 8px',
+}
+
+const selectBtn: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 11,
+  flex: 1,
+  minWidth: 0,
+  background: 'transparent',
+  border: 'none',
+  borderRadius: 9,
+  padding: '6px 2px',
   cursor: 'pointer',
   fontFamily: 'inherit',
 }
@@ -81,8 +84,10 @@ const followChip: CSSProperties = {
   flexShrink: 0,
   fontSize: 12,
   fontWeight: 700,
+  border: 'none',
   borderRadius: 10,
   padding: '6px 12px',
+  fontFamily: 'inherit',
   background: 'var(--accent-fill)',
   color: 'var(--accent-ink)',
   cursor: 'pointer',
