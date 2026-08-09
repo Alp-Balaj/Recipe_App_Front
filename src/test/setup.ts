@@ -72,3 +72,11 @@ if (typeof window.matchMedia !== 'function') {
       dispatchEvent: () => false,
     }) as MediaQueryList
 }
+
+// jsdom has neither Web Speech API (stream O). Baseline no-op stubs so cook
+// mode's voice affordances exist under test; tests that assert on speech
+// install the controllable fakes from @/test/speech instead, and
+// capability-absence tests delete these via removeSpeechApis().
+import { installSpeechStubs } from './speech'
+
+installSpeechStubs()
