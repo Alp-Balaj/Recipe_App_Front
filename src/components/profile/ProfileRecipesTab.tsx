@@ -123,7 +123,17 @@ export default function ProfileRecipesTab({ columns = 1 }: { columns?: number })
       )}
 
       {mine.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, 1fr)`, gap: 12 }}>
+        // minmax(0, 1fr), NOT 1fr. `1fr` is shorthand for `minmax(auto, 1fr)`,
+        // and that `auto` minimum is the grid item's MIN-CONTENT width — which a
+        // `white-space: nowrap` title makes as wide as the entire title. The
+        // track then refuses to be narrower than the longest recipe name and the
+        // row's own min-width:0 never gets a chance to ellipsise. Measured on a
+        // 390px phone: card 492px, title 436px, page scrollWidth 613. The `0`
+        // floor is the entire fix.
+        <div
+          data-testid="recipes-grid"
+          style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: 12 }}
+        >
           {mine.map((r) => (
             <RecipeListRow
               key={r.id}
