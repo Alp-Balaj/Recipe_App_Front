@@ -580,3 +580,111 @@ describe('CookMode — read-aloud (stream O)', () => {
     expect(stubs.synth.cancelCount).toBeGreaterThanOrEqual(2)
   })
 })
+
+// ── Push-to-talk (stream O) ──────────────────────────────────────────────
+
+// Grammar first: a match acts immediately and free; a non-match lands in the
+// assistant's draft and costs nothing until the user taps send. The fixture's
+// step 1 duration (120s) is what "how long left" reads from.
+describe('CookMode — push-to-talk (stream O)', () => {
+  let stubs: SpeechStubs
+
+  beforeEach(() => {
+    stubs = installSpeechStubs()
+  })
+
+  const tapMic = async () => {
+    await userEvent.click(screen.getAllByRole('button', { name: /voice input/i })[0])
+  }
+
+  it('hides the mic when no recognition API exists (Firefox)', () => {
+    const w = window as unknown as Record<string, unknown>
+    delete w.SpeechRecognition
+    delete w.webkitSpeechRecognition
+    renderCookMode()
+    expect(screen.queryByRole('button', { name: /voice input/i })).toBeNull()
+  })
+
+  it('a spoken command drives the existing handler: "next" advances the step', async () => {
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('next'))
+    expect(screen.getByText(/step 2 of/i)).toBeInTheDocument()
+  })
+
+  it('"how long left" answers from the timer, spoken', async () => {
+    renderCookMode() // fixture step 1: durationSeconds 120
+    await userEvent.click(screen.getByRole('button', { name: /start/i }))
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('how long left'))
+    expect(stubs.spoken[stubs.spoken.length - 1].text).toMatch(/^(2 minutes|1 minute 5[0-9] seconds)/)
+  })
+
+  it('a non-match lands in the assistant DRAFT and is NOT sent', async () => {
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('can I use margarine instead of butter'))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    expect(input).toHaveValue('can I use margarine instead of butter')
+    expect(screen.queryAllByTestId('cook-turn')).toHaveLength(0) // nothing sent
+  })
+
+  it('an over-long transcript is truncated in the draft and says so inline', async () => {
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('x'.repeat(600)))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    expect((input as HTMLInputElement).value).toHaveLength(500)
+    expect(screen.getByText(/trimmed/i)).toBeInTheDocument()
+  })
+
+  it('HALF-DUPLEX: tapping the mic silences speech first; speaking stops the mic', async () => {
+    renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+    const cancels = stubs.synth.cancelCount
+    await tapMic()
+    expect(stubs.synth.cancelCount).toBeGreaterThan(cancels) // mic tap killed speech
+    // now the reverse: speaking (step change) aborts a live mic
+    await userEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(stubs.recognitions[stubs.recognitions.length - 1].aborted).toBe(true)
+  })
+
+  it('a denied mic becomes one inline explanation, not a re-prompt loop', async () => {
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitError('not-allowed'))
+    expect(screen.getByText(/microphone access/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /voice input/i })).toBeNull()
+    expect(stubs.recognitions).toHaveLength(1)
+  })
+
+  it('a refused answer is SPOKEN as a refusal when read-aloud is on', async () => {
+    server.use(
+      http.post('*/recipes/:id/cook/ask', () =>
+        HttpResponse.json({
+          answer: 'That is not about this recipe.',
+          refused: true,
+          budget: {
+            dailyCallLimit: 50,
+            callsUsed: 1,
+            callsRemaining: 49,
+            dailyTokenLimit: 1,
+            tokensUsed: 0,
+            tokensRemaining: 1,
+            resetsAtUtc: '2026-08-07T00:00:00Z',
+          },
+        }),
+      ),
+    )
+    renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+    await userEvent.click(screen.getByText('✻ Ask about this recipe'))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    await userEvent.type(input, 'who won the league')
+    await userEvent.click(screen.getByText('Ask'))
+    await screen.findByText('That is not about this recipe.') // wait for the exchange to render
+    const lastSpoken = stubs.spoken[stubs.spoken.length - 1]
+    expect(lastSpoken.text).toMatch(/declined/i)
+    expect(lastSpoken.text).toContain('That is not about this recipe.')
+  })
+})

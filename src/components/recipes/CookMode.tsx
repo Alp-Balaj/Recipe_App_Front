@@ -55,7 +55,8 @@ import { useCookTimers, formatClock } from '@/hooks/useCookTimers'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
 import { useSpeech } from '@/hooks/useSpeech'
-import { composeSpokenStep } from '@/lib/cookVoice'
+import { usePushToTalk, type PushToTalkState } from '@/hooks/usePushToTalk'
+import { composeSpokenStep, matchCommand, speakClock, type VoiceCommand } from '@/lib/cookVoice'
 import {
   MAX_SERVINGS,
   MIN_SERVINGS,
@@ -133,9 +134,72 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
   const step = steps[index]
   const last = index === steps.length - 1
 
-  // Task 6 seam: push-to-talk's stop() lands here — this placeholder keeps
-  // say() as the one door to speech output from day one.
-  const ptt = { stop: () => {} }
+  // One pipeline for every transcript, both mic buttons: grammar first — a
+  // match acts immediately and costs nothing; a non-match lands in the
+  // assistant's DRAFT and the user taps send. A misheard phrase must never
+  // become a paid model call by itself (the scanner's confirm-then-write
+  // shape, applied to spend).
+  const [voiceDraft, setVoiceDraft] = useState<{ text: string; id: number } | null>(null)
+  const voiceDraftSeq = useRef(0)
+
+  const runCommand = (command: VoiceCommand) => {
+    if (!step) return
+    switch (command) {
+      case 'next':
+        // Boundary no-ops get a spoken confirmation — the one case where the
+        // action is not visible on screen (nothing moves).
+        if (last) say('That was the last step.')
+        else setIndex((n) => Math.min(steps.length - 1, n + 1))
+        break
+      case 'back':
+        if (index === 0) say("You're on the first step.")
+        else setIndex((n) => Math.max(0, n - 1))
+        break
+      case 'repeat':
+        say(spokenStep()) // an explicit ask — speaks even with the toggle off
+        break
+      case 'startTimer': {
+        const duration = step.durationSeconds ?? 0
+        if (duration > 0) timers.start(index, duration)
+        else say('This step has no timer.')
+        break
+      }
+      case 'pauseTimer':
+        timers.pause(index)
+        break
+      case 'howLong': {
+        const timer = timers.timers[index]
+        if (timer && !timer.done) say(speakClock(timer.remaining))
+        else say('No timer is running on this step.')
+        break
+      }
+    }
+  }
+
+  const handleTranscript = (raw: string) => {
+    const command = matchCommand(raw)
+    if (command) {
+      runCommand(command)
+      return
+    }
+    voiceDraftSeq.current += 1
+    setVoiceDraft({ text: raw, id: voiceDraftSeq.current })
+    setAssistantOpen(true)
+  }
+
+  const ptt = usePushToTalk(handleTranscript)
+
+  // Half-duplex, listening half: the mic must not hear the app, so a tap
+  // silences any speech BEFORE recognition opens. Never auto-resumed after
+  // speech — the next listen is the next tap.
+  const onMic = () => {
+    if (ptt.state === 'listening') {
+      ptt.stop()
+      return
+    }
+    speech.cancel()
+    ptt.start()
+  }
 
   const spokenStep = useCallback(() => {
     if (!step) return ''
@@ -145,14 +209,15 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
 
   // Half-duplex, speaking half: recognition is stopped before any utterance.
   // say() is the ONE door to speech output so the rule cannot be forgotten at
-  // a call site.
+  // a call site. Depends on ptt.stop (referentially stable from the hook)
+  // rather than closing over the whole ptt object, so this never pins a
+  // stale mic reference from an earlier render.
   const say = useCallback(
     (text: string) => {
       ptt.stop()
       speech.speak(text)
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [speech.speak],
+    [ptt.stop, speech.speak],
   )
 
   // Read the step on arrival while the toggle is on; kill leftovers when it is
@@ -273,6 +338,9 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
           logCook()
         }}
         onAsk={() => setAssistantOpen(true)}
+        micSupported={ptt.supported}
+        micState={ptt.state}
+        onMic={onMic}
       />
 
       {assistantOpen && (
@@ -280,7 +348,18 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
           recipe={frozen}
           servings={servings}
           requireAuth={requireAuth}
-          onClose={() => setAssistantOpen(false)}
+          voiceDraft={voiceDraft}
+          micSupported={ptt.supported}
+          micState={ptt.state}
+          onMic={onMic}
+          onAnswer={(answer, refused) => {
+            if (!readAloud) return
+            say(refused ? `The assistant declined this one. ${answer}` : answer)
+          }}
+          onClose={() => {
+            speech.cancel() // utterances die with the sheet that queued them
+            setAssistantOpen(false)
+          }}
         />
       )}
 
@@ -692,6 +771,9 @@ function Footer({
   onNext,
   onFinish,
   onAsk,
+  micSupported,
+  micState,
+  onMic,
 }: {
   last: boolean
   atStart: boolean
@@ -699,24 +781,54 @@ function Footer({
   onNext: () => void
   onFinish: () => void
   onAsk: () => void
+  micSupported: boolean
+  micState: PushToTalkState
+  onMic: () => void
 }) {
   return (
     <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 12 }}>
-      <button
-        onClick={onAsk}
-        style={{
-          alignSelf: 'flex-start',
-          background: 'none',
-          border: 'none',
-          color: 'var(--accent)',
-          fontSize: 14,
-          fontWeight: 700,
-          cursor: 'pointer',
-          padding: '2px 0',
-        }}
-      >
-        ✻ Ask about this recipe
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <button
+          onClick={onAsk}
+          style={{
+            alignSelf: 'flex-start',
+            background: 'none',
+            border: 'none',
+            color: 'var(--accent)',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+            padding: '2px 0',
+          }}
+        >
+          ✻ Ask about this recipe
+        </button>
+        {micSupported && micState !== 'denied' && (
+          <button
+            onClick={onMic}
+            aria-label="Voice input"
+            aria-pressed={micState === 'listening'}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              background: micState === 'listening' ? 'var(--accent)' : 'var(--surface2)',
+              color: micState === 'listening' ? 'var(--accent-ink)' : 'var(--text)',
+              border: 'none',
+              fontSize: 16,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            🎤
+          </button>
+        )}
+        {micSupported && micState === 'denied' && (
+          <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+            Microphone access is off — voice input unavailable.
+          </span>
+        )}
+      </div>
       <div style={{ display: 'flex', gap: 10 }}>
         <Button
           onClick={onPrev}
@@ -752,11 +864,21 @@ function AssistantSheet({
   recipe,
   servings,
   requireAuth,
+  voiceDraft,
+  micSupported,
+  micState,
+  onMic,
+  onAnswer,
   onClose,
 }: {
   recipe: RecipeResponse
   servings: number
   requireAuth: () => boolean
+  voiceDraft: { text: string; id: number } | null
+  micSupported: boolean
+  micState: PushToTalkState
+  onMic: () => void
+  onAnswer: (answer: string, refused: boolean) => void
   onClose: () => void
 }) {
   const [turns, setTurns] = useState<Turn[]>([])
@@ -764,13 +886,26 @@ function AssistantSheet({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [callsRemaining, setCallsRemaining] = useState<number | null>(null)
+  const [trimmedNote, setTrimmedNote] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     // Optional call, not just an optional ref: jsdom has no scrollIntoView, and
     // an assistant that throws while scrolling would take cook mode down with it.
     endRef.current?.scrollIntoView?.({ block: 'end' })
   }, [turns, pending])
+
+  // A transcript is a DRAFT, not a send — the user confirms spend, and the
+  // visible text is where recognition errors get fixed. Truncation to the
+  // backend's limit happens HERE, said out loud inline, never silently at
+  // send time. Keyed on voiceDraft.id so the same words twice still land.
+  useEffect(() => {
+    if (!voiceDraft) return
+    setDraft(voiceDraft.text.slice(0, COOK_QUESTION_MAX_LENGTH))
+    setTrimmedNote(voiceDraft.text.length > COOK_QUESTION_MAX_LENGTH)
+    inputRef.current?.focus()
+  }, [voiceDraft])
 
   const send = async () => {
     const question = draft.trim()
@@ -786,6 +921,7 @@ function AssistantSheet({
     // never shows a question that was never asked (D18 point 2).
     setTurns((prev) => [...prev, { role: 'user', content: question }])
     setDraft('')
+    setTrimmedNote(false)
 
     try {
       const result = await askCookAssistant(recipe.id, {
@@ -797,6 +933,7 @@ function AssistantSheet({
       })
       setTurns((prev) => [...prev, { role: 'assistant', content: result.answer, refused: result.refused }])
       setCallsRemaining(result.budget.callsRemaining)
+      onAnswer(result.answer, result.refused)
     } catch (err) {
       setTurns((prev) => prev.slice(0, -1))
       setDraft(question)
@@ -928,6 +1065,12 @@ function AssistantSheet({
         </div>
       )}
 
+      {trimmedNote && (
+        <div style={{ flexShrink: 0, fontSize: 12.5, color: 'var(--muted)', marginBottom: 8 }}>
+          Heard more than {COOK_QUESTION_MAX_LENGTH} characters — trimmed to fit.
+        </div>
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -936,6 +1079,7 @@ function AssistantSheet({
         style={{ flexShrink: 0, display: 'flex', gap: 8 }}
       >
         <input
+          ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={COOK_QUESTION_MAX_LENGTH}
@@ -953,6 +1097,32 @@ function AssistantSheet({
             outline: 'none',
           }}
         />
+        {micSupported && micState !== 'denied' && (
+          <button
+            type="button"
+            onClick={onMic}
+            aria-label="Voice input"
+            aria-pressed={micState === 'listening'}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              background: micState === 'listening' ? 'var(--accent)' : 'var(--surface2)',
+              color: micState === 'listening' ? 'var(--accent-ink)' : 'var(--text)',
+              border: 'none',
+              fontSize: 16,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            🎤
+          </button>
+        )}
+        {micSupported && micState === 'denied' && (
+          <span style={{ fontSize: 12.5, color: 'var(--muted)', alignSelf: 'center', flexShrink: 0 }}>
+            Microphone access is off — voice input unavailable.
+          </span>
+        )}
         <Button
           type="submit"
           disabled={pending || draft.trim().length === 0}
