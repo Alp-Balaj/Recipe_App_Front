@@ -15,14 +15,19 @@ export type FollowListKind = 'followers' | 'following'
 /** Rows per page. Backend default is 20, clamped to 50. */
 export const FOLLOW_PAGE_SIZE = 20
 
-/** One follow list (followers or following) for a user, paged. */
-export function useFollowList(userId: string | undefined, kind: FollowListKind, enabled = true) {
+/** One follow list (followers or following) for a user, paged, optionally filtered. */
+export function useFollowList(
+  userId: string | undefined,
+  kind: FollowListKind,
+  enabled = true,
+  q = '',
+) {
   const key = kind === 'followers' ? queryKeys.users.followers : queryKeys.users.following
   const fetcher = kind === 'followers' ? getFollowers : getFollowing
   return useInfiniteQuery({
-    queryKey: key(userId ?? ''),
+    queryKey: key(userId ?? '', q),
     queryFn: ({ pageParam, signal }) =>
-      fetcher(userId!, { cursor: pageParam, limit: FOLLOW_PAGE_SIZE, signal }),
+      fetcher(userId!, { cursor: pageParam, limit: FOLLOW_PAGE_SIZE, q: q || undefined, signal }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: enabled && !!userId,

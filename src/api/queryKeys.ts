@@ -82,10 +82,13 @@ export const queryKeys = {
     profile: (id: string) => ['users', 'profile', id] as const,
     /** GET /users/{id}/recipes — the profile grid (useInfiniteQuery). */
     recipes: (id: string) => ['users', 'recipes', id] as const,
-    /** GET /users/{id}/followers — the follower list overlay (useInfiniteQuery). */
-    followers: (id: string) => ['users', 'followers', id] as const,
-    /** GET /users/{id}/following — the following list overlay (useInfiniteQuery). */
-    following: (id: string) => ['users', 'following', id] as const,
+    // SANCTIONED ADDITIVE EDIT (desktop follow list): the search term joins the key so a
+    // filtered result cannot overwrite the unfiltered list. Defaulted, so every existing
+    // caller keeps its current key shape with an empty trailing segment.
+    /** GET /users/{id}/followers — the follower list page (useInfiniteQuery). */
+    followers: (id: string, q = '') => ['users', 'followers', id, q] as const,
+    /** GET /users/{id}/following — the following list page (useInfiniteQuery). */
+    following: (id: string, q = '') => ['users', 'following', id, q] as const,
   },
   saved: {
     /** Everything saved-list-related. */

@@ -1,6 +1,11 @@
 import { http, HttpResponse } from 'msw'
 import type { AuthResponse, LoginRequest, RecipeListResponse, RegisterRequest } from '@/api/types'
-import type { CommentListResponse, FeedListResponse, UserProfileResponse } from '@/api/social'
+import type {
+  CommentListResponse,
+  FeedListResponse,
+  FollowListItemResponse,
+  UserProfileResponse,
+} from '@/api/social'
 
 // Wildcard-prefixed paths so these match the real fetched URL regardless of
 // origin or the /api proxy prefix (fetch('/api/auth/login') → ".../auth/login").
@@ -32,6 +37,18 @@ export function makeUserProfile(over: Partial<UserProfileResponse> = {}): UserPr
     defaultRecipeVisibility: 'Public',
     dietaryRestrictions: [],
     cuisinePreferences: [],
+    ...over,
+  }
+}
+
+/** A FollowListItemResponse fixture (desktop follow list); override what you assert. */
+export function makeFollowUser(over: Partial<FollowListItemResponse> = {}): FollowListItemResponse {
+  return {
+    id: 'follow-u1',
+    username: 'mira_cooks',
+    profileImageUrl: null,
+    followedByMe: false,
+    recipeCount: 0,
     ...over,
   }
 }
