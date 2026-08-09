@@ -3,7 +3,7 @@
 // jsdom's matchMedia stub reports matches:false, so these exercise the mobile
 // layout. Covered: the hero (name + rank tier + real counts), derived badges,
 // the Recipes / Saved / Activity tabs, the Settings screen (theme + logout),
-// and the Followers overlay.
+// and navigating to the Followers page.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { afterEach, describe, expect, it } from 'vitest'

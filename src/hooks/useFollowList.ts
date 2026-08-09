@@ -1,9 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Follower / following lists — GET /users/{id}/followers | /following via
-// useInfiniteQuery (Recipe App Redesign, the profile Followers/Following
-// overlay). FollowedAt DESC keyset; items are the compact UserSummaryResponse
-// (id, username, avatar) — no per-row followedByMe flag, so the overlay lists
-// and links to profiles rather than showing follow state.
+// useInfiniteQuery (desktop follow list plan). FollowedAt DESC keyset; items
+// are FollowListItemResponse (id, username, avatar, recipeCount, and a
+// per-row followedByMe flag caller-relative to the signed-in user), so
+// FollowListPage can render and toggle follow state directly on each row
+// instead of linking out to profiles. `q` optionally filters rows by
+// username substring, debounced by the caller.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useInfiniteQuery } from '@tanstack/react-query'

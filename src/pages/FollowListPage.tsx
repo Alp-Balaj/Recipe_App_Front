@@ -39,23 +39,28 @@ export default function FollowListPage() {
 
   // Both routes share ONE lazy() identity (so Rollup keeps this a single
   // chunk) and react-router renders `match.route.element` with no `key`, so
-  // switching tabs reconciles this component IN PLACE rather than
-  // remounting it — `term`/`q` are plain state and would otherwise survive
-  // the switch, leaving the Following list filtered by whatever the reader
-  // typed on Followers. Reset both when `kind` changes instead of relying on
-  // a remount.
+  // switching tabs — OR switching the :id subject, e.g. via the preview
+  // pane's own Followers/Following links, which point at this same route —
+  // reconciles this component IN PLACE rather than remounting it. `term`/`q`
+  // are plain state and would otherwise survive that reconciliation, leaving
+  // the newly-loaded list filtered by whatever the reader had typed for the
+  // previous kind/subject. Reset both whenever `kind` OR `id` changes instead
+  // of relying on a remount.
   //
-  // A mid-flight debounce timer cannot land after this and re-apply the old
-  // term: setTerm('') here changes `term`, and React re-runs effects by
-  // comparing each effect's OWN dependency array across renders — so the
-  // debounce effect below (keyed on [term]) always tears down its previous
-  // setTimeout (scheduled for the old term) before scheduling a new one for
-  // the reset value, regardless of the order these two effects are declared
-  // in.
+  // WARNING for whoever narrows this dependency array: it must reset `term`,
+  // not just `q`. A mid-flight debounce timer does NOT get torn down by this
+  // effect running — effects are compared against their OWN previous
+  // dependency array, and the debounce effect below is keyed on [term], which
+  // this effect never touches directly. What actually cancels a stale timer
+  // is that `setTerm('')` CHANGES `term`, which forces a second, cascaded
+  // render in which the debounce effect's OWN cleanup fires (tearing down the
+  // setTimeout scheduled for the old term) before it reschedules for the
+  // reset value. Reset `q` alone and the timer survives to re-apply the old
+  // term after this effect has already run.
   useEffect(() => {
     setTerm('')
     setQ('')
-  }, [kind])
+  }, [kind, id])
 
   useEffect(() => {
     const t = setTimeout(() => setQ(term.trim()), 300)
@@ -154,7 +159,13 @@ export default function FollowListPage() {
 
   return (
     <div className="scroll" style={page}>
-      <button onClick={() => navigate(`/users/${id}`)} aria-label="Back" style={back}>
+      <button
+        onClick={() => {
+          if (window.history.state?.idx > 0) navigate(-1)
+          else navigate(`/users/${id}`)
+        }}
+        style={back}
+      >
         ← {owner?.username ?? 'Profile'}
       </button>
 

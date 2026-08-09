@@ -128,7 +128,7 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
     onTab: setTab,
     onOpenSettings: () => setShowSettings(true),
     onShareProfile: handleShareProfile,
-    onOpenFollow: (kind: FollowListKind) => navigate(`/users/${userId}/${kind}`),
+    onOpenFollow: (kind: FollowListKind) => userId && navigate(`/users/${userId}/${kind}`),
     onNewRecipe: () => navigate('/recipes/new'),
     shareToast,
     renderTabContent,

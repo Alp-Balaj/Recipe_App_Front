@@ -321,6 +321,10 @@ export function useSocialMutations() {
       next ? followUser(userId) : unfollowUser(userId),
     onMutate: async ({ userId, next }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.users.profile(userId) })
+      // The follow lists get patched below too — an in-flight refetch (a
+      // Try-again, or a sibling fetchNextPage) landing after that patch would
+      // clobber it, so cancel those in-flight requests as well.
+      await queryClient.cancelQueries(FOLLOW_LIST_QUERIES)
       const snapshot = snapshotCaches(queryClient, [queryKeys.users.profile(userId)])
       // snapshotCaches takes explicit keys; the follow lists are matched by predicate, so
       // they are snapshotted here instead.

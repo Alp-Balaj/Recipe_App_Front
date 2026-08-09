@@ -130,6 +130,60 @@ describe('FollowListPage', () => {
     expect(await screen.findByText('chandra')).toBeInTheDocument()
   })
 
+  it('clicking the preview pane\'s Followers count (a subject change, same kind) clears the search', async () => {
+    setViewport(true)
+    server.use(
+      // Two different profiles' follower lists, both filterable by `q` — so a
+      // leaked term from target-1 would silently filter u1's list too.
+      http.get('*/users/:id/followers', ({ params, request }) => {
+        const q = new URL(request.url).searchParams.get('q')?.toLowerCase()
+        const byOwner: Record<string, ReturnType<typeof makeFollowUser>[]> = {
+          'target-1': [
+            makeFollowUser({ id: 'u1', username: 'mira_cooks', recipeCount: 42 }),
+            makeFollowUser({ id: 'u2', username: 'tobias', recipeCount: 7 }),
+          ],
+          u1: [makeFollowUser({ id: 'u9', username: 'someone_else', recipeCount: 3 })],
+        }
+        const items = byOwner[String(params.id)] ?? []
+        const filtered = q ? items.filter((u) => u.username.toLowerCase().includes(q)) : items
+        return HttpResponse.json({ items: filtered, nextCursor: null })
+      }),
+      http.get('*/users/:id', ({ params }) =>
+        HttpResponse.json(
+          params.id === 'u1'
+            ? makeUserProfile({ id: 'u1', username: 'mira_cooks', followerCount: 9 })
+            : makeUserProfile({ id: String(params.id), username: `user_${params.id}` }),
+        ),
+      ),
+    )
+    const router = renderRoute('/users/target-1/followers')
+
+    // Search for "mira" — the row stays visible because it matches, so
+    // selecting it below doesn't itself prove anything about the filter.
+    await userEvent.type(screen.getByRole('searchbox'), 'mira')
+    await screen.findByText('mira_cooks')
+
+    // Select the row so the preview pane renders for u1.
+    await userEvent.click(screen.getByRole('button', { name: /mira_cooks/ }))
+    expect(await screen.findByRole('link', { name: /View full profile/ })).toBeInTheDocument()
+
+    // Click the PANE's Followers count (ProfileSummary's StatLink), not the
+    // page's own Followers/Following tab — both have "Followers" in their
+    // accessible name, so disambiguate by href (the pane's points at u1).
+    const followersLinks = screen.getAllByRole('link', { name: /Followers/ })
+    const paneStatLink = followersLinks.find((l) => l.getAttribute('href') === '/users/u1/followers')
+    expect(paneStatLink).toBeTruthy()
+    await userEvent.click(paneStatLink!)
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/users/u1/followers'))
+    // The search box must be empty...
+    await waitFor(() => expect(screen.getByRole('searchbox')).toHaveValue(''))
+    // ...and the newly-loaded list must be UNFILTERED: if "mira" had survived
+    // the subject change, u1's list (which contains no "mira") would render
+    // its empty state instead of "someone_else".
+    expect(await screen.findByText('someone_else')).toBeInTheDocument()
+  })
+
   it('distinguishes an empty search from an empty list', async () => {
     setViewport(true)
     server.use(
