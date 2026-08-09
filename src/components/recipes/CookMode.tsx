@@ -164,9 +164,18 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
         else say('This step has no timer.')
         break
       }
-      case 'pauseTimer':
-        timers.pause(index)
+      case 'pauseTimer': {
+        // The one moment a cook most needs "stop timer" is while the alarm is
+        // RINGING — and pause() preserves `done`, so it would do nothing.
+        // Ringing dismisses (reset, the same action the ✓ Done chip takes);
+        // running goes silent (pause, visibly); anything else has nothing to
+        // stop.
+        const timer = timers.timers[index]
+        if (timer?.done) timers.reset(index)
+        else if (timer?.running) timers.pause(index)
+        else say('No timer is running on this step.')
         break
+      }
       case 'howLong': {
         const timer = timers.timers[index]
         if (timer && !timer.done) say(speakClock(timer.remaining))
@@ -358,6 +367,11 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
           }}
           onClose={() => {
             speech.cancel() // utterances die with the sheet that queued them
+            // The sheet unmounts on close; without this, the NEXT hand-opened
+            // sheet would remount its voiceDraft effect against this same
+            // stale transcript (already sent, or never sent) and clobber a
+            // blank draft with old words.
+            setVoiceDraft(null)
             setAssistantOpen(false)
           }}
         />

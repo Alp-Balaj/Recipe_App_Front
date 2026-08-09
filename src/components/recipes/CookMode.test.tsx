@@ -687,4 +687,107 @@ describe('CookMode — push-to-talk (stream O)', () => {
     expect(lastSpoken.text).toMatch(/declined/i)
     expect(lastSpoken.text).toContain('That is not about this recipe.')
   })
+
+  // REGRESSION: voiceDraft used to outlive the sheet. The sheet unmounts on
+  // close, but the parent's voiceDraft state did not — so the NEXT hand-opened
+  // sheet remounted its draft-intake effect against the SAME old transcript
+  // (already sent) and clobbered a blank box with stale words.
+  it('sending a voice question, then closing and reopening the sheet, does not resurrect the old draft', async () => {
+    server.use(
+      http.post('*/recipes/:id/cook/ask', () =>
+        HttpResponse.json({
+          answer: 'Yes, margarine works here.',
+          refused: false,
+          budget: {
+            dailyCallLimit: 50,
+            callsUsed: 1,
+            callsRemaining: 49,
+            dailyTokenLimit: 1,
+            tokensUsed: 0,
+            tokensRemaining: 1,
+            resetsAtUtc: '2026-08-07T00:00:00Z',
+          },
+        }),
+      ),
+    )
+    renderCookMode()
+    await tapMic()
+    act(() => stubs.recognitions[0].emitFinal('can I use margarine instead of butter'))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    expect(input).toHaveValue('can I use margarine instead of butter')
+    await userEvent.click(screen.getByText('Ask'))
+    await screen.findByText('Yes, margarine works here.')
+
+    await userEvent.click(screen.getByRole('button', { name: /close the assistant/i }))
+    await userEvent.click(screen.getByText('✻ Ask about this recipe'))
+
+    const reopened = await screen.findByLabelText(/ask about this recipe/i)
+    expect(reopened).toHaveValue('')
+    expect(screen.queryByText(/trimmed/i)).toBeNull()
+  })
+
+  // REGRESSION guard for the type="button" fix: the sheet's own mic button
+  // sits inside the ask <form>, and a button with no explicit type defaults to
+  // "submit" — a mic tap would otherwise fire send() instead of opening the mic.
+  it('tapping the mic inside the sheet does not submit the form', async () => {
+    let posted = false
+    server.use(
+      http.post('*/recipes/:id/cook/ask', () => {
+        posted = true
+        return HttpResponse.json({
+          answer: 'unused',
+          refused: false,
+          budget: {
+            dailyCallLimit: 50,
+            callsUsed: 1,
+            callsRemaining: 49,
+            dailyTokenLimit: 1,
+            tokensUsed: 0,
+            tokensRemaining: 1,
+            resetsAtUtc: '2026-08-07T00:00:00Z',
+          },
+        })
+      }),
+    )
+    renderCookMode()
+    await userEvent.click(screen.getByText('✻ Ask about this recipe'))
+    const input = await screen.findByLabelText(/ask about this recipe/i)
+    await userEvent.type(input, 'can I use oil?')
+
+    // Footer's mic is index 0; the sheet's own, inside the form, is the last.
+    const micButtons = screen.getAllByRole('button', { name: /voice input/i })
+    await userEvent.click(micButtons[micButtons.length - 1])
+
+    expect(posted).toBe(false)
+    expect(input).toHaveValue('can I use oil?')
+  })
+
+  it('closing the sheet cancels speech', async () => {
+    renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+    await userEvent.click(screen.getByText('✻ Ask about this recipe'))
+    const cancels = stubs.synth.cancelCount
+    await userEvent.click(screen.getByRole('button', { name: /close the assistant/i }))
+    expect(stubs.synth.cancelCount).toBeGreaterThan(cancels)
+  })
+
+  // AUTHORIZED ADDITION: pauseTimer used to call timers.pause() unconditionally,
+  // which preserves `done` — so "stop timer" while the alarm was RINGING did
+  // nothing, the one moment a cook most needs it to do something. It must
+  // dismiss (reset), not just go quiet.
+  it('"stop timer" while ringing dismisses the alarm, not just silences it', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture step 1: durationSeconds 120
+    await act(() => void fireEvent.click(screen.getByRole('button', { name: /start/i })))
+    await act(() => vi.advanceTimersByTimeAsync(121_000))
+    expect(screen.getByText('✓ Done')).toBeInTheDocument()
+
+    await act(() => void fireEvent.click(screen.getAllByRole('button', { name: /voice input/i })[0]))
+    act(() => stubs.recognitions[0].emitFinal('stop timer'))
+
+    expect(screen.queryByText('✓ Done')).not.toBeInTheDocument()
+    expect(screen.getByText('▷ Start')).toBeInTheDocument() // reset, not just paused
+    expect(screen.getByText('Step 1 of 3')).toBeInTheDocument() // no crash
+    vi.useRealTimers()
+  })
 })
