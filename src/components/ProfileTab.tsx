@@ -27,7 +27,6 @@ import { cookingRankMeta, type CookingRankMeta } from '@/lib/cookingRank'
 import { deriveBadges, earnedBadgeCount, type ProfileBadge } from '@/lib/profileBadges'
 import { gradientFor } from '@/pages/recipeVisuals'
 import type { Mode } from './ThemeRoot'
-import FollowListModal from './profile/FollowListModal'
 import ProfileActivityTab from './profile/ProfileActivityTab'
 import ProfileRecipesTab from './profile/ProfileRecipesTab'
 import ProfileSavedTab from './profile/ProfileSavedTab'
@@ -53,7 +52,6 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
 
   const [showSettings, setShowSettings] = useState(false)
   const [tab, setTab] = useState<ContentTab>('recipes')
-  const [followModal, setFollowModal] = useState<FollowListKind | null>(null)
   const [shareToast, setShareToast] = useState<string | null>(null)
 
   const { data: profile } = useUserProfile(user?.userId)
@@ -130,29 +128,13 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
     onTab: setTab,
     onOpenSettings: () => setShowSettings(true),
     onShareProfile: handleShareProfile,
-    onOpenFollow: setFollowModal,
+    onOpenFollow: (kind: FollowListKind) => userId && navigate(`/users/${userId}/${kind}`),
     onNewRecipe: () => navigate('/recipes/new'),
     shareToast,
     renderTabContent,
   }
 
-  return (
-    <>
-      {isDesktop ? <DesktopProfile {...shared} /> : <MobileProfile {...shared} />}
-
-      {followModal && userId && (
-        <FollowListModal
-          userId={userId}
-          kind={followModal}
-          onClose={() => setFollowModal(null)}
-          onOpenUser={(id) => {
-            setFollowModal(null)
-            navigate(`/users/${id}`)
-          }}
-        />
-      )}
-    </>
-  )
+  return isDesktop ? <DesktopProfile {...shared} /> : <MobileProfile {...shared} />
 }
 
 // ── Shared layout props ──────────────────────────────────────────────────────

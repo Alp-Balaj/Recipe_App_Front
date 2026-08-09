@@ -37,6 +37,10 @@ export const RecipeImportPage = lazy(() => import('./pages/RecipeImportPage'))
 export const MyRecipesPage = lazy(() => import('./pages/MyRecipesPage'))
 export const RecipeDetailPage = lazy(() => import('./pages/RecipeDetailPage'))
 export const UserProfilePage = lazy(() => import('./pages/UserProfilePage'))
+// desktop follow list plan — the follow list as a real page, one chunk for
+// both /users/:id/followers and /users/:id/following (the component derives
+// its kind from the pathname; see router.tsx for the route registration).
+export const FollowListPage = lazy(() => import('./pages/FollowListPage'))
 export const MealPlanWeekPage = lazy(() => import('./pages/MealPlanWeekPage'))
 export const MealPlanMonthPage = lazy(() => import('./pages/MealPlanMonthPage'))
 export const MealPlanDayPage = lazy(() => import('./pages/MealPlanDayPage'))

@@ -366,9 +366,20 @@ export function completeOnboarding(
   return apiFetch<UserProfileResponse>('/users/me/onboarding', { method: 'POST', body })
 }
 
+/** One follow-list row. Superset of UserSummaryResponse — the feed's shape is untouched. */
+export interface FollowListItemResponse {
+  id: string
+  username: string
+  profileImageUrl?: string | null
+  /** Caller-relative; always false for guests. */
+  followedByMe: boolean
+  /** Caller-relative — counts only recipes this caller can open. */
+  recipeCount: number
+}
+
 /** GET /users/{id}/followers | /following → 200 body (FollowedAt DESC keyset). */
 export interface FollowListResponse {
-  items: UserSummaryResponse[]
+  items: FollowListItemResponse[]
   nextCursor?: string | null
 }
 
@@ -398,11 +409,11 @@ export function getUserProfile(userId: string, signal?: AbortSignal): Promise<Us
 /** GET /users/{id}/followers — accounts following this user (FollowedAt DESC keyset). */
 export function getFollowers(
   userId: string,
-  params: { cursor?: string; limit?: number; signal?: AbortSignal },
+  params: { cursor?: string; limit?: number; q?: string; signal?: AbortSignal },
 ): Promise<FollowListResponse> {
-  const { cursor, limit, signal } = params
+  const { cursor, limit, q, signal } = params
   return apiFetch<FollowListResponse>(`/users/${userId}/followers`, {
-    query: { cursor, limit },
+    query: { cursor, limit, q },
     signal,
   })
 }
@@ -410,11 +421,11 @@ export function getFollowers(
 /** GET /users/{id}/following — accounts this user follows (FollowedAt DESC keyset). */
 export function getFollowing(
   userId: string,
-  params: { cursor?: string; limit?: number; signal?: AbortSignal },
+  params: { cursor?: string; limit?: number; q?: string; signal?: AbortSignal },
 ): Promise<FollowListResponse> {
-  const { cursor, limit, signal } = params
+  const { cursor, limit, q, signal } = params
   return apiFetch<FollowListResponse>(`/users/${userId}/following`, {
-    query: { cursor, limit },
+    query: { cursor, limit, q },
     signal,
   })
 }

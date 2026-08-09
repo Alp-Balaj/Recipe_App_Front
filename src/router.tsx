@@ -24,6 +24,7 @@ import {
   BrowsePage,
   ChatPage,
   FeedPage,
+  FollowListPage,
   FoodScanPage,
   LoginPage,
   MealPlanDayPage,
@@ -70,6 +71,13 @@ export const routes: RouteObject[] = [
           // router discipline holds"); /feed is cp05's, /users/:id is cp06's.
           { path: '/feed', element: page(FeedPage) },
           { path: '/users/:id', element: page(UserProfilePage) },
+          // desktop follow list plan — SANCTIONED ADDITIVE route registration, same
+          // discipline as the social-feed routes above: two NEW paths pointing at a NEW
+          // page, nothing existing changed or reordered. Three segments each, so neither
+          // can shadow the two-segment /users/:id above. Both point at the same component,
+          // which reads its kind off the pathname.
+          { path: '/users/:id/followers', element: page(FollowListPage) },
+          { path: '/users/:id/following', element: page(FollowListPage) },
           // chat-ai v3 — SANCTIONED ADDITIVE route (same discipline as the
           // social-feed additive routes above): /chat is the new-conversation
           // surface, /chat/:conversationId deep-links one thread.
