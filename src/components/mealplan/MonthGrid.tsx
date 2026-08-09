@@ -8,10 +8,16 @@
 // position carrying which meal is missing. Pretending dish names fit at 38px
 // would be the mistake in either direction.
 //
-// The week rail is the piece that earns the month view its keep: every row of
-// a month grid ALREADY is a week, so the row's coverage and repeat warning sit
-// at its end for free. That is the balance-checking the 7×3 board did, minus
-// the board.
+// The week strip is the piece that earns the month view its keep: every row of
+// a month grid ALREADY is a week, so the row's coverage sits under it for free.
+// That is the balance-checking the 7×3 board did, minus the board.
+//
+// It used to be a RAIL — a 76px eighth column, rendered only above 1024px.
+// That made /plan/week/:start unreachable from a phone: the rail held the only
+// link to a week anywhere outside the week page's own prev/next. A strip under
+// the row works at both widths, so the fix and the consistency are one change.
+// It costs ~33px per row of vertical, which is the trade, and it hands the
+// seven cells back the 76px the rail was holding.
 //
 // Presentational: it takes resolved week summaries and renders them. No
 // fetching, no mutations.
@@ -30,6 +36,7 @@ import {
   isSameMonth,
   planDayPath,
   planWeekPath,
+  weekRangeShortOf,
 } from '@/lib/planDates'
 import { mealTokens } from './MealCard'
 
@@ -73,7 +80,6 @@ export default function MonthGrid({ monthStart, weeks, byWeek, today, repeats, l
             {isDesktop ? label : label.charAt(0)}
           </div>
         ))}
-        {isDesktop && <div style={{ ...weekdayLabel, textAlign: 'right' }}>Week</div>}
       </div>
 
       {weeks.map((week) => {
@@ -82,33 +88,37 @@ export default function MonthGrid({ monthStart, weeks, byWeek, today, repeats, l
         const weekIsPast = isPast(week[6])
 
         return (
-          <div key={weekKey} style={isDesktop ? headerRowDesktop : headerRowMobile}>
-            {week.map((date) => {
-              const key = formatPlanDate(date)
-              const outside = !isSameMonth(date, monthStart)
-              return isDesktop ? (
-                <DesktopCell
-                  key={key}
-                  date={date}
-                  outside={outside}
-                  isToday={key === todayKey}
-                  summary={summary}
-                  repeats={repeats}
-                  load={loads?.get(key)}
-                />
-              ) : (
-                <MobileCell
-                  key={key}
-                  date={date}
-                  outside={outside}
-                  isToday={key === todayKey}
-                  summary={summary}
-                  repeats={repeats}
-                  load={loads?.get(key)}
-                />
-              )
-            })}
-            {isDesktop && <WeekRail week={week} summary={summary} dim={weekIsPast} />}
+          // The 3px inner gap against the stack's 6px is load-bearing: proximity
+          // is what says the strip belongs to the row above it, not below it.
+          <div key={weekKey} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={isDesktop ? headerRowDesktop : headerRowMobile}>
+              {week.map((date) => {
+                const key = formatPlanDate(date)
+                const outside = !isSameMonth(date, monthStart)
+                return isDesktop ? (
+                  <DesktopCell
+                    key={key}
+                    date={date}
+                    outside={outside}
+                    isToday={key === todayKey}
+                    summary={summary}
+                    repeats={repeats}
+                    load={loads?.get(key)}
+                  />
+                ) : (
+                  <MobileCell
+                    key={key}
+                    date={date}
+                    outside={outside}
+                    isToday={key === todayKey}
+                    summary={summary}
+                    repeats={repeats}
+                    load={loads?.get(key)}
+                  />
+                )
+              })}
+            </div>
+            <WeekStrip week={week} summary={summary} dim={weekIsPast} dense={!isDesktop} />
           </div>
         )
       })}
@@ -284,8 +294,25 @@ export function formatCookTime(minutes: number): string {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
 }
 
-/** Coverage, cook load and variety for one row — the row already being a week. */
-function WeekRail({ week, summary, dim }: { week: Date[]; summary?: WeekSummary; dim: boolean }) {
+/**
+ * Coverage, cook load and variety for one row — the row already being a week.
+ *
+ * `dense` is the phone: at 339px there is room for the coverage, the range and
+ * a destination, and that is all. The cook load and dish count stay behind on
+ * the wide screen rather than being crushed onto a second line — the strip is
+ * one line at every width, and what fits on it is the width's business.
+ */
+function WeekStrip({
+  week,
+  summary,
+  dim,
+  dense,
+}: {
+  week: Date[]
+  summary?: WeekSummary
+  dim: boolean
+  dense: boolean
+}) {
   const count = summary?.entryCount ?? 0
   const minutes = summary?.totalMinutes ?? 0
   const dishes = summary?.distinctDishes ?? 0
@@ -294,21 +321,26 @@ function WeekRail({ week, summary, dim }: { week: Date[]; summary?: WeekSummary;
     <Link
       to={planWeekPath(week[0])}
       aria-label={`Week of ${formatPlanDate(week[0])}`}
-      style={{ ...railStyle, ...(dim ? { opacity: 0.45 } : {}) }}
+      style={{ ...stripStyle, ...(dense ? stripDense : {}), ...(dim ? { opacity: 0.45 } : {}) }}
     >
-      <span style={railCount}>
+      <span style={stripCount}>
         {count}/{SLOTS_PER_WEEK}
       </span>
-      {/* Suppressed at zero rather than shown as "0m": an empty week's rail should
-          read as empty, not as a week that somehow costs no time to cook. */}
-      {minutes > 0 && <span style={railTime}>{formatCookTime(minutes)}</span>}
+      {/* The seven cells above are already numbered, so this is the one field
+          the phone gives up first — but it names the week the link leads to. */}
+      <span style={stripRange}>{weekRangeShortOf(week[0])}</span>
+      {/* Suppressed at zero rather than shown as "0m": an empty week's strip
+          should read as empty, not as a week that somehow costs no time to cook. */}
+      {!dense && minutes > 0 && <span style={stripFigure}>{formatCookTime(minutes)}</span>}
       {/* Suppressed at zero for the same reason as the time: an unplanned week
           has no dishes, and "0 dishes" states it twice. */}
-      {dishes > 0 && (
-        <span style={railDishes}>
+      {!dense && dishes > 0 && (
+        <span style={stripFigure}>
           {dishes} {dishes === 1 ? 'dish' : 'dishes'}
         </span>
       )}
+      {/* The rail never said it was a link. This does. */}
+      <span style={stripGo}>Week ›</span>
     </Link>
   )
 }
@@ -318,9 +350,11 @@ function chipTint(meal: MealTypeName): CSSProperties {
   return { background: tint, color: ink }
 }
 
+// Seven columns and no eighth: the 76px the rail used to hold went back to the
+// cells when the strip moved under the row (~138px → ~150px at the 1080 cap).
 const headerRowDesktop: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(7, minmax(0, 1fr)) 76px',
+  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
   gap: 5,
 }
 
@@ -461,44 +495,60 @@ const mobileLoad: CSSProperties = {
   opacity: 0.75,
 }
 
-const railStyle: CSSProperties = {
+const stripStyle: CSSProperties = {
   display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'center',
-  alignItems: 'flex-end',
-  gap: 2,
-  paddingLeft: 8,
-  borderLeft: '1px solid var(--border)',
+  alignItems: 'center',
+  gap: 10,
+  padding: '6px 12px',
+  borderRadius: 9,
+  background: 'var(--surface2)',
+  fontSize: 11.5,
   textDecoration: 'none',
+  color: 'var(--text)',
   minWidth: 0,
 }
 
-const railCount: CSSProperties = {
-  fontSize: 12,
+// The phone. ~30px tall and the full content width — under the 44px touch
+// guideline vertically, which is the price of a strip per row on a surface
+// that already spends its height on a calendar.
+const stripDense: CSSProperties = {
+  gap: 7,
+  padding: '7px 10px',
+  fontSize: 10.5,
+}
+
+const stripCount: CSSProperties = {
   fontWeight: 800,
   color: 'var(--accent)',
   fontVariantNumeric: 'tabular-nums',
   letterSpacing: '-0.02em',
+  flexShrink: 0,
 }
 
-// Secondary to the coverage count above it: muted, not accented. Coverage is
-// the thing you act on ("this week has gaps"); time is context for it.
-const railTime: CSSProperties = {
-  fontSize: 10,
-  fontWeight: 700,
+// Secondary to the coverage beside it: muted, not accented. Coverage is the
+// thing you act on ("this week has gaps"); the rest is context for it.
+const stripRange: CSSProperties = {
   color: 'var(--muted)',
   fontVariantNumeric: 'tabular-nums',
-  letterSpacing: '-0.01em',
-}
-
-// Context like the time above it, so it stays muted. Clay now means one thing
-// only on this surface — a dish repeating from the day before — and it lives
-// on the chip, not here.
-const railDishes: CSSProperties = {
-  fontSize: 9.5,
-  fontWeight: 700,
-  color: 'var(--muted)',
-  fontVariantNumeric: 'tabular-nums',
-  letterSpacing: '0.01em',
   whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+}
+
+// Context like the range, so it stays muted. Clay means one thing only on this
+// surface — a dish repeating from the day before — and it lives on the chip.
+const stripFigure: CSSProperties = {
+  fontWeight: 700,
+  color: 'var(--muted)',
+  fontVariantNumeric: 'tabular-nums',
+  whiteSpace: 'nowrap',
+}
+
+const stripGo: CSSProperties = {
+  marginLeft: 'auto',
+  fontWeight: 800,
+  color: 'var(--accent)',
+  letterSpacing: '0.04em',
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
 }

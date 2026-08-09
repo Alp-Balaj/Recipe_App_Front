@@ -145,3 +145,24 @@ export function parseMonthParam(value: string | null): Date | null {
 export function planWeekPath(date: Date): string {
   return `/plan/week/${formatPlanDate(date)}`
 }
+
+/**
+ * "3 – 9 Aug", or "27 Jul – 2 Aug" across a month boundary — the week strip's
+ * range label. The month is named once when it can be, because the strip sits
+ * directly under seven cells that are already numbered.
+ *
+ * Deliberately NOT weekRangeLabel from MealPlanWeekPage, which spells the
+ * weekdays out ("Wed 27 Jul – Sun 2 Aug"): right for a page heading, too long
+ * for a strip that also carries coverage, cook time and a destination.
+ *
+ * Assembled from day numbers plus shortMonthOf rather than a locale range
+ * format, so the order of the parts is ours and only the abbreviation is the
+ * platform's.
+ */
+export function weekRangeShortOf(weekStart: Date): string {
+  const end = addDays(weekStart, 6)
+  const tail = `${end.getUTCDate()} ${shortMonthOf(end)}`
+  return isSameMonth(weekStart, end)
+    ? `${weekStart.getUTCDate()} – ${tail}`
+    : `${weekStart.getUTCDate()} ${shortMonthOf(weekStart)} – ${tail}`
+}
