@@ -39,7 +39,7 @@
 //      failure this surface must not have.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import Modal from '@/components/ui/Modal'
 import type { RecipeIngredient, RecipeResponse, RecipeStep } from '@/api/types'
@@ -54,6 +54,8 @@ import { isQuotaError } from '@/api/generation'
 import { useCookTimers, formatClock } from '@/hooks/useCookTimers'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
+import { useSpeech } from '@/hooks/useSpeech'
+import { composeSpokenStep } from '@/lib/cookVoice'
 import {
   MAX_SERVINGS,
   MIN_SERVINGS,
@@ -97,6 +99,15 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
   const timers = useCookTimers()
   const wakeLockHeld = useWakeLock(true)
 
+  // ── Voice (stream O) ─────────────────────────────────────────────────────
+  // The audio arbiter lives HERE, not in the hooks: half-duplex (stop the mic
+  // before speaking — the mic must not hear the app), the timer alarm
+  // interrupts speech and never the reverse, and every utterance dies with
+  // the state that queued it (step change, sheet close, unmount).
+  const speech = useSpeech()
+  const [readAloud, setReadAloud] = useState(false)
+  const spokenIndexRef = useRef(index)
+
   // The cook-and-rate write lives HERE, not in the finish panel, and the reason
   // is a bug the browser pass found rather than a preference. Firing a mutation
   // from a panel's mount effect works in tests and breaks in a dev browser:
@@ -121,6 +132,48 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
 
   const step = steps[index]
   const last = index === steps.length - 1
+
+  // Task 6 seam: push-to-talk's stop() lands here — this placeholder keeps
+  // say() as the one door to speech output from day one.
+  const ptt = { stop: () => {} }
+
+  const spokenStep = useCallback(() => {
+    if (!step) return ''
+    const used = referencedIngredients(step, scaled)
+    return composeSpokenStep({ description: step.description, used, factor, servings })
+  }, [step, scaled, factor, servings])
+
+  // Half-duplex, speaking half: recognition is stopped before any utterance.
+  // say() is the ONE door to speech output so the rule cannot be forgotten at
+  // a call site.
+  const say = useCallback(
+    (text: string) => {
+      ptt.stop()
+      speech.speak(text)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [speech.speak],
+  )
+
+  // Read the step on arrival while the toggle is on; kill leftovers when it is
+  // off. spokenIndexRef stops the toggle's own tap-speech (a user gesture,
+  // which iOS requires for first audio) from being repeated here, and never
+  // starts speech on mount (ref is seeded with the initial index).
+  useEffect(() => {
+    if (!step) return
+    if (spokenIndexRef.current === index) return
+    spokenIndexRef.current = index
+    if (readAloud) say(spokenStep())
+    else speech.cancel()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, readAloud, step, say, spokenStep, speech.cancel])
+
+  // The alarm outranks speech: a ringing timer is the one sound a cook must
+  // not miss, and the two-tone beep should never fight a paragraph of prose.
+  useEffect(() => {
+    if (timers.ringing) speech.cancel()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timers.ringing, speech.cancel])
 
   // Arrow keys move through the method. Modal traps Tab for focus, so the
   // arrows are what is left for a laptop propped on a counter — and they are
@@ -152,6 +205,18 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
         title={frozen.title}
         wakeLockHeld={wakeLockHeld}
         onExit={onExit}
+        readAloudSupported={speech.supported}
+        readAloud={readAloud}
+        onToggleReadAloud={() => {
+          if (readAloud) {
+            setReadAloud(false)
+            speech.cancel()
+          } else {
+            setReadAloud(true)
+            spokenIndexRef.current = index
+            say(spokenStep()) // from the gesture — iOS unlocks audio here
+          }
+        }}
       />
 
       <ServingsRow
@@ -248,12 +313,18 @@ function Header({
   title,
   wakeLockHeld,
   onExit,
+  readAloudSupported,
+  readAloud,
+  onToggleReadAloud,
 }: {
   index: number
   count: number
   title: string
   wakeLockHeld: boolean
   onExit: () => void
+  readAloudSupported: boolean
+  readAloud: boolean
+  onToggleReadAloud: () => void
 }) {
   return (
     <div style={{ flexShrink: 0 }}>
@@ -276,6 +347,27 @@ function Header({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {/* Exists iff speechSynthesis does — the wake-lock badge's honesty
+              rule. Hidden, not disabled, on browsers without the API. */}
+          {readAloudSupported && (
+            <button
+              onClick={onToggleReadAloud}
+              aria-label={readAloud ? 'Stop reading aloud' : 'Read steps aloud'}
+              aria-pressed={readAloud}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: '50%',
+                background: readAloud ? 'var(--accent)' : 'var(--surface2)',
+                color: readAloud ? 'var(--accent-ink)' : 'var(--text)',
+                border: 'none',
+                fontSize: 16,
+                cursor: 'pointer',
+              }}
+            >
+              🔊
+            </button>
+          )}
           {/* Shown only when a lock is actually HELD. A badge that claimed to
               keep the screen awake on a browser without the API would be worse
               than saying nothing — the promise is what people rely on. */}

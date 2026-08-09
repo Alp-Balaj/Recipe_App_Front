@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -7,6 +7,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
 import CookMode from './CookMode'
 import type { RecipeResponse } from '@/api/types'
+import { installSpeechStubs, removeSpeechApis, type SpeechStubs } from '@/test/speech'
 
 // Stream M. The five things cook mode promises, each tested as a promise rather
 // than as a render: the timer really counts the clock, the wake lock is only
@@ -503,5 +504,79 @@ describe('CookMode — finishing', () => {
     await userEvent.click(await screen.findByText('Done'))
 
     expect(onExit).toHaveBeenCalled()
+  })
+})
+
+// ── Read-aloud (stream O) ────────────────────────────────────────────────
+
+// The fixture's step 1 already fits what these need: a 120s duration (the
+// alarm-wins case) and an ingredient reference (butter, so the spoken form
+// carries a "Using: …" clause worth asserting on).
+describe('CookMode — read-aloud (stream O)', () => {
+  let stubs: SpeechStubs
+
+  beforeEach(() => {
+    stubs = installSpeechStubs()
+  })
+
+  it('hides the toggle entirely when speechSynthesis is absent', () => {
+    removeSpeechApis()
+    renderCookMode()
+    expect(screen.queryByRole('button', { name: /read steps aloud/i })).toBeNull()
+  })
+
+  it('speaks the current step when toggled on, from the tap itself', async () => {
+    renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+
+    expect(stubs.spoken).toHaveLength(1)
+    expect(stubs.spoken[0].text).toContain('Melt the butter in a heavy pan.')
+  })
+
+  it('speaks each step change while on, and the spoken text carries the scale sentence at 2x', async () => {
+    renderCookMode() // fixture: baseServings 4
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+
+    // Double the servings 4 → 8 via the existing ServingsRow control, then
+    // advance — the toggle's own tap-speech must not be the one we assert on.
+    await userEvent.click(screen.getByLabelText('One more serving'))
+    await userEvent.click(screen.getByLabelText('One more serving'))
+    await userEvent.click(screen.getByLabelText('One more serving'))
+    await userEvent.click(screen.getByLabelText('One more serving'))
+    await userEvent.click(screen.getByText('Next →'))
+
+    const lastSpoken = stubs.spoken[stubs.spoken.length - 1]
+    expect(lastSpoken.text).toMatch(/the spoken amounts are the ones to follow/)
+  })
+
+  it('does NOT speak on step change while off, and cancels leftovers', async () => {
+    renderCookMode()
+    await userEvent.click(screen.getByText('Next →'))
+    expect(stubs.spoken).toHaveLength(0)
+  })
+
+  // Fake timers throughout, fireEvent rather than userEvent — the same reason
+  // the "CookMode — timers" describe block above uses it: userEvent schedules
+  // its own timers between pointer events, which fights vi.advanceTimersByTime.
+  it('a ringing timer cancels speech — the alarm always wins', async () => {
+    vi.useFakeTimers()
+    renderCookMode() // fixture step 1: durationSeconds 120
+
+    await act(() => void fireEvent.click(screen.getByRole('button', { name: /read steps aloud/i })))
+    const cancelsBefore = stubs.synth.cancelCount
+
+    await act(() => void fireEvent.click(screen.getByText('▷ Start')))
+    await act(() => vi.advanceTimersByTimeAsync(121_000))
+
+    expect(stubs.synth.cancelCount).toBeGreaterThan(cancelsBefore)
+    vi.useRealTimers()
+  })
+
+  it('unmounting the overlay cancels the global queue', async () => {
+    const { unmount } = renderCookMode()
+    await userEvent.click(screen.getByRole('button', { name: /read steps aloud/i }))
+    unmount()
+
+    expect(stubs.synth.cancelCount).toBeGreaterThanOrEqual(2)
   })
 })
