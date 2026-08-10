@@ -54,6 +54,7 @@ import { isQuotaError } from '@/api/generation'
 import { useCookTimers, formatClock } from '@/hooks/useCookTimers'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
+import { useCookLogMutations } from '@/hooks/useCookLog'
 import { useSpeech } from '@/hooks/useSpeech'
 import { usePushToTalk, type PushToTalkState } from '@/hooks/usePushToTalk'
 import { composeSpokenStep, matchCommand, speakClock, type VoiceCommand } from '@/lib/cookVoice'
@@ -73,6 +74,13 @@ interface CookModeProps {
   /** The page's guest gate — cook mode reads fine as a guest, writing does not. */
   requireAuth: () => boolean
   onExit: () => void
+  /**
+   * The plan slot this recipe was opened FROM (Task 7, cooked-per-plan-entry),
+   * riding the same location state as the canvas backdrop — see MealCard.tsx
+   * and RecipeDetailPage.tsx. Null for every entry point that isn't the day
+   * page: Discover, search, a shared link.
+   */
+  planEntryId?: string | null
 }
 
 /** One turn of the session-scoped exchange, plus whether it was a refusal. */
@@ -80,7 +88,14 @@ interface Turn extends CookHistoryItem {
   refused?: boolean
 }
 
-export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit }: CookModeProps) {
+export default function CookMode({
+  recipe,
+  myRating,
+  onRate,
+  requireAuth,
+  onExit,
+  planEntryId,
+}: CookModeProps) {
   // D18 point 1: the recipe as it was when cooking started. Everything below
   // reads from this, never from the live query — no refetch, no cache
   // invalidation and no edit by another tab can change the method in front of
@@ -119,10 +134,24 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
   // A write belongs to the interaction that asked for it, so it is fired from
   // the button and owned by a component that nothing remounts.
   const { logCooked } = useSocialMutations()
+  const { log: logPlanCook } = useCookLogMutations()
+
+  // With a plan slot, the cook log takes it — the shopping list needs to know WHICH meal
+  // is done, and the log bumps the per-recipe count server-side so the aggregate stays in
+  // step. Without one, this is exactly the path it has always been. The requireAuth() guard
+  // is unchanged: both writes are the caller's own private history.
+  //
+  // `cookWrite` is what the finish panel reads its pending/success/error state off of —
+  // NOT a second mutation of its own. Exactly one of the two `.mutate()` calls below ever
+  // fires per finish (src/api/cookLog.ts's comment says why firing both would double-count).
+  const cookWrite = planEntryId ? logPlanCook : logCooked
   const logCook = () => {
     // A guest gets the sign-in gate rather than a silent no-op — they did just
     // cook the thing.
-    if (requireAuth()) logCooked.mutate({ recipeId: frozen.id })
+    if (requireAuth()) {
+      if (planEntryId) logPlanCook.mutate({ recipeId: frozen.id, mealPlanEntryId: planEntryId })
+      else logCooked.mutate({ recipeId: frozen.id })
+    }
   }
 
   const factor = scaleFactor(frozen.servings, servings)
@@ -412,10 +441,11 @@ export default function CookMode({ recipe, myRating, onRate, requireAuth, onExit
           myRating={myRating}
           // Read off the mutation itself rather than mirrored into local state:
           // a panel that has to be right about whether a write landed should not
-          // be able to disagree with the write about it.
-          logged={logCooked.isSuccess}
-          failed={logCooked.isError}
-          pending={logCooked.isPending}
+          // be able to disagree with the write about it. `cookWrite` is whichever
+          // of the two mutations this finish actually fired (see logCook above).
+          logged={cookWrite.isSuccess}
+          failed={cookWrite.isError}
+          pending={cookWrite.isPending}
           requireAuth={requireAuth}
           onRate={onRate}
           onRetry={logCook}

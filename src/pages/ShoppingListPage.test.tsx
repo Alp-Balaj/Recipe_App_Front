@@ -70,6 +70,37 @@ const listHandler = (orphans: string[] = []) =>
   http.get('/api/shopping-list', () =>
     HttpResponse.json({ weeks: [week], orphanedPurchasedNames: orphans }))
 
+/**
+ * A week with one row cooked out from under it (resolvedByCooking) and one
+ * plain unticked row — cooked-per-plan-entry (Task 8). `purchasedCount` stays
+ * TICKS-only per the wire contract; Onion is resolved, not purchased, which is
+ * exactly the case the client's `isDone` composition exists for.
+ */
+const resolvedWeek = {
+  weekStartDate: week.weekStartDate,
+  purchasedCount: 0,
+  totalCount: 2,
+  groups: [
+    {
+      key: 'onion', displayName: 'Onion', aisle: 'Produce',
+      parts: [{ quantity: '2', dishTitle: 'Roast', date: '2026-07-27T00:00:00Z', meal: 'Dinner' }],
+      dishes: ['Roast'], isPurchased: false, origin: 'Derived', manualItemId: null,
+      totals: [{ quantity: 2, unit: 'Piece', display: '2 pcs' }],
+      resolvedByCooking: true,
+    },
+    {
+      key: 'garlic', displayName: 'Garlic', aisle: 'Produce',
+      parts: [{ quantity: '1', dishTitle: 'Roast', date: '2026-07-27T00:00:00Z', meal: 'Dinner' }],
+      dishes: ['Roast'], isPurchased: false, origin: 'Derived', manualItemId: null,
+      totals: [{ quantity: 1, unit: 'Piece', display: '1 pc' }],
+      resolvedByCooking: false,
+    },
+  ],
+}
+const resolvedListHandler = () =>
+  http.get('/api/shopping-list', () =>
+    HttpResponse.json({ weeks: [resolvedWeek], orphanedPurchasedNames: [] }))
+
 /** A week with nothing on it — used by the switcher tests, which care about the
  * requested weekStart, not the rendered rows. */
 const emptyWeek = {
@@ -252,6 +283,70 @@ describe('ShoppingListPage', () => {
     // The receipt names the aisle it all came out of, and how much it held.
     expect(screen.getByText('Produce')).toBeInTheDocument()
   })
+
+  // Cooked-per-plan-entry, Task 8: a row you have already cooked everything for
+  // reads as done, with its reason, instead of still asking to be bought.
+  it('renders a resolved row struck through, with its reason, and still tickable', async () => {
+    server.use(resolvedListHandler())
+    renderRoute('/shopping-list')
+
+    const row = await screen.findByText('Onion')
+    expect(row).toHaveStyle({ textDecoration: 'line-through' })
+    expect(screen.getByText(/already cooked/i)).toBeInTheDocument()
+    // Resolution never round-trips: the checkbox stays a live control, and its
+    // accessible name is still the plain item name (no selection mode here).
+    expect(screen.getByRole('checkbox', { name: 'Onion' })).toBeEnabled()
+  })
+
+  it('sweeps a resolved row under "Hide bought" and counts it as done', async () => {
+    server.use(resolvedListHandler())
+    renderRoute('/shopping-list')
+
+    // Onion is resolved (not ticked), Garlic is neither — "1 of 2" is the
+    // client's own isDone composition, not the wire's ticks-only purchasedCount.
+    expect(await screen.findByText('1 of 2')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /hide bought/i }))
+    expect(screen.queryByText('Onion')).not.toBeInTheDocument()
+    expect(screen.getByText('Garlic')).toBeInTheDocument()
+  })
+
+  /**
+   * Fix round (final whole-branch review, Fix 2). `allBought` used to be routed through
+   * `isDone` (bought || resolved), so cooking the only dish in a week — resolving its
+   * one group without a single tick — replaced the whole list, rows AND the manual-add
+   * form, with the "Everything's ticked" receipt screen: a celebration asserting the
+   * user shopped for something they never touched, with no way to add an item.
+   *
+   * The user's explicit decision: only TICKING earns the receipt. A resolved-not-ticked
+   * row still reads as done everywhere else (the progress read, "Hide bought") — it just
+   * must not alone trigger the finished screen.
+   */
+  it('does not show the receipt screen for a group resolved by cooking alone', async () => {
+    const onlyResolved = {
+      weekStartDate: week.weekStartDate,
+      purchasedCount: 0, // ticks-only: nobody ticked anything
+      totalCount: 1,
+      groups: [
+        {
+          key: 'onion', displayName: 'Onion', aisle: 'Produce',
+          parts: [{ quantity: '2', dishTitle: 'Roast', date: '2026-07-27T00:00:00Z', meal: 'Dinner' }],
+          dishes: ['Roast'], isPurchased: false, origin: 'Derived', manualItemId: null,
+          totals: [{ quantity: 2, unit: 'Piece', display: '2 pcs' }],
+          resolvedByCooking: true,
+        },
+      ],
+    }
+    server.use(http.get('/api/shopping-list', () =>
+      HttpResponse.json({ weeks: [onlyResolved], orphanedPurchasedNames: [] })))
+    renderRoute('/shopping-list')
+
+    // The row itself is on screen, reading as done...
+    expect(await screen.findByText('Onion')).toBeInTheDocument()
+    // ...but NOT behind the celebration screen, and the add form stays reachable —
+    // the two things `isDone`-routed `allBought` used to take away.
+    expect(screen.queryByText(/everything's ticked/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /add something of your own/i })).toBeInTheDocument()
+  })
 })
 
 /**
@@ -399,6 +494,50 @@ describe('ShoppingListPage — scope All', () => {
     expect(headings[1]).toHaveTextContent('20')
     expect(headings[0]).toHaveTextContent('1 of 3')
     expect(headings[1]).toHaveTextContent('0 of 1')
+  })
+
+  /**
+   * Fix round (final whole-branch review, Fix 5). The block header used to read
+   * `week.purchasedCount` — the wire's ticks-only number — while the page-level
+   * counter reads the client's own `isDone` composition (shoppingModel.ts). A week
+   * with one resolved and one plain row disagreed: "0 of 2" in the block header,
+   * "1 of 2" at the page level, with the struck row sitting between the two. The
+   * block must be computed through `isDone`, same as everything else.
+   */
+  it('heads a scope=All block by the isDone composition, not the wire ticks-only count', async () => {
+    const mismatched = {
+      weekStartDate: week.weekStartDate,
+      purchasedCount: 1, // ticks only: Garlic alone
+      totalCount: 2,
+      groups: [
+        {
+          key: 'onion', displayName: 'Onion', aisle: 'Produce',
+          parts: [{ quantity: '2', dishTitle: 'Roast', date: '2026-07-27T00:00:00Z', meal: 'Dinner' }],
+          dishes: ['Roast'], isPurchased: false, origin: 'Derived', manualItemId: null,
+          totals: [{ quantity: 2, unit: 'Piece', display: '2 pcs' }],
+          resolvedByCooking: true, // done, but never ticked
+        },
+        {
+          key: 'garlic', displayName: 'Garlic', aisle: 'Produce',
+          parts: [{ quantity: '1', dishTitle: 'Roast', date: '2026-07-27T00:00:00Z', meal: 'Dinner' }],
+          dishes: ['Roast'], isPurchased: true, origin: 'Derived', manualItemId: null,
+          totals: [{ quantity: 1, unit: 'Piece', display: '1 pc' }],
+          resolvedByCooking: false, // ticked
+        },
+      ],
+    }
+    server.use(http.get('/api/shopping-list', () =>
+      HttpResponse.json({ weeks: [mismatched], orphanedPurchasedNames: [] })))
+    renderRoute('/shopping-list')
+
+    await screen.findByText('Onion')
+    await userEvent.click(screen.getByRole('button', { name: 'All' }))
+
+    // Both rows are done (one resolved, one ticked) — the block header must read
+    // 2 of 2, never the wire's ticks-only 1 of 2.
+    const heading = await screen.findByRole('heading', { level: 2 })
+    expect(heading).toHaveTextContent('2 of 2')
+    expect(heading).not.toHaveTextContent('1 of 2')
   })
 
   it("marks a row in the second week with THAT week's date, not the scoped one", async () => {

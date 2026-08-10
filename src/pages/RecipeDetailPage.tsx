@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import { useAuthGate } from '@/auth/AuthGateContext'
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +27,12 @@ import { sourceDomain } from '@/api/import'
 export default function RecipeDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  // Which plan slot this recipe was opened FROM, when it was opened from the plan. It rides
+  // the same location state as the canvas backdrop, so cook mode can log the cook against
+  // the meal rather than only against the recipe. Absent from every other entry point —
+  // Discover, search, a shared link — which is exactly the "behaves as today" case.
+  const planEntryId = (location.state as { planEntryId?: string } | null)?.planEntryId ?? null
   const { user } = useAuth()
   const { data: recipe, isLoading, isError, error, refetch } = useRecipe(id)
   // plan-page redesign: /plan's "Start cooking" needs to land IN cook mode, not
@@ -395,6 +401,7 @@ export default function RecipeDetailPage() {
           onRate={(value) => setRating.mutate({ recipeId: recipe.id, rating: value })}
           requireAuth={requireAuth}
           onExit={() => setCooking(false)}
+          planEntryId={planEntryId}
         />
       )}
 

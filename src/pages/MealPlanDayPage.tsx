@@ -33,7 +33,7 @@ import {
 } from '@/api/mealPlans'
 import { useCurrentWeekPlan, useEnsureWeekPlan, useMealPlanDetail } from '@/hooks/useMealPlan'
 import { useDayRecipes } from '@/hooks/useDayRecipes'
-import { useSocialMutations } from '@/hooks/useSocialMutations'
+import { useCookLogMutations } from '@/hooks/useCookLog'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { shortDayLabel, usePickerCorpus } from '@/hooks/usePickerCorpus'
 import { useAuth } from '@/auth/AuthContext'
@@ -218,12 +218,11 @@ function DayView({ date }: { date: Date }) {
     onError: () => setMessage("Couldn't remove that meal. Try again."),
   })
 
-  // open-loops slice 1. This goes through the SHARED social mutation rather
-  // than a local one like the plan edits above, because the cook count is
-  // social state the feed and detail caches also hold — the plan is only where
-  // the gesture happens to live. The reply carries timesCooked, which is the
-  // one fact the envelope does not keep, so it is surfaced in the banner.
-  const { logCooked } = useSocialMutations()
+  // The cook log, not the bare social mutation. The log carries the PLAN ENTRY, which is
+  // what lets the shopping list know this particular meal is done — and it bumps the
+  // per-recipe count server-side, so firing useSocialMutations().logCooked as well would
+  // count the cook twice (see api/cookLog.logCook).
+  const { log: logCooked, unlog } = useCookLogMutations()
 
   // Swap is DELETE-then-POST because slots are exclusive and POST is
   // pure-create (meal-planning-v1-semantics #4). If the POST fails we put the
@@ -468,23 +467,30 @@ function DayView({ date }: { date: Date }) {
                         }
                       : undefined
                   }
+                  cookedAt={entry?.cookedAt ?? null}
+                  onUncook={
+                    entry?.cookedAt
+                      ? () => {
+                          setMessage(null)
+                          unlog.mutate(
+                            { mealPlanEntryId: entry.id },
+                            { onError: () => setMessage("Couldn't undo that. Try again.") },
+                          )
+                        }
+                      : undefined
+                  }
                   // Only for days that have happened. Offering "I cooked this"
                   // against next Thursday's dinner would be asking the user to
-                  // lie, and the rank award behind it is real.
+                  // lie. The UNDO above is deliberately outside this gate.
                   onCooked={
-                    entry && (past || isToday(date))
+                    entry && !entry.cookedAt && (past || isToday(date))
                       ? () => {
                           setMessage(null)
                           const title = entry.recipe.title
                           logCooked.mutate(
-                            { recipeId: entry.recipe.id },
+                            { recipeId: entry.recipe.id, mealPlanEntryId: entry.id },
                             {
-                              onSuccess: (row) =>
-                                setMessage(
-                                  row.timesCooked > 1
-                                    ? `Logged — you've cooked ${title} ${row.timesCooked} times.`
-                                    : `Logged your first ${title}.`,
-                                ),
+                              onSuccess: () => setMessage(`Logged ${title}.`),
                               onError: () => setMessage("Couldn't log that. Try again."),
                             },
                           )

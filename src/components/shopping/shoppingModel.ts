@@ -43,6 +43,13 @@ export interface ShoppingItem {
   /** Every other dish that needs it — named on the row, never given a second row. */
   alsoDishes: string[]
   bought: boolean
+  /**
+   * Every planned meal that needs this has been cooked. Server-derived, never stored.
+   *
+   * Deliberately NOT merged into `bought`: that one is the tick the checkbox writes back,
+   * and a row can be both. What they share is only how they READ — see `isDone`.
+   */
+  resolved: boolean
   /** The week the row belongs to. Under scope 'All' this is NOT the scoped week. */
   weekStartDate: string
   group: ShoppingGroup
@@ -109,6 +116,9 @@ export function itemsOf(week: ShoppingWeek): ShoppingItem[] {
         ? []
         : [...new Set(rest.map((part) => part.dishTitle))].filter((dish) => dish !== owner?.dishTitle),
       bought: group.isPurchased,
+      // Defaulted for the same reason `aisle` is: a cached response from before the field
+      // existed must read as "not resolved", not as `undefined` leaking into a counter.
+      resolved: group.resolvedByCooking ?? false,
       weekStartDate: week.weekStartDate,
       group,
     }
@@ -183,6 +193,18 @@ export function weekRange(weekStartIso: string): string {
 }
 
 /**
+ * Is this row finished with, for counting and sweeping purposes — bought, or resolved
+ * because you already cooked everything that wanted it.
+ *
+ * One function because this file exists to stop the page's several counters disagreeing,
+ * and "done" is now two facts rather than one. The two stay separate on the ITEM; they
+ * only ever merge here.
+ */
+export function isDone(item: ShoppingItem): boolean {
+  return item.bought || item.resolved
+}
+
+/**
  * Group rows under headings.
  *
  * By AISLE, sections appear in the order the server shelved them — walk order, so
@@ -214,7 +236,7 @@ export function sectionsOf(items: ShoppingItem[], groupBy: GroupBy): ShoppingSec
     }
     section.items.push(item)
     section.total += 1
-    if (!item.bought) section.remaining += 1
+    if (!isDone(item)) section.remaining += 1
   }
 
   const ordered = [...sections.values()]
@@ -241,7 +263,7 @@ export function aisleSummaries(items: ShoppingItem[]): AisleSummary[] {
   for (const item of items) {
     const summary = byAisle.get(item.aisle) ?? { aisle: item.aisle, remaining: 0, total: 0 }
     summary.total += 1
-    if (!item.bought) summary.remaining += 1
+    if (!isDone(item)) summary.remaining += 1
     byAisle.set(item.aisle, summary)
   }
   return [...byAisle.values()]
@@ -273,7 +295,7 @@ export function dishSummaries(items: ShoppingItem[]): DishSummary[] {
       }
       if (summary.date === null && dish === item.ownerDish) summary.date = item.ownerDate
       summary.total += 1
-      if (item.bought) summary.bought += 1
+      if (isDone(item)) summary.bought += 1
       byDish.set(dish, summary)
     }
   }

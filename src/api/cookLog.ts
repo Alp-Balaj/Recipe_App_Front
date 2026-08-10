@@ -8,10 +8,16 @@
 // cannot say WHEN, or what you thought that particular time.
 //
 // Wire contract (backend feat/plan-cook-log, verified 2026-08-10):
-//   POST   /cook-log            → 201 CookLogResponse | 404 (recipe/entry not yours)
-//   GET    /cook-log            → 200 CookLogListResponse   (?cursor&limit)
-//   GET    /cook-log/latest     → 200 CookLogLatestResponse (never 404)
-//   PATCH  /cook-log/{id}       → 200 CookLogResponse | 404
+//   POST   /cook-log                      → 201 CookLogResponse | 404 (recipe/entry not yours)
+//   GET    /cook-log                      → 200 CookLogListResponse   (?cursor&limit)
+//   GET    /cook-log/latest               → 200 CookLogLatestResponse (never 404)
+//   PATCH  /cook-log/{id}                 → 200 CookLogResponse | 404
+//   DELETE /cook-log/entries/{entryId}    → 204 | 404 (entry not on one of the caller's plans)
+//
+// cooked-per-plan-entry (backend Tasks 1–4, verified 2026-08-10): the DELETE above
+// removes EVERY cook row the caller logged against that plan slot in one call and
+// steps TimesCooked down by the count deleted, floored at 0 — never negative. It is
+// idempotent: un-cooking a slot with no rows still answers 204.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch } from './client'
@@ -68,6 +74,17 @@ export function logCook(recipeId: string, mealPlanEntryId?: string | null): Prom
     method: 'POST',
     body: { recipeId, mealPlanEntryId: mealPlanEntryId ?? null },
   })
+}
+
+/**
+ * Un-logs every cook the caller recorded against one plan slot, and steps the
+ * per-recipe cooked count back down by that many.
+ *
+ * Idempotent — un-cooking a slot that was never cooked succeeds. A 404 means the
+ * entry is not on one of your plans, which is a different thing entirely.
+ */
+export function uncookEntry(mealPlanEntryId: string): Promise<void> {
+  return apiFetch<void>(`/cook-log/entries/${mealPlanEntryId}`, { method: 'DELETE' })
 }
 
 export function getCookLog(params: { cursor?: string; limit?: number; signal?: AbortSignal } = {}): Promise<CookLogListResponse> {
