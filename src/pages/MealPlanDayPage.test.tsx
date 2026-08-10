@@ -656,45 +656,47 @@ describe('repeat tomorrow', () => {
 describe('logging a cook from the day page', () => {
   beforeEach(resetPerTest)
 
-  /** stubDetails, plus the cooked write routed by path. */
-  function stubWithCooked(onCooked: (path: string) => unknown) {
-    vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
+  /** stubDetails, plus the cook-log write routed by path and recorded. */
+  function stubWithCooked(bodies: unknown[]) {
+    vi.spyOn(client, 'apiFetch').mockImplementation(((
+      path: string,
+      init?: { method?: string; body?: unknown },
+    ) => {
       if (path === '/recipes') {
         return Promise.resolve({ items: [shakshuka, cornSalad], nextCursor: null })
       }
-      if (path.endsWith('/cooked')) return Promise.resolve(onCooked(path))
+      if (path === '/cook-log' && init?.method === 'POST') {
+        bodies.push(init.body)
+        return Promise.resolve({
+          id: 'cook-1',
+          recipeId: 'recipe-shakshuka',
+          recipeTitle: 'Shakshuka',
+          mealPlanEntryId: 'entry-breakfast',
+          cookedAt: '2026-07-29T12:00:00.000Z',
+          recipeAvailable: true,
+        })
+      }
       const hit = [shakshuka, cornSalad].find((recipe) => path === `/recipes/${recipe.id}`)
       return Promise.resolve(hit ?? undefined)
     }) as unknown as typeof client.apiFetch)
   }
 
-  it('logs the cook and reports the running count', async () => {
+  // The reply carries no running count any more (CookLogEntry has no
+  // timesCooked) — re-deriving one client-side would be a guess, so the
+  // message just confirms the log and the plan-entry id rides in the body,
+  // which is what lets the shopping list resolve this specific slot.
+  it('logs the cook against the plan entry', async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
     vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
-    const paths: string[] = []
-    stubWithCooked((path) => {
-      paths.push(path)
-      return { recipeId: 'recipe-shakshuka', timesCooked: 3, rating: null }
-    })
+    const bodies: unknown[] = []
+    stubWithCooked(bodies)
 
     renderRoute('/plan/2026-07-29')
 
     await userEvent.click(await screen.findByRole('button', { name: /mark shakshuka as cooked/i }))
 
-    expect(await screen.findByText(/you've cooked Shakshuka 3 times/i)).toBeInTheDocument()
-    expect(paths).toEqual(['/recipes/recipe-shakshuka/cooked'])
-  })
-
-  it('phrases the first cook as a first', async () => {
-    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
-    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
-    stubWithCooked(() => ({ recipeId: 'recipe-shakshuka', timesCooked: 1, rating: null }))
-
-    renderRoute('/plan/2026-07-29')
-
-    await userEvent.click(await screen.findByRole('button', { name: /mark shakshuka as cooked/i }))
-
-    expect(await screen.findByText(/logged your first Shakshuka/i)).toBeInTheDocument()
+    expect(await screen.findByText(/^logged Shakshuka\.$/i)).toBeInTheDocument()
+    expect(bodies).toEqual([{ recipeId: 'recipe-shakshuka', mealPlanEntryId: 'entry-breakfast' }])
   })
 
   it('is not offered on a future day — you have not cooked it yet', async () => {
@@ -731,11 +733,11 @@ describe('logging a cook from the day page', () => {
   it('surfaces a failed log instead of pretending it worked', async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
     vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
-    vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
+    vi.spyOn(client, 'apiFetch').mockImplementation(((path: string, init?: { method?: string }) => {
       if (path === '/recipes') {
         return Promise.resolve({ items: [shakshuka, cornSalad], nextCursor: null })
       }
-      if (path.endsWith('/cooked')) return Promise.reject(new Error('nope'))
+      if (path === '/cook-log' && init?.method === 'POST') return Promise.reject(new Error('nope'))
       const hit = [shakshuka, cornSalad].find((recipe) => path === `/recipes/${recipe.id}`)
       return Promise.resolve(hit ?? undefined)
     }) as unknown as typeof client.apiFetch)
@@ -745,5 +747,85 @@ describe('logging a cook from the day page', () => {
     await userEvent.click(await screen.findByRole('button', { name: /mark shakshuka as cooked/i }))
 
     expect(await screen.findByText(/couldn't log that/i)).toBeInTheDocument()
+  })
+})
+
+// ── The cook toggle's undo (cooked-per-plan-entry, Task 6) ─────────────────
+// The clock is still pinned to Wed 29 July 2026 (see NOW above): Mon 27 July is
+// a PAST day, and Fri 31 July is a FUTURE one — both inside the fixture week
+// (WEEK_START), so the plan/summary stubs above still apply.
+
+describe('the cook toggle on an already-cooked entry', () => {
+  beforeEach(resetPerTest)
+
+  /** stubDetails, plus the un-cook DELETE routed by path and recorded. */
+  function stubWithUncook(uncookCalls: string[]) {
+    vi.spyOn(client, 'apiFetch').mockImplementation(((path: string, init?: { method?: string }) => {
+      if (path === '/recipes') {
+        return Promise.resolve({ items: [shakshuka, cornSalad], nextCursor: null })
+      }
+      if (path.startsWith('/cook-log/entries/') && init?.method === 'DELETE') {
+        uncookCalls.push(path.replace('/cook-log/entries/', ''))
+        return Promise.resolve(undefined)
+      }
+      const hit = [shakshuka, cornSalad].find((recipe) => path === `/recipes/${recipe.id}`)
+      return Promise.resolve(hit ?? undefined)
+    }) as unknown as typeof client.apiFetch)
+  }
+
+  const cookedPastPlan: MealPlan = {
+    ...plan,
+    entries: [
+      {
+        id: 'entry-1',
+        dayOfWeek: 'Monday',
+        mealType: 'Dinner',
+        recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
+        cookedAt: '2026-07-27T18:00:00.000Z',
+      },
+    ],
+  }
+
+  const cookedFuturePlan: MealPlan = {
+    ...plan,
+    entries: [
+      {
+        id: 'entry-1',
+        dayOfWeek: 'Friday',
+        mealType: 'Dinner',
+        recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
+        cookedAt: '2026-07-31T18:00:00.000Z',
+      },
+    ],
+  }
+
+  it('shows a cooked meal as settled and un-cooks it on tap', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(cookedPastPlan)
+    const uncookCalls: string[] = []
+    stubWithUncook(uncookCalls)
+
+    renderRoute('/plan/2026-07-27')
+
+    expect(await screen.findByText(/cooked/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /mark .* as cooked/i })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /undo cooked for/i }))
+    await waitFor(() => expect(uncookCalls).toEqual(['entry-1']))
+  })
+
+  // A cooked state can legitimately appear on a future day: cook mode can log
+  // one ahead of time. Marking stays gated to past-or-today (offering it for
+  // next Thursday's dinner is asking the user to lie); the undo is not, because
+  // an undo the user cannot reach is the trust bug this roadmap exists to fix.
+  it('keeps the undo reachable on a future day while hiding the mark action', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(cookedFuturePlan)
+    stubWithUncook([])
+
+    renderRoute('/plan/2026-07-31')
+
+    expect(await screen.findByRole('button', { name: /undo cooked for/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /mark .* as cooked/i })).not.toBeInTheDocument()
   })
 })

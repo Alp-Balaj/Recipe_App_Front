@@ -61,6 +61,17 @@ interface Props {
    * what it means; this card only renders the button, like every other action.
    */
   onCooked?: () => void
+  /**
+   * When this meal was cooked, or null. Present makes the card render its settled
+   * state instead of the "I cooked this" action.
+   */
+  cookedAt?: string | null
+  /**
+   * Undo the cook. The page always supplies this when `cookedAt` is set, INCLUDING on a
+   * future day: `onCooked`'s past-or-today gate is about MARKING, and an undo the user
+   * cannot reach is the trust bug this roadmap exists to fix.
+   */
+  onUncook?: () => void
   /** Past days are a record of what you ate, so they don't invite additions. */
   isPast?: boolean
 }
@@ -75,6 +86,8 @@ export default function MealCard({
   onRemove,
   onRepeatTomorrow,
   onCooked,
+  cookedAt,
+  onUncook,
   isPast = false,
 }: Props) {
   const { tint, ink } = mealTokens(meal)
@@ -135,15 +148,27 @@ export default function MealCard({
         <Link to={`/recipes/${entry.recipe.id}`} state={{ backdrop }} style={actionButton}>
           Recipe
         </Link>
-        {onCooked && (
+        {cookedAt ? (
           <button
             type="button"
-            aria-label={`Mark ${entry.recipe.title} as cooked`}
-            style={{ ...actionButton, cursor: 'pointer' }}
-            onClick={onCooked}
+            aria-label={`Undo cooked for ${entry.recipe.title}`}
+            style={{ ...actionButton, ...cookedButton, cursor: onUncook ? 'pointer' : 'default' }}
+            disabled={!onUncook}
+            onClick={onUncook}
           >
-            I cooked this
+            ✓ Cooked
           </button>
+        ) : (
+          onCooked && (
+            <button
+              type="button"
+              aria-label={`Mark ${entry.recipe.title} as cooked`}
+              style={{ ...actionButton, cursor: 'pointer' }}
+              onClick={onCooked}
+            >
+              I cooked this
+            </button>
+          )
         )}
         {onSwap && (
           <button
@@ -279,4 +304,13 @@ const actionButton: CSSProperties = {
   background: 'var(--surface)',
   textDecoration: 'none',
   lineHeight: 1.5,
+}
+
+// A settled state that undoes on tap, not a second button competing with the first —
+// the row already carries four actions and a fifth would push the dish name into an
+// ellipsis. Accent-filled so "done" reads at a glance from across a kitchen.
+const cookedButton: CSSProperties = {
+  background: 'var(--accent-fill)',
+  borderColor: 'var(--accent)',
+  color: 'var(--accent-ink)',
 }
