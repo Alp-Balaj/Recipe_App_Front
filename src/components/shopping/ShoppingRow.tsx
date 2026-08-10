@@ -21,7 +21,7 @@
 
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { CheckIcon, TrashIcon } from './shopIcons'
-import { provenanceOf, type GroupBy, type ShoppingItem } from './shoppingModel'
+import { isDone, provenanceOf, type GroupBy, type ShoppingItem } from './shoppingModel'
 
 /** Past this share of the row's width, releasing commits the action. */
 const COMMIT_FRACTION = 0.35
@@ -66,6 +66,21 @@ export default function ShoppingRow({
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const provenance = provenanceOf(item, groupBy)
+  // Resolved reads like bought — struck and dimmed — because to the shopper they mean the
+  // same thing: do not buy this. The REASON is what keeps that honest; a row that quietly
+  // struck itself out with no explanation is the distrust this roadmap exists to remove.
+  //
+  // isDone, not a local `item.bought || item.resolved`: the page's counters use that
+  // function, and a second copy here is how a struck row ends up counted as remaining.
+  //
+  // The checkbox itself — its real `checked`, the drawn box mirroring that state, and
+  // what `onToggleBought` sends — stays on `item.bought` alone. Resolution never round-
+  // trips, so folding it in there would either lie to a screen reader (checked ≠
+  // aria-checked) or tap-and-nothing-visibly-changes the first time you tick a resolved
+  // row (it was already drawn checked; only strike/dim read `done`).
+  const done = isDone(item)
+  const reason = item.resolved ? 'Already cooked' : null
+  const reasonLine = [provenance, reason].filter(Boolean).join(' · ') || null
   const swiping = dx !== 0
 
   const cancelPress = () => {
@@ -181,7 +196,7 @@ export default function ShoppingRow({
           ...rowStyle(compact),
           ...(selected ? selectedStyle : null),
           ...(hovered && !selected && !compact ? hoverStyle : null),
-          opacity: item.bought && !selected ? 0.5 : 1,
+          opacity: done && !selected ? 0.5 : 1,
           transform: swiping ? `translateX(${dx}px)` : undefined,
           // Only while a finger is on it — a permanent transition would make every
           // re-render of a fifty-row list animate.
@@ -227,14 +242,14 @@ export default function ShoppingRow({
             style={{
               fontSize: compact ? 14.5 : 15.5,
               fontWeight: 700,
-              textDecoration: item.bought ? 'line-through' : 'none',
+              textDecoration: done ? 'line-through' : 'none',
               overflowWrap: 'anywhere',
             }}
           >
             {item.name}
           </span>
-          {provenance && (
-            <span style={{ ...provenanceStyle, fontSize: compact ? 11.5 : 12.5 }}>{provenance}</span>
+          {reasonLine && (
+            <span style={{ ...provenanceStyle, fontSize: compact ? 11.5 : 12.5 }}>{reasonLine}</span>
           )}
         </span>
 

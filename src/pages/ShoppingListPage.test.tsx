@@ -70,6 +70,37 @@ const listHandler = (orphans: string[] = []) =>
   http.get('/api/shopping-list', () =>
     HttpResponse.json({ weeks: [week], orphanedPurchasedNames: orphans }))
 
+/**
+ * A week with one row cooked out from under it (resolvedByCooking) and one
+ * plain unticked row — cooked-per-plan-entry (Task 8). `purchasedCount` stays
+ * TICKS-only per the wire contract; Onion is resolved, not purchased, which is
+ * exactly the case the client's `isDone` composition exists for.
+ */
+const resolvedWeek = {
+  weekStartDate: week.weekStartDate,
+  purchasedCount: 0,
+  totalCount: 2,
+  groups: [
+    {
+      key: 'onion', displayName: 'Onion', aisle: 'Produce',
+      parts: [{ quantity: '2', dishTitle: 'Roast', date: '2026-07-27T00:00:00Z', meal: 'Dinner' }],
+      dishes: ['Roast'], isPurchased: false, origin: 'Derived', manualItemId: null,
+      totals: [{ quantity: 2, unit: 'Piece', display: '2 pcs' }],
+      resolvedByCooking: true,
+    },
+    {
+      key: 'garlic', displayName: 'Garlic', aisle: 'Produce',
+      parts: [{ quantity: '1', dishTitle: 'Roast', date: '2026-07-27T00:00:00Z', meal: 'Dinner' }],
+      dishes: ['Roast'], isPurchased: false, origin: 'Derived', manualItemId: null,
+      totals: [{ quantity: 1, unit: 'Piece', display: '1 pc' }],
+      resolvedByCooking: false,
+    },
+  ],
+}
+const resolvedListHandler = () =>
+  http.get('/api/shopping-list', () =>
+    HttpResponse.json({ weeks: [resolvedWeek], orphanedPurchasedNames: [] }))
+
 /** A week with nothing on it — used by the switcher tests, which care about the
  * requested weekStart, not the rendered rows. */
 const emptyWeek = {
@@ -251,6 +282,32 @@ describe('ShoppingListPage', () => {
     expect(await screen.findByText(/everything's ticked/i)).toBeInTheDocument()
     // The receipt names the aisle it all came out of, and how much it held.
     expect(screen.getByText('Produce')).toBeInTheDocument()
+  })
+
+  // Cooked-per-plan-entry, Task 8: a row you have already cooked everything for
+  // reads as done, with its reason, instead of still asking to be bought.
+  it('renders a resolved row struck through, with its reason, and still tickable', async () => {
+    server.use(resolvedListHandler())
+    renderRoute('/shopping-list')
+
+    const row = await screen.findByText('Onion')
+    expect(row).toHaveStyle({ textDecoration: 'line-through' })
+    expect(screen.getByText(/already cooked/i)).toBeInTheDocument()
+    // Resolution never round-trips: the checkbox stays a live control, and its
+    // accessible name is still the plain item name (no selection mode here).
+    expect(screen.getByRole('checkbox', { name: 'Onion' })).toBeEnabled()
+  })
+
+  it('sweeps a resolved row under "Hide bought" and counts it as done', async () => {
+    server.use(resolvedListHandler())
+    renderRoute('/shopping-list')
+
+    // Onion is resolved (not ticked), Garlic is neither — "1 of 2" is the
+    // client's own isDone composition, not the wire's ticks-only purchasedCount.
+    expect(await screen.findByText('1 of 2')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /hide bought/i }))
+    expect(screen.queryByText('Onion')).not.toBeInTheDocument()
+    expect(screen.getByText('Garlic')).toBeInTheDocument()
   })
 })
 

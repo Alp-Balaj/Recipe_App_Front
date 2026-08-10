@@ -4,6 +4,7 @@ import {
   aisleSummaries,
   describeSelection,
   dishSummaries,
+  isDone,
   itemsOf,
   provenanceOf,
   sectionsOf,
@@ -186,6 +187,52 @@ describe('rail summaries', () => {
     // The stew owns nothing, but it still needs the onions in the house — so it
     // is listed, and the per-dish counts deliberately do not sum to the list.
     expect(dishes[1]).toMatchObject({ title: 'Chickpea stew', bought: 0, total: 1 })
+  })
+})
+
+describe('resolution (cooked-per-plan-entry)', () => {
+  it('carries resolution separately from the tick', () => {
+    const [item] = itemsOf(week([group({ key: 'onion', displayName: 'Onion', resolvedByCooking: true })]))
+    expect(item.resolved).toBe(true)
+    // `bought` must keep meaning the TICK: folding resolution in would make the
+    // checkbox send a wrong isPurchased on the next tap.
+    expect(item.bought).toBe(false)
+  })
+
+  it('counts a resolved row as done in every counter', () => {
+    // Same aisle, same dish — so the two land in one section/aisle/dish bucket
+    // and the counters below are exercising exactly one accumulation each.
+    const resolvedOnion = group({
+      key: 'onion',
+      displayName: 'Onion',
+      aisle: 'Produce',
+      parts: [{ quantity: '2', dishTitle: 'Roast', date: day(0), meal: 'Dinner' }],
+      dishes: ['Roast'],
+      resolvedByCooking: true,
+    })
+    const unresolvedGarlic = group({
+      key: 'garlic',
+      displayName: 'Garlic',
+      aisle: 'Produce',
+      parts: [{ quantity: '1', dishTitle: 'Roast', date: day(0), meal: 'Dinner' }],
+      dishes: ['Roast'],
+    })
+    const items = itemsOf(week([resolvedOnion, unresolvedGarlic]))
+
+    expect(sectionsOf(items, 'aisle')[0].remaining).toBe(1)
+    expect(aisleSummaries(items)[0].remaining).toBe(1)
+    expect(dishSummaries(items)[0]).toMatchObject({ title: 'Roast', bought: 1, total: 2 })
+  })
+
+  it('isDone is true when bought OR resolved, and false for neither', () => {
+    const boughtOnly = group({ key: 'a', displayName: 'A', isPurchased: true })
+    const resolvedOnly = group({ key: 'b', displayName: 'B', resolvedByCooking: true })
+    const neither = group({ key: 'c', displayName: 'C' })
+    const [a, b, c] = itemsOf(week([boughtOnly, resolvedOnly, neither]))
+
+    expect(isDone(a)).toBe(true)
+    expect(isDone(b)).toBe(true)
+    expect(isDone(c)).toBe(false)
   })
 })
 

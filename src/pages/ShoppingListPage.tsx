@@ -55,6 +55,7 @@ import {
   aisleSummaries,
   describeSelection,
   dishSummaries,
+  isDone,
   itemsOf,
   sectionsOf,
   weekRange,
@@ -134,7 +135,6 @@ export default function ShoppingListPage() {
   const [carryoverBatchPending, setCarryoverBatchPending] = useState(false)
 
   const weeks = useMemo(() => data?.weeks ?? [], [data])
-  const purchased = weeks.reduce((sum, week) => sum + week.purchasedCount, 0)
   const total = weeks.reduce((sum, week) => sum + week.totalCount, 0)
 
   // The other-weeks probe (trust rework, Task 8): once the viewed week is
@@ -163,8 +163,12 @@ export default function ShoppingListPage() {
 
   /** Every visible row, in server order, across every week on the page. */
   const allItems = useMemo(() => weeks.flatMap(itemsOf), [weeks])
+  // Composed here rather than read off week.purchasedCount, which counts TICKS only and
+  // deliberately still does: folding resolutions into a shipped server number would
+  // silently redefine it. "Done" is the client's composition — see shoppingModel.isDone.
+  const purchased = allItems.filter(isDone).length
   const visibleItems = useMemo(
-    () => (hideBought ? allItems.filter((item) => !item.bought) : allItems),
+    () => (hideBought ? allItems.filter((item) => !isDone(item)) : allItems),
     [allItems, hideBought],
   )
 
