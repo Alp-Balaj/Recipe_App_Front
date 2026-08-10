@@ -23,6 +23,7 @@ const group = (over: Partial<ShoppingGroup> & { key: string; displayName: string
   manualItemId: null,
   totals: [],
   aisle: 'Pantry',
+  resolvedByCooking: false,
   ...over,
 })
 

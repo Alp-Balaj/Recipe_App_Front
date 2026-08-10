@@ -171,6 +171,14 @@ export interface ShoppingGroup {
    * ENCOUNTER order and never re-sorts alphabetically.
    */
   aisle: string
+  /**
+   * Every planned meal contributing to this line has been cooked. Derived per read.
+   *
+   * NOT the same as `isPurchased`, and must never be folded into it: `bought` is the tick
+   * the checkbox writes back, and conflating them would send a wrong `isPurchased` on the
+   * next tap. A group can be both.
+   */
+  resolvedByCooking: boolean
 }
 
 /** One week of the projection, with its own progress denominator. */

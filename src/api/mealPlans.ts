@@ -62,6 +62,11 @@ export interface MealPlanEntry {
   dayOfWeek: DayName
   mealType: MealTypeName
   recipe: MealPlanEntryRecipeSummary
+  /**
+   * When this planned meal was cooked, or null. Read from the cook log server-side —
+   * nothing is stored on the entry, so un-cooking simply returns it to null.
+   */
+  cookedAt?: string | null
 }
 
 export interface MealPlan {

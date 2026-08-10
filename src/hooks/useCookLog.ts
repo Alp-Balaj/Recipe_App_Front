@@ -15,6 +15,7 @@ import {
   getCookLog,
   getLatestCook,
   logCook,
+  uncookEntry,
   updateCookNote,
   type CookLogEntry,
 } from '@/api/cookLog'
@@ -41,13 +42,17 @@ export function useCookHistory() {
 export function useCookLogMutations() {
   const queryClient = useQueryClient()
 
-  // Both the latest row and every history page change, so invalidate the whole
-  // subtree. Also the social caches: logging a cook bumps the per-recipe cooked
-  // count server-side, and a stale "you've cooked this 0 times" on the recipe
-  // page is exactly the drift this feature exists to avoid.
+  // Four caches learn something from one cook, and the shopping one is the point of this
+  // feature: cooking a meal can resolve a group, and a list that still asks you to buy what
+  // you already ate is the exact distrust this work exists to remove.
+  //
+  // `queryKeys.shopping.all` is the PREFIX every scoped week key is built from — see
+  // queryKeys.shopping.week(). Aiming at anything narrower would miss the scope=All view.
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.cookLog.all })
     void queryClient.invalidateQueries({ queryKey: queryKeys.feed.all })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.mealPlans.all })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all })
   }
 
   /**
@@ -61,6 +66,16 @@ export function useCookLogMutations() {
   const log = useMutation({
     mutationFn: (vars: { recipeId: string; mealPlanEntryId?: string | null }) =>
       logCook(vars.recipeId, vars.mealPlanEntryId),
+    onSuccess: invalidate,
+  })
+
+  /**
+   * Undoes a plan cook. Ungated on purpose — the mark gesture is offered only on a
+   * day that has happened, but an undo the user cannot reach is the bug this whole
+   * roadmap exists to fix.
+   */
+  const unlog = useMutation({
+    mutationFn: (vars: { mealPlanEntryId: string }) => uncookEntry(vars.mealPlanEntryId),
     onSuccess: invalidate,
   })
 
@@ -79,5 +94,5 @@ export function useCookLogMutations() {
     },
   })
 
-  return { log, saveNote }
+  return { log, unlog, saveNote }
 }
