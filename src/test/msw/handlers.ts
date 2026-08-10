@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw'
 import type { AuthResponse, LoginRequest, RecipeListResponse, RegisterRequest } from '@/api/types'
 import type {
   CommentListResponse,
+  FeedActivityListResponse,
   FeedListResponse,
   FollowListItemResponse,
   UserProfileResponse,
@@ -91,6 +92,18 @@ export const handlers = [
   // path only — the detail `/recipes/:id` handler is separate.
   http.get('*/recipes', () =>
     HttpResponse.json({ items: [], nextCursor: null } satisfies RecipeListResponse),
+  ),
+
+  // The rail's activity strip (feed redesign). Registered BEFORE `*/feed` so the
+  // literal `activity` segment doesn't fall through to it.
+  //
+  // This default is not cosmetic. Without it the query errored, cached nothing,
+  // and every desktop feed test ran against a feed subtree that held only
+  // infinite-list queries — which is precisely the assumption that made
+  // patchFeedCaches crash on the real thing (see useSocialMutations.test.tsx).
+  // A test that mounts the desktop rail should hold the shapes production holds.
+  http.get('*/feed/activity', () =>
+    HttpResponse.json({ items: [] } satisfies FeedActivityListResponse),
   ),
 
   // Default feed: empty, echoing the requested ?scope= back as the source

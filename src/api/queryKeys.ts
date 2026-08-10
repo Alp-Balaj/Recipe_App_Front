@@ -55,8 +55,23 @@ export const queryKeys = {
   // factory is the one place keys may live, per its own header). Nothing
   // above this comment changed.
   feed: {
-    /** Everything feed-related — the optimistic social mutations patch under this. */
+    /**
+     * Everything feed-related — the INVALIDATION prefix (a follow, an admin hide).
+     *
+     * Deliberately NOT the prefix the optimistic social patches write through: this
+     * subtree holds queries of more than one shape (see `activity` below), and a
+     * patcher that assumes the infinite-list shape crashes on the others. Patch
+     * through `lists()`; invalidate through `all`.
+     */
     all: ['feed'] as const,
+    /**
+     * Every keyset-paged feed list, whichever tab — the prefix the optimistic
+     * like/save/rating/comment patches write through (2026-08-10). Every query
+     * under it is an InfiniteData<FeedListResponse>, which is the invariant those
+     * patches rely on; `all` is not, and using it here is what broke every like
+     * and save once `activity` joined the subtree.
+     */
+    lists: () => ['feed', 'list'] as const,
     /**
      * One keyset-paged GET /feed list (cp05, useInfiniteQuery). Feed-tabs
      * addition (2026-07-22, sanctioned additive edit): an optional scope
