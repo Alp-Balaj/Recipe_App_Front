@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createMemoryRouter, RouterProvider, type InitialEntry } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
+import { routes } from '@/router'
+import { AuthContext } from '@/auth/AuthContext'
 import { server } from '@/test/msw/server'
-import { renderRoute, TEST_USER } from '@/test/utils'
+import { renderRoute, makeAuthValue, TEST_USER } from '@/test/utils'
 import type { RecipeResponse } from '@/api/types'
 
 const RECIPE_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -55,6 +59,33 @@ function makeRecipe(overrides: Partial<RecipeResponse> = {}): RecipeResponse {
 
 function mockDetail(recipe: RecipeResponse) {
   server.use(http.get('*/recipes/:id', () => HttpResponse.json(recipe)))
+}
+
+/**
+ * Renders the real route tree at an entry that carries location STATE — the
+ * day page's "Recipe" link puts `planEntryId` there (MealCard.tsx), and
+ * `renderRoute` (test/utils.tsx) only takes a path, with no way to thread
+ * state through `createMemoryRouter`. Mirrors recipeCanvas.test.tsx's own
+ * `renderAt`, which solved the same problem for the `backdrop` key.
+ */
+function renderAt(entry: InitialEntry) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const router = createMemoryRouter(routes, { initialEntries: [entry] })
+  render(
+    <QueryClientProvider client={client}>
+      <AuthContext.Provider value={makeAuthValue()}>
+        <RouterProvider router={router} />
+      </AuthContext.Provider>
+    </QueryClientProvider>,
+  )
+  return router
+}
+
+/** Walks the fixture's two-step recipe to the finish action and taps it. */
+async function openCookModeAndFinish() {
+  await userEvent.click(await screen.findByText('▷ Start cooking'))
+  await userEvent.click(await screen.findByText('Next →'))
+  await userEvent.click(screen.getByText('Finished cooking'))
 }
 
 describe('RecipeDetailPage', () => {
@@ -187,5 +218,64 @@ describe('RecipeDetailPage', () => {
     // existing cook-and-rate action instead, which is the whole point of having
     // walked someone through a recipe. CookMode.test.tsx owns the rest of it.
     expect(screen.getByText('Finished cooking')).toBeInTheDocument()
+  })
+
+  // ── Task 7 (cooked-per-plan-entry): the plan slot rides cook mode's finish ──
+
+  it('finishing cook mode from a plan slot logs against that slot', async () => {
+    mockDetail(makeRecipe())
+    const logCookBodies: unknown[] = []
+    let markCookedCalled = false
+    server.use(
+      http.post('*/cook-log', async ({ request }) => {
+        logCookBodies.push(await request.json())
+        return HttpResponse.json({
+          id: 'log-1',
+          recipeId: RECIPE_ID,
+          recipeTitle: 'Miso ramen',
+          mealPlanEntryId: 'entry-1',
+          cookedAt: '2026-08-10T00:00:00Z',
+          recipeAvailable: true,
+        })
+      }),
+      http.post('*/recipes/:id/cooked', () => {
+        markCookedCalled = true
+        return HttpResponse.json({ recipeId: RECIPE_ID, timesCooked: 1, rating: null, lastCookedAt: null })
+      }),
+    )
+
+    renderAt({ pathname: `/recipes/${RECIPE_ID}`, state: { planEntryId: 'entry-1' } })
+    await openCookModeAndFinish()
+
+    await waitFor(() =>
+      expect(logCookBodies).toEqual([{ recipeId: RECIPE_ID, mealPlanEntryId: 'entry-1' }]),
+    )
+    // Exactly one write per finish (src/api/cookLog.ts's double-count warning) —
+    // the recipe-aggregate endpoint must not ALSO have fired.
+    expect(markCookedCalled).toBe(false)
+  })
+
+  it('finishing cook mode from Discover still targets the recipe endpoint', async () => {
+    // No planEntryId in location state — the unchanged path every non-plan
+    // entry point (Discover, search, a shared link) takes today.
+    mockDetail(makeRecipe())
+    const markCookedCalls: string[] = []
+    let cookLogCalled = false
+    server.use(
+      http.post('*/recipes/:id/cooked', ({ params }) => {
+        markCookedCalls.push(params.id as string)
+        return HttpResponse.json({ recipeId: RECIPE_ID, timesCooked: 1, rating: null, lastCookedAt: null })
+      }),
+      http.post('*/cook-log', () => {
+        cookLogCalled = true
+        return HttpResponse.json({})
+      }),
+    )
+
+    renderRoute(`/recipes/${RECIPE_ID}`)
+    await openCookModeAndFinish()
+
+    await waitFor(() => expect(markCookedCalls).toEqual([RECIPE_ID]))
+    expect(cookLogCalled).toBe(false)
   })
 })

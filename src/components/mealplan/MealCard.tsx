@@ -94,6 +94,11 @@ export default function MealCard({
   // "Recipe" opens the canvas beside the day, not instead of it: the backdrop
   // travels with the navigation (recipeCanvas.ts), so the day page stays in the
   // pane. A bare <Link> drops it and the reader lands in Discover.
+  //
+  // `entry.id` rides the same state object (Task 7, cooked-per-plan-entry) —
+  // it's how cook mode's "Finished cooking" learns which plan slot to log
+  // against, so cooking a meal the long way round can resolve its shopping
+  // group too.
   const backdrop = useBackdropPath()
 
   if (!entry) {
@@ -145,7 +150,11 @@ export default function MealCard({
         <span style={metaLine}>{meta}</span>
       </span>
       <span style={actions}>
-        <Link to={`/recipes/${entry.recipe.id}`} state={{ backdrop }} style={actionButton}>
+        <Link
+          to={`/recipes/${entry.recipe.id}`}
+          state={{ backdrop, planEntryId: entry.id }}
+          style={actionButton}
+        >
           Recipe
         </Link>
         {cookedAt ? (
