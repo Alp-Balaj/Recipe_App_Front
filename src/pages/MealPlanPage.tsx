@@ -105,19 +105,23 @@ function PlanFrontDoor() {
   const repeats = useMemo(() => repeatsWithinWeek(days), [days])
   const gaps = useMemo(() => openDinners(days, today), [days, today])
 
-  // Recent cooks serve two purposes: they tell the hero which planned meals are
-  // already done, and /plan/cooks shares this exact query, so navigating there
-  // is warm. One request, two readers.
-  const history = useCookHistory()
+  // The hero used to derive "already cooked" from useCookHistory()'s first page —
+  // 20 rows, newest first. `entries[].cookedAt` (Task 1) is the authoritative,
+  // UNPAGINATED source for the exact same fact and is already in hand here, so
+  // deriving from it instead can't disagree with the day page the way the
+  // 20-row window did for anyone with more recent cooks than that (fix round 3).
+  //
+  // useCookHistory() itself stays: it shares /plan/cooks' exact query key, so
+  // navigating there from here is a cache hit rather than a fresh fetch. Only
+  // its DATA stopped being the source of truth for cookedEntryIds.
+  useCookHistory()
   const cookedEntryIds = useMemo(() => {
     const ids = new Set<string>()
-    for (const page of history.data?.pages ?? []) {
-      for (const row of page.items) {
-        if (row.mealPlanEntryId) ids.add(row.mealPlanEntryId)
-      }
+    for (const entry of entries) {
+      if (entry.cookedAt) ids.add(entry.id)
     }
     return ids
-  }, [history.data])
+  }, [entries])
 
   const next = useMemo(() => nextUp(days, today, cookedEntryIds), [days, today, cookedEntryIds])
 
@@ -201,7 +205,17 @@ function PlanFrontDoor() {
                 entry={next.entry}
                 whenLabel={next.whenLabel}
                 recipe={nextRecipe.data}
-                onStartCooking={() => navigate(`/recipes/${next.entry.recipe.id}?cook=1`)}
+                // The plan slot must ride along the same way MealCard's Recipe link
+                // carries it (state.planEntryId) — RecipeDetailPage reads it to log
+                // the cook against the entry, not just the recipe. Without it, the
+                // hero's own "Start cooking" — the app's most prominent cook-mode
+                // entry point — finishes into the unlinked path: the entry never
+                // shows cooked and the shopping group it feeds never resolves.
+                onStartCooking={() =>
+                  navigate(`/recipes/${next.entry.recipe.id}?cook=1`, {
+                    state: { planEntryId: next.entry.id },
+                  })
+                }
                 onSwap={() => setSwapping(next.entry)}
               />
             ) : weekPending ? (

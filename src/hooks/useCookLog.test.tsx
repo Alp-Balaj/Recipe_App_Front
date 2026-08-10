@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { queryKeys } from '@/api/queryKeys'
 import { useCookLogMutations } from './useCookLog'
@@ -63,5 +63,48 @@ describe('useCookLogMutations', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.feed.all })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.mealPlans.all })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.shopping.all })
+  })
+
+  /**
+   * `networkMode: 'always'` (see useSocialMutations.ts's note on `logCooked`
+   * for the full incident): a mutation fired while react-query believes the
+   * browser is offline is normally PAUSED, not sent, on the promise that it
+   * resumes on reconnect — a promise a real browser pass found does not hold.
+   * jsdom cannot fake an actual offline network, but `onlineManager` is the
+   * exact signal react-query itself branches on to decide pause vs. send, so
+   * flipping it here exercises the real fork: with the default 'online' mode
+   * this mutation would sit in `isPaused` and never call the API; dropping
+   * `networkMode: 'always'` from either mutation turns this red.
+   */
+  describe('offline (networkMode)', () => {
+    afterEach(() => onlineManager.setOnline(true))
+
+    it('log still fires while react-query believes the browser is offline', async () => {
+      onlineManager.setOnline(false)
+      const log = vi.spyOn(api, 'logCook').mockResolvedValue(entry)
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+
+      const { result } = renderHook(() => useCookLogMutations(), { wrapper: clientWrapper(client) })
+
+      result.current.log.mutate({ recipeId: 'r1', mealPlanEntryId: 'e1' })
+      await waitFor(() => expect(result.current.log.isSuccess).toBe(true))
+
+      expect(log).toHaveBeenCalledWith('r1', 'e1')
+      expect(result.current.log.isPaused).toBe(false)
+    })
+
+    it('unlog still fires while react-query believes the browser is offline', async () => {
+      onlineManager.setOnline(false)
+      const unlog = vi.spyOn(api, 'uncookEntry').mockResolvedValue(undefined)
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+
+      const { result } = renderHook(() => useCookLogMutations(), { wrapper: clientWrapper(client) })
+
+      result.current.unlog.mutate({ mealPlanEntryId: 'e1' })
+      await waitFor(() => expect(result.current.unlog.isSuccess).toBe(true))
+
+      expect(unlog).toHaveBeenCalledWith('e1')
+      expect(result.current.unlog.isPaused).toBe(false)
+    })
   })
 })

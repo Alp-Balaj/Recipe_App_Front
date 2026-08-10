@@ -315,6 +315,67 @@ describe('the week board', () => {
     )
   })
 
+  // Fix 3 (final whole-branch review): the panel's "Open recipe" link had the same
+  // omission MealCard's day-page link once had — no `planEntryId` in location
+  // state, so RecipeDetailPage could not tell cook mode which plan slot it was
+  // opened from. Finishing cook mode from the week board would then log against
+  // the RECIPE, not the entry: the entry never shows cooked and the shopping
+  // group it feeds never resolves. Proven end-to-end, landing on the real recipe
+  // route the same way the "carries the plan slot" case in
+  // MealPlanPage.test.tsx pins the hero's equivalent link.
+  it('"Open recipe" carries the plan slot, so finishing cook mode logs against that entry', async () => {
+    server.use(...plannedWeek())
+    server.use(
+      http.get('/api/recipes/:id', ({ params }) =>
+        HttpResponse.json(
+          makeRecipe({
+            id: String(params.id),
+            title: 'Pasta al forno',
+            steps: [
+              { stepNumber: 1, description: 'Boil the rigatoni.', durationSeconds: null, ingredientIndexes: [], temperature: null },
+              { stepNumber: 2, description: 'Bake with the sauce.', durationSeconds: null, ingredientIndexes: [], temperature: null },
+            ],
+          }),
+        ),
+      ),
+    )
+    const logCookBodies: unknown[] = []
+    let markCookedCalled = false
+    server.use(
+      http.post('*/cook-log', async ({ request }) => {
+        logCookBodies.push(await request.json())
+        return HttpResponse.json({
+          id: 'log-1',
+          recipeId: 'recipe-pasta',
+          recipeTitle: 'Pasta al forno',
+          mealPlanEntryId: 'entry-thu-lunch',
+          cookedAt: '2026-07-30T09:00:00.000Z',
+          recipeAvailable: true,
+        })
+      }),
+      http.post('*/recipes/:id/cooked', () => {
+        markCookedCalled = true
+        return HttpResponse.json({ recipeId: 'recipe-pasta', timesCooked: 1, rating: null, lastCookedAt: null })
+      }),
+    )
+
+    renderRoute('/plan/week/2026-07-27')
+
+    await userEvent.click(await screen.findByRole('button', { name: /pasta al forno, thursday lunch/i }))
+    const panel = await screen.findByRole('dialog')
+    await userEvent.click(within(panel).getByRole('link', { name: /open recipe/i }))
+
+    await userEvent.click(await screen.findByText('▷ Start cooking'))
+    await userEvent.click(await screen.findByText('Next →'))
+    await userEvent.click(screen.getByText('Finished cooking'))
+
+    await waitFor(() =>
+      expect(logCookBodies).toEqual([{ recipeId: 'recipe-pasta', mealPlanEntryId: 'entry-thu-lunch' }]),
+    )
+    // The double-write guard: the recipe-aggregate endpoint must not ALSO fire.
+    expect(markCookedCalled).toBe(false)
+  })
+
   it('closes the panel when its entry disappears', async () => {
     const deleted: string[] = []
     const withoutThursdayLunch: MealPlan = {

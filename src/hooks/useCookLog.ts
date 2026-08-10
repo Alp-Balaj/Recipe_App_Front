@@ -63,7 +63,13 @@ export function useCookLogMutations() {
    * server bumps the aggregate as part of this write, and firing both counts
    * the cook twice.
    */
+  // `networkMode: 'always'` — see useSocialMutations.ts's note on `logCooked`
+  // for the full story. Same failure mode applies here: cook mode's finish
+  // panel and MealCard's "I cooked this" both call through this mutation, and
+  // a paused-offline mutation with no resume leaves the user believing they
+  // logged a cook that never landed, with no error and no retry offered.
   const log = useMutation({
+    networkMode: 'always',
     mutationFn: (vars: { recipeId: string; mealPlanEntryId?: string | null }) =>
       logCook(vars.recipeId, vars.mealPlanEntryId),
     onSuccess: invalidate,
@@ -74,7 +80,11 @@ export function useCookLogMutations() {
    * day that has happened, but an undo the user cannot reach is the bug this whole
    * roadmap exists to fix.
    */
+  // `networkMode: 'always'` — see useSocialMutations.ts's note on `logCooked`.
+  // The undo path is reached from the same surfaces as `log` above and would
+  // otherwise silently pause offline instead of failing loudly.
   const unlog = useMutation({
+    networkMode: 'always',
     mutationFn: (vars: { mealPlanEntryId: string }) => uncookEntry(vars.mealPlanEntryId),
     onSuccess: invalidate,
   })

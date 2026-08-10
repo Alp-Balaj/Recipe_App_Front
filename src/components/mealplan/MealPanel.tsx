@@ -148,7 +148,16 @@ export default function MealPanel({
       </div>
 
       <div style={actions}>
-        <Link to={`/recipes/${entry.recipe.id}`} state={{ backdrop }} style={actionButton}>
+        {/* planEntryId rides alongside backdrop the same way MealCard's Recipe link
+            carries it: RecipeDetailPage reads it to log a cook against this SLOT, not
+            just the recipe. Cook mode is reachable straight from the recipe page's own
+            "Start cooking" button, with no ?cook=1 in the URL — so dropping this would
+            silently fall back to the un-linked cook path from the week board too. */}
+        <Link
+          to={`/recipes/${entry.recipe.id}`}
+          state={{ backdrop, planEntryId: entry.id }}
+          style={actionButton}
+        >
           Open recipe
         </Link>
         <Link to={planDayPath(date)} style={actionButton}>

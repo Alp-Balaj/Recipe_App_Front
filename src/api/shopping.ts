@@ -177,8 +177,13 @@ export interface ShoppingGroup {
    * NOT the same as `isPurchased`, and must never be folded into it: `bought` is the tick
    * the checkbox writes back, and conflating them would send a wrong `isPurchased` on the
    * next tap. A group can be both.
+   *
+   * Optional to match a cached response from before the field existed — same reasoning as
+   * `MealPlanEntry.cookedAt` (api/mealPlans.ts), the other field this branch appended. Read
+   * through `shoppingModel.itemsOf`'s `?? false`, never bare, so the fallback actually means
+   * something at the type level.
    */
-  resolvedByCooking: boolean
+  resolvedByCooking?: boolean
 }
 
 /** One week of the projection, with its own progress denominator. */

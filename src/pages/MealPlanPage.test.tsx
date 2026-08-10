@@ -1,11 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import { server } from '@/test/msw/server'
 import { renderRoute } from '@/test/utils'
 import * as planApi from '@/api/mealPlans'
 import * as cookLogApi from '@/api/cookLog'
 import * as pantry from '@/hooks/usePantryReadiness'
 import type { MealPlan, MealPlanSummary } from '@/api/mealPlans'
+import type { RecipeResponse } from '@/api/types'
 
 // ─────────────────────────────────────────────────────────────────────────
 // /plan — the redesigned front door.
@@ -125,23 +128,19 @@ describe('/plan — the planning front door', () => {
   })
 
   it('skips a meal that has already been cooked', async () => {
-    stubPlan()
-    stubCookLog({
-      history: {
-        items: [
-          {
-            id: 'c1',
-            recipeId: 'r-oats',
-            recipeTitle: 'Overnight oats',
-            mealPlanEntryId: 'e-mon-b',
-            cookedAt: '2026-08-10T07:30:00.000Z',
-            note: null,
-            recipeAvailable: true,
-          },
-        ],
-        nextCursor: null,
+    // Fix 4: cookedEntryIds is derived from entries[].cookedAt (Task 1's
+    // authoritative, unpaginated field) rather than the cook log's first page —
+    // so what marks an entry cooked here is the ENTRY carrying cookedAt, not an
+    // item appearing in the (now-unread-for-this-purpose) history stub.
+    stubPlan({
+      plan: {
+        ...plan,
+        entries: plan.entries.map((entry) =>
+          entry.id === 'e-mon-b' ? { ...entry, cookedAt: '2026-08-10T07:30:00.000Z' } : entry,
+        ),
       },
     })
+    stubCookLog()
     renderRoute('/plan')
 
     // Breakfast is done, so the hero moves on to Monday's dinner.
@@ -410,5 +409,78 @@ describe('/plan — the planning front door', () => {
     renderRoute('/plan')
 
     expect(await screen.findByText('August 2026')).toBeInTheDocument()
+  })
+
+  // ── Fix 3 (final whole-branch review): the hero's "Start cooking" must carry
+  // the plan slot, exactly the way MealCard's Recipe link already does. Before the
+  // fix `onStartCooking` navigated with no location state, so RecipeDetailPage read
+  // no `planEntryId`, and finishing cook mode logged against the RECIPE (POST
+  // /recipes/:id/cooked) instead of the plan entry — the entry never shows cooked
+  // and the shopping group it feeds never resolves. Proven end-to-end through the
+  // real route tree, the same way RecipeDetailPage.test.tsx pins the day page's
+  // equivalent link.
+  it('"Start cooking" carries the plan slot, so finishing logs against that entry', async () => {
+    stubPlan()
+    stubCookLog()
+
+    const recipe: RecipeResponse = {
+      id: 'r-oats',
+      title: 'Overnight oats',
+      description: 'Soaked oats, ready when you wake up.',
+      prepTimeMinutes: 5,
+      cookTimeMinutes: 0,
+      totalTimeMinutes: 10,
+      servings: 1,
+      difficulty: 'Easy',
+      cuisineType: null,
+      caloriesPerServing: 300,
+      imageUrl: null,
+      visibility: 'Public',
+      createdAt: '2026-08-01T00:00:00Z',
+      updatedAt: null,
+      ingredients: [{ name: 'rolled oats', quantity: 1, unit: 'Cup' }],
+      steps: [
+        { stepNumber: 1, description: 'Mix oats with milk.', durationSeconds: null, ingredientIndexes: [], temperature: null },
+        { stepNumber: 2, description: 'Chill overnight.', durationSeconds: null, ingredientIndexes: [], temperature: null },
+      ],
+      tags: [],
+      createdByUserId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+    }
+
+    const logCookBodies: unknown[] = []
+    let markCookedCalled = false
+    server.use(
+      http.get('*/recipes/:id', () => HttpResponse.json(recipe)),
+      http.post('*/cook-log', async ({ request }) => {
+        logCookBodies.push(await request.json())
+        return HttpResponse.json({
+          id: 'log-1',
+          recipeId: 'r-oats',
+          recipeTitle: 'Overnight oats',
+          mealPlanEntryId: 'e-mon-b',
+          cookedAt: '2026-08-10T09:00:00.000Z',
+          recipeAvailable: true,
+        })
+      }),
+      http.post('*/recipes/:id/cooked', () => {
+        markCookedCalled = true
+        return HttpResponse.json({ recipeId: 'r-oats', timesCooked: 1, rating: null, lastCookedAt: null })
+      }),
+    )
+
+    renderRoute('/plan')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Start cooking' }))
+
+    // ?cook=1 in the URL this navigation carries puts RecipeDetailPage straight
+    // into cook mode — no second "Start cooking" click needed there.
+    await userEvent.click(await screen.findByText('Next →'))
+    await userEvent.click(screen.getByText('Finished cooking'))
+
+    await waitFor(() =>
+      expect(logCookBodies).toEqual([{ recipeId: 'r-oats', mealPlanEntryId: 'e-mon-b' }]),
+    )
+    // The double-write guard: the recipe-aggregate endpoint must not ALSO fire.
+    expect(markCookedCalled).toBe(false)
   })
 })

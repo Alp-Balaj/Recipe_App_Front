@@ -166,7 +166,18 @@ export default function ShoppingListPage() {
   // Composed here rather than read off week.purchasedCount, which counts TICKS only and
   // deliberately still does: folding resolutions into a shipped server number would
   // silently redefine it. "Done" is the client's composition — see shoppingModel.isDone.
+  //
+  // Two counts, not one, and they feed DIFFERENT things — do not fold them back together:
+  //  · `purchased` is the isDone composition (bought || resolved). Spec-correct for every
+  //    counter that must not still ask for a meal you already ate: the progress ribbon, the
+  //    percentage, and "Hide bought (N)".
+  //  · `tickedCount` counts ONLY the explicit tick — it feeds `allBought` alone. The receipt
+  //    screen below replaces the whole list, rows AND the manual-add form, with a celebration
+  //    asserting the shop is done. Cooking the week's one dish resolves its group without the
+  //    user ever having shopped, and celebrating that would be a screen asserting something
+  //    false with no way to add an item. Only ticking earns the receipt.
   const purchased = allItems.filter(isDone).length
+  const tickedCount = allItems.filter((item) => item.bought).length
   const visibleItems = useMemo(
     () => (hideBought ? allItems.filter((item) => !isDone(item)) : allItems),
     [allItems, hideBought],
@@ -191,6 +202,26 @@ export default function ShoppingListPage() {
       not change because you hid the bought rows. */
   const aisles = useMemo(() => aisleSummaries(allItems), [allItems])
   const dishes = useMemo(() => dishSummaries(allItems), [allItems])
+
+  /**
+   * Per-week done counts for the scope=All block headers, computed the same way the
+   * page-level `purchased` is — via `isDone` over that week's items — never off
+   * `week.purchasedCount`, which is the wire's ticks-only number. shoppingModel.ts
+   * exists precisely so the page's counters cannot disagree, and a resolved-not-ticked
+   * row used to make the block header read "0 of 2" while the page header (isDone-based)
+   * read "1 of 2" for the exact same week.
+   *
+   * Built from `allItems`, not `visibleItems`: a hidden (isDone) row must still be
+   * counted here, and under "Hide bought" `visibleItems` has already dropped it.
+   */
+  const doneCountByWeek = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const item of allItems) {
+      if (!isDone(item)) continue
+      counts.set(item.weekStartDate, (counts.get(item.weekStartDate) ?? 0) + 1)
+    }
+    return counts
+  }, [allItems])
 
   const selected = useMemo(
     () => visibleItems.filter((item) => selection.has(item.id)),
@@ -418,7 +449,9 @@ export default function ShoppingListPage() {
   // Offline is "the fetch failed but we still hold a list". With nothing cached
   // there is nothing to be stale about, so that is a plain error instead.
   const offline = isError && data !== undefined
-  const allBought = total > 0 && purchased === total
+  // Ticks only — see tickedCount's definition above. `purchased` (isDone) would
+  // let a fully-resolved, never-shopped week trigger the receipt screen.
+  const allBought = total > 0 && tickedCount === total
   const percent = total === 0 ? 0 : Math.round((purchased / total) * 100)
 
   // ── pieces shared by both layouts ───────────────────────────────────────
@@ -546,7 +579,7 @@ export default function ShoppingListPage() {
           {weekRange(block.week.weekStartDate)}
           <span style={{ fontWeight: 600, color: 'var(--muted)' }}>
             {' '}
-            · {block.week.purchasedCount} of {block.week.totalCount}
+            · {doneCountByWeek.get(block.week.weekStartDate) ?? 0} of {block.week.totalCount}
           </span>
         </h2>
       )}
