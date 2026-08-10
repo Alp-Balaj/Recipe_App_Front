@@ -28,6 +28,39 @@ interface Props {
   weeks: Date[][]
   monthStart: Date
   loads: Map<string, DayLoad>
+  /**
+   * 'month' — the strip card on the month page (the original, unchanged).
+   * 'plan' — /plan's §2: taller bars, no axis ticks, and a footer naming the
+   * heaviest day, because the ruled section heading above it already carries
+   * the label and the denominator.
+   */
+  variant?: 'month' | 'plan'
+}
+
+export interface CalorieCoverage {
+  /** Days with a figure that can be stated honestly. */
+  counted: number
+  /** Days with anything planned at all. */
+  planned: number
+}
+
+/**
+ * The denominator, exported so a caller can render "from 16 of 19 planned days"
+ * in its own heading and be certain it matches the bars underneath.
+ *
+ * Same two rules as the chart: a day is counted only when every planned meal
+ * has a figure, and a planned-but-uncountable day stays in `planned`.
+ */
+export function calorieCoverage(
+  weeks: Date[][],
+  monthStart: Date,
+  loads: Map<string, DayLoad>,
+): CalorieCoverage {
+  const days = weeks.flat().filter((date) => isSameMonth(date, monthStart))
+  return {
+    counted: days.filter((date) => dayCalories(loads.get(formatPlanDate(date))) !== null).length,
+    planned: days.filter((date) => (loads.get(formatPlanDate(date))?.planned ?? 0) > 0).length,
+  }
 }
 
 interface Bar {
@@ -42,8 +75,9 @@ interface Bar {
   planned: boolean
 }
 
-export default function CalorieRibbon({ weeks, monthStart, loads }: Props) {
+export default function CalorieRibbon({ weeks, monthStart, loads, variant = 'month' }: Props) {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
+  const isPlan = variant === 'plan'
 
   const days = weeks.flat().filter((date) => isSameMonth(date, monthStart))
   const plannedDays = days.filter((date) => (loads.get(formatPlanDate(date))?.planned ?? 0) > 0)
@@ -74,15 +108,22 @@ export default function CalorieRibbon({ weeks, monthStart, loads }: Props) {
     (peak?.value ? ` Highest ${peak.label}, ${peak.value.toLocaleString()} kcal.` : '')
 
   return (
-    <section style={card} aria-label="Daily calories">
-      <div style={head}>
-        <span style={label}>Daily calories</span>
-        <span style={denominator}>
-          from {countedDays.length} of {plannedDays.length} planned days
-        </span>
-      </div>
+    <section
+      style={isPlan ? { ...card, padding: '16px 17px', gap: 8, flex: 'initial' } : card}
+      aria-label="Daily calories"
+    >
+      {/* On /plan the ruled section heading above already carries both, and
+          repeating them inside the card would say "Planned calories" twice. */}
+      {!isPlan && (
+        <div style={head}>
+          <span style={label}>Daily calories</span>
+          <span style={denominator}>
+            from {countedDays.length} of {plannedDays.length} planned days
+          </span>
+        </div>
+      )}
 
-      <div style={plot} role="img" aria-label={summary}>
+      <div style={isPlan ? { ...plot, height: 64, gap: 3 } : plot} role="img" aria-label={summary}>
         {bars.map((bar) => (
           <span
             key={bar.key}
@@ -108,17 +149,39 @@ export default function CalorieRibbon({ weeks, monthStart, loads }: Props) {
         ))}
       </div>
 
-      <div style={axis} aria-hidden="true">
-        {bars.map((bar, index) => (
-          <span key={bar.key} style={tickLabel}>
-            {isDesktop ? (index % 7 === 0 ? bar.short : '') : bar.short}
+      {/* /plan swaps the tick axis for a sentence: the bars sit under a heading
+          that names the month, so the reader needs the outlier, not the scale. */}
+      {isPlan ? (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+            {peak?.value
+              ? `${peak.label} is your heaviest day at ${peak.value.toLocaleString()} kcal.`
+              : 'No day has a calorie figure yet.'}
           </span>
-        ))}
-      </div>
+          <span style={{ ...denominator, fontSize: 11.5, fontWeight: 400 }}>
+            {monthRangeOf(monthStart)}
+          </span>
+        </div>
+      ) : (
+        <div style={axis} aria-hidden="true">
+          {bars.map((bar, index) => (
+            <span key={bar.key} style={tickLabel}>
+              {isDesktop ? (index % 7 === 0 ? bar.short : '') : bar.short}
+            </span>
+          ))}
+        </div>
+      )}
 
       {!isDesktop && <span style={note}>Each bar is that week&rsquo;s average day.</span>}
     </section>
   )
+}
+
+/** "1 – 31 Aug" — the span the bars actually cover. */
+function monthRangeOf(monthStart: Date): string {
+  const end = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0))
+  const month = monthStart.toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' })
+  return `1 – ${end.getUTCDate()} ${month}`
 }
 
 /** One tick per day of the month. */

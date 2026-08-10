@@ -23,12 +23,16 @@ import {
   AdminEventsTab,
   BrowsePage,
   ChatPage,
+  CookHistoryPage,
   FeedPage,
   FollowListPage,
   FoodScanPage,
   LoginPage,
   MealPlanDayPage,
-  MealPlanMonthPage,
+  // MealPlanMonthPage is no longer imported here: /plan points at MealPlanPage,
+  // which renders the calendar itself for ?m= and below 1024px. The lazy
+  // declaration stays in routeChunks, which is where that page now loads from.
+  MealPlanPage,
   MealPlanWeekPage,
   MyRecipesPage,
   NotificationsPage,
@@ -92,7 +96,13 @@ export const routes: RouteObject[] = [
           // the 7×3 board that used to own /plan. The board keeps working and
           // can now show ANY week, which is the bug this rehoming fixes.
           // Segment counts differ, so none of these three can shadow another.
-          { path: '/plan', element: page(MealPlanMonthPage) },
+          // plan-page redesign (external handoff, 2026-08-10) — ELEMENT ONLY,
+          // the same kind of change the week board made at its own path. /plan
+          // is now the planning front door: hero, week strip, calorie ribbon,
+          // rating prompt. The month calendar is not gone — MealPlanPage still
+          // renders MealPlanMonthPage for ?m=YYYY-MM and below 1024px, so every
+          // URL that used to work still does. No route added or reordered here.
+          { path: '/plan', element: page(MealPlanPage) },
           // REVIEWED REMOVAL (2026-07-30): the static /plan/week redirect route
           // (week/shopping rework Task 9) existed only so the Plan tab could
           // point at a fixed path and still land on the CURRENT week. The tab
@@ -104,6 +114,12 @@ export const routes: RouteObject[] = [
           // days-as-rows board replaces the old 7×3 editor at the same path. No
           // route added, removed or reordered.
           { path: '/plan/week/:start', element: page(MealPlanWeekPage) },
+          // plan-page redesign — SANCTIONED ADDITIVE route registration, same
+          // discipline as the additive routes above: a NEW path pointing at a
+          // NEW page, nothing existing changed or reordered. Two segments, but
+          // it is declared BEFORE /plan/:date and "cooks" is not a valid plan
+          // date, so neither shadows the other.
+          { path: '/plan/cooks', element: page(CookHistoryPage) },
           { path: '/plan/:date', element: page(MealPlanDayPage) },
           { path: '/shopping-list', element: page(ShoppingListPage) },
           // Stream N (food scanner) — SANCTIONED ADDITIVE route registration,

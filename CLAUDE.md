@@ -91,15 +91,33 @@ back to light on every click.
 | /recipes/new | `RecipeFormPage.tsx` | lane B (05) |
 | /recipes/mine | `MyRecipesPage.tsx` | lane B (06) |
 | /recipes/:id | `RecipeDetailPage.tsx` | lane A (03) |
-| /plan | `MealPlanMonthPage.tsx` | meal-plan redesign (month calendar) |
+| /plan | `MealPlanPage.tsx` | plan-page redesign (front door; renders `MealPlanMonthPage` for `?m=` and below 1024px) |
+| /plan/cooks | `CookHistoryPage.tsx` | plan-page redesign (the cook log's history) |
 | /plan/week/:start | `MealPlanWeekPage.tsx` | meal-planning-ui, rehomed by the redesign, rebuilt days-as-rows by the week/shopping rework |
 | /plan/:date | `MealPlanDayPage.tsx` | meal-plan redesign (one day) |
 | /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui, rewritten by the week/shopping rework (per-week projection + mark overlay) |
 | / and unknown | redirect → /discover | — |
 
-The Plan tab lands on `/plan` (the month calendar — the front door to the
-planning surfaces); any week is one click away via the month's week rail, and
-a day via its cells. The old static `/plan/week` redirect is gone; that URL now
+The Plan tab lands on `/plan`. Since the plan-page redesign that is the
+planning **front door** — "Next up" hero, seven-day strip, planned-calorie
+ribbon, rate-your-last-cook prompt — and not the month calendar. The calendar
+is still there, behind `Month view ›` (`/plan?m=YYYY-MM`) and on anything
+narrower than 1024px, which the redesign did not cover. Any week is one click
+away via `Open week ›`, and a day via the strip's cells.
+
+> **Scoped exception — `/plan`** (plan-page redesign, from an external design
+> handoff). Adds **no** palette tokens. Two things a later session must not
+> "tidy away":
+> - `src/hooks/usePantryReadiness.ts` returns `null` and is the ONLY thing
+>   standing between the built-and-tested `KitchenReadinessCard` and its
+>   designed column. Implementing that one hook lights the card up; deleting
+>   the null branch in `MealPlanPage` breaks the seam.
+> - `NextUpHero`'s `minHeight` + `clamp()` photo column are load-bearing at
+>   1024–1150px, where `DiscoverHero`'s fixed height clips the CTA.
+>
+> Derivations counted more than once (coverage, free slots, open dinners,
+> repeats) live in `src/lib/planWeek.ts`, following `shoppingModel.ts`, so the
+> page's several counters cannot disagree. The old static `/plan/week` redirect is gone; that URL now
 falls through to `/plan/:date` and renders the day page's invalid-date state.
 `/shopping-list` has its own Shop tab — it no longer shares the
 Plan tab with the meal-planning surfaces (that was a data relationship, the
