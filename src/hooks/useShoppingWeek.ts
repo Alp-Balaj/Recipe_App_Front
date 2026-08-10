@@ -52,8 +52,15 @@ export function useShoppingWeek(weekStart: string | null, scope: ShoppingScope, 
   })
 }
 
-/** Weeks arrive as '…T00:00:00Z' but are requested as '…T00:00:00.000Z' — compare instants. */
-function sameWeek(a: string, b: string): boolean {
+/**
+ * Weeks arrive as '…T00:00:00Z' but are requested as '…T00:00:00.000Z' — compare
+ * instants, never the raw strings. Exported (trust rework, Task 8) because the
+ * other-weeks probe in ShoppingListPage.tsx has the exact same hazard: comparing
+ * a probe week's `weekStartDate` against the client-built `viewedWeek` with `!==`
+ * would treat the viewed week itself as an "other" week whenever the two arrive
+ * in different ISO spellings of the same instant.
+ */
+export function sameWeek(a: string, b: string): boolean {
   return new Date(a).getTime() === new Date(b).getTime()
 }
 

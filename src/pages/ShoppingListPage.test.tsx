@@ -633,6 +633,138 @@ describe('ShoppingListPage — carryover banner', () => {
   })
 })
 
+/**
+ * The explaining empty state (trust rework, Task 8) — hidden items, silent
+ * meals, and other owing weeks all read from data that must be trusted at
+ * face value, or the surface whose whole point is "stop lying to the user"
+ * lies to them instead.
+ */
+describe('ShoppingListPage — empty state explains itself', () => {
+  it('does not offer the viewed week back to itself when it arrives in a different ISO spelling', async () => {
+    const emptyThisWeek = { weekStartDate: weekStartOf(new Date()), groups: [], purchasedCount: 0, totalCount: 0 }
+    // The SAME instant as the viewed week, spelled WITHOUT the milliseconds the
+    // client's own weekStartOf()/toISOString() produce — exactly the hazard
+    // `sameWeek()` (src/hooks/useShoppingWeek.ts) exists to guard against. A raw
+    // `!==` string comparison would wrongly treat this as an "other" week.
+    const sameInstantDifferentSpelling = {
+      weekStartDate: weekStartOf(new Date()).replace('.000Z', 'Z'),
+      groups: [],
+      purchasedCount: 0,
+      totalCount: 5,
+    }
+    // An UNAMBIGUOUS other week (a genuinely different instant), included only
+    // as a synchronization anchor: waiting for ITS button proves the probe's
+    // response has already landed and been rendered — both entries come off the
+    // SAME otherWeeks array in the SAME render, so once "7 items" is on screen,
+    // whether "5 items" is (wrongly) also there is settled, not still in flight.
+    // Asserting the negative right after the probe's OWN first render (instead
+    // of after some unrelated fallback text that renders before the probe even
+    // resolves) is what makes this a real regression test instead of one that
+    // passes by accident regardless of the bug.
+    const genuineOtherWeek = {
+      weekStartDate: new Date(
+        new Date(weekStartOf(new Date())).getTime() - 14 * 24 * 60 * 60 * 1000,
+      ).toISOString(),
+      groups: [],
+      purchasedCount: 0,
+      totalCount: 7,
+    }
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        const scope = new URL(request.url).searchParams.get('scope')
+        return HttpResponse.json(
+          scope === 'All'
+            ? { weeks: [sameInstantDifferentSpelling, genuineOtherWeek], orphanedPurchasedNames: [] }
+            : { weeks: [emptyThisWeek], orphanedPurchasedNames: [] },
+        )
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    // The unambiguous other week's button is the signal that the probe's data
+    // has been incorporated into this render.
+    await screen.findByRole('button', { name: /7 items/i })
+    // Self-contradiction if this is ALSO present: "your plan for THIS week has
+    // 5 items", directly under a list that just said this week has nothing on it.
+    expect(screen.queryByRole('button', { name: /5 items/i })).not.toBeInTheDocument()
+  })
+
+  it('restores a hidden item into the VIEWED week', async () => {
+    const marks: unknown[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        const scope = new URL(request.url).searchParams.get('scope')
+        if (scope === 'All') return HttpResponse.json({ weeks: [], orphanedPurchasedNames: [] })
+        return HttpResponse.json({
+          weeks: [
+            {
+              weekStartDate: weekStartOf(new Date()),
+              groups: [],
+              purchasedCount: 0,
+              totalCount: 0,
+              diagnostics: {
+                hiddenItems: [{ key: 'onion', displayName: 'Onion' }],
+                mealsWithoutIngredients: [],
+                unavailableRecipeCount: 0,
+              },
+            },
+          ],
+          orphanedPurchasedNames: [],
+        })
+      }),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        marks.push(await request.json())
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /restore onion/i }))
+
+    await waitFor(() => expect(marks).toHaveLength(1))
+    // The unsuppress mark, explicitly unpurchased and unsuppressed, landing on
+    // the week actually being VIEWED — not last week, not some hardcoded week.
+    expect(marks[0]).toEqual({
+      weekStartDate: weekStartOf(new Date()),
+      key: 'onion',
+      isPurchased: false,
+      isSuppressed: false,
+    })
+  })
+
+  it('jumps to another owing week and asks for THAT week next, proving the offset arithmetic end to end', async () => {
+    const otherWeekStart = new Date(weekStartOf(new Date()))
+    otherWeekStart.setUTCDate(otherWeekStart.getUTCDate() + 14)
+    const otherWeekIso = otherWeekStart.toISOString()
+
+    const seenWeekRequests: string[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        const url = new URL(request.url)
+        if (url.searchParams.get('scope') === 'All') {
+          return HttpResponse.json({
+            weeks: [{ weekStartDate: otherWeekIso, groups: [], purchasedCount: 2, totalCount: 5 }],
+            orphanedPurchasedNames: [],
+          })
+        }
+        seenWeekRequests.push(url.searchParams.get('weekStart') ?? '')
+        return HttpResponse.json({
+          weeks: [
+            { weekStartDate: url.searchParams.get('weekStart'), groups: [], purchasedCount: 0, totalCount: 0 },
+          ],
+          orphanedPurchasedNames: [],
+        })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    // 5 - 2 = 3 unbought, named on the jump button.
+    await userEvent.click(await screen.findByRole('button', { name: /3 items/i }))
+
+    await waitFor(() => expect(seenWeekRequests).toContain(otherWeekIso))
+  })
+})
+
 describe('ShoppingListPage — a tick reaches the other scope', () => {
   it('leaves the sibling scope stale without refetching the list in your hand', async () => {
     const seen: URL[] = []

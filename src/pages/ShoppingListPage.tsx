@@ -36,7 +36,7 @@ import { Link } from 'react-router-dom'
 import { weekStartOf } from '@/api/mealPlans'
 import type { ShoppingGroup, ShoppingScope } from '@/api/shopping'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import { useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
+import { sameWeek, useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
 import AllBought from '@/components/shopping/AllBought'
 import CarryoverBanner from '@/components/shopping/CarryoverBanner'
 import EmptyWeekExplainer from '@/components/shopping/EmptyWeekExplainer'
@@ -149,7 +149,12 @@ export default function ShoppingListPage() {
   const otherWeeks = useMemo(() => {
     if (!otherWeeksQuery.data) return []
     return otherWeeksQuery.data.weeks
-      .filter((week) => week.weekStartDate !== viewedWeek && week.totalCount - week.purchasedCount > 0)
+      // Compare INSTANTS, not raw strings: the probe's weeks arrive as
+      // '…T00:00:00Z' while `viewedWeek` is client-built via .toISOString()
+      // ('…T00:00:00.000Z') — the same hazard `sameWeek` already guards for the
+      // mark-overlay cache patches below. A `!==` here would let the viewed
+      // week leak into "other weeks still owing" under a Week/All query race.
+      .filter((week) => !sameWeek(week.weekStartDate, viewedWeek) && week.totalCount - week.purchasedCount > 0)
       .map((week) => ({ weekStartDate: week.weekStartDate, unboughtCount: week.totalCount - week.purchasedCount }))
   }, [otherWeeksQuery.data, viewedWeek])
 
