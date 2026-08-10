@@ -22,7 +22,9 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { Suspense, useMemo, useState, type CSSProperties } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { queryKeys } from '@/api/queryKeys'
 import { MealPlanMonthPage } from '@/routeChunks'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useCurrentWeekPlan, useEnsureWeekPlan, useMealPlanDetail } from '@/hooks/useMealPlan'
@@ -137,6 +139,7 @@ function PlanFrontDoor() {
 
   const readiness = usePantryReadiness()
   const [swapping, setSwapping] = useState<MealPlanEntry | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
 
   return (
     <div style={page}>
@@ -173,6 +176,12 @@ function PlanFrontDoor() {
               title="Couldn't load this week"
               body="Check your connection and try again."
             />
+          )}
+
+          {message && (
+            <div role="alert" style={messageBanner}>
+              {message}
+            </div>
           )}
 
           {/* ── Top row. Two columns only when there is a pantry to fill the
@@ -281,7 +290,13 @@ function PlanFrontDoor() {
         onPick={(recipeId) => {
           const entry = swapping
           setSwapping(null)
-          if (entry && planId) void swapEntry(planId, entry, recipeId, detail.refetch)
+          if (!entry || !planId) return
+          setMessage(null)
+          // Caught, not floated: an unhandled rejection here would leave the
+          // slot silently unchanged with nothing on screen to say so.
+          void swapEntry(planId, entry, recipeId, detail.refetch).catch(() =>
+            setMessage(`Couldn't swap ${entry.recipe.title}. It's still on the plan.`),
+          )
         }}
       />
     </div>
@@ -332,6 +347,7 @@ function LastCookSection() {
   const { saveNote } = useCookLogMutations()
   const { setRating } = useSocialMutations()
   const ensureWeek = useEnsureWeekPlan()
+  const queryClient = useQueryClient()
   const cook = latest.data?.latest ?? null
 
   const envelope = useSocialEnvelope(cook?.recipeId ?? '', undefined, { fetchFallback: true })
@@ -360,6 +376,10 @@ function LastCookSection() {
         />
       ) : (
         <CookRatingCard
+          // Keyed by the cook: the note field seeds its state from the row, so
+          // without this a newly-logged cook would inherit the previous one's
+          // draft note.
+          key={cook.id}
           cook={cook}
           myRating={envelope.myRating ?? null}
           cookAgainPending={repeating}
@@ -376,6 +396,10 @@ function LastCookSection() {
             setRepeating(true)
             try {
               await repeatOnNextOpenSlot(cook.recipeId, ensureWeek.mutateAsync)
+              // Without this the meal is on the plan server-side and invisible
+              // here until a reload — the strip, the coverage figures and the
+              // hero all read the cached week.
+              await queryClient.invalidateQueries({ queryKey: queryKeys.mealPlans.all })
             } finally {
               setRepeating(false)
             }
@@ -491,6 +515,16 @@ const column: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 26,
+}
+
+const messageBanner: CSSProperties = {
+  border: '1px solid var(--border)',
+  borderLeft: '3px solid var(--clay)',
+  background: 'var(--surface)',
+  borderRadius: 12,
+  padding: '10px 14px',
+  fontSize: 13,
+  color: 'var(--text)',
 }
 
 const heroPlaceholder: CSSProperties = {

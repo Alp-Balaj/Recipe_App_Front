@@ -316,6 +316,70 @@ describe('/plan — the planning front door', () => {
     expect(screen.queryByText('Saved.')).not.toBeInTheDocument()
   })
 
+  it('shows the repeated meal on the strip after "Cook it again"', async () => {
+    // Asserted on the SCREEN, not on a call count: repeatOnNextOpenSlot fetches
+    // the plan itself to find a free slot, so counting getMealPlan calls passes
+    // whether or not the caches are ever invalidated — the test would pin
+    // nothing. What matters is that the strip stops showing the stale week.
+    let placed = false
+    vi.spyOn(planApi, 'addMealPlanEntry').mockImplementation(async () => {
+      placed = true
+      return {} as never
+    })
+    vi.spyOn(planApi, 'getMealPlan').mockImplementation(async () =>
+      placed
+        ? {
+            ...plan,
+            entries: [
+              ...plan.entries,
+              {
+                id: 'e-tue-d',
+                dayOfWeek: 'Tuesday' as const,
+                mealType: 'Dinner' as const,
+                recipe: {
+                  id: 'r-pide',
+                  title: 'Pide with minced lamb',
+                  imageUrl: null,
+                  totalTimeMinutes: 60,
+                },
+              },
+            ],
+          }
+        : plan,
+    )
+    vi.spyOn(planApi, 'getMealPlanForWeek').mockResolvedValue(summary as never)
+    vi.spyOn(planApi, 'getMealPlans').mockResolvedValue({ items: [summary], nextCursor: null })
+    stubCookLog({
+      latest: {
+        latest: {
+          id: 'c9',
+          recipeId: 'r-pide',
+          recipeTitle: 'Pide with minced lamb',
+          mealPlanEntryId: null,
+          cookedAt: '2026-08-07T19:00:00.000Z',
+          note: null,
+          recipeAvailable: true,
+        },
+        totalCount: 1,
+      },
+    })
+
+    renderRoute('/plan')
+    // Only the §3 card names the dish before the repeat.
+    await screen.findByText('Pide with minced lamb')
+    expect(screen.getAllByText('Pide with minced lamb')).toHaveLength(1)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cook it again ›' }))
+
+    // The dish is placed server-side; without invalidating the plan caches it
+    // stays invisible until a reload, and the strip, the coverage figures and
+    // the hero all keep reading the stale week. Two mentions = the card and the
+    // new chip.
+    await waitFor(() =>
+      expect(screen.getAllByText('Pide with minced lamb').length).toBeGreaterThan(1),
+    )
+  })
+
   // ── the month calendar is not gone ────────────────────────────────────────
 
   it('still renders the month calendar behind ?m=', async () => {
