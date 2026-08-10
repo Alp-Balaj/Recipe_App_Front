@@ -3,7 +3,7 @@
 //
 // cp05 contract (unchanged): like/save counts and flags update in the cached
 // feed envelope WITHOUT refetching the page — onMutate patches every cached
-// query under queryKeys.feed.all in place, onError rolls the snapshot back,
+// query under queryKeys.feed.lists() in place, onError rolls the snapshot back,
 // and success does NOT invalidate (the 204 has no body; the optimistic value
 // IS the truth). The backend toggles are idempotent (double-tap can't 500).
 //
@@ -85,14 +85,25 @@ type Snapshot = [readonly unknown[], unknown][]
 
 // ── Cache patch helpers ─────────────────────────────────────────────────────
 
-/** Patch one recipe's envelope in every cached feed query (all pages). */
+/**
+ * Patch one recipe's envelope in every cached feed LIST query (all pages).
+ *
+ * `feed.lists()`, not `feed.all`: the feed subtree stopped being uniformly
+ * infinite-list-shaped when the redesign added GET /feed/activity under
+ * ['feed', 'activity', scope] (a plain useQuery returning `{ items }`, no
+ * `pages`). Matching on `feed.all` handed that entry to this updater, whose
+ * `data.pages.map` threw a TypeError out of onMutate — which means React Query
+ * never ran mutationFn, so every like and save on every surface silently
+ * stopped reaching the server. The `pages` guard below is the second line of
+ * defence for the next non-list query someone parks under this subtree.
+ */
 function patchFeedCaches(
   queryClient: QueryClient,
   recipeId: string,
   patch: (item: FeedItemResponse) => FeedItemResponse,
 ): void {
-  queryClient.setQueriesData<FeedCache>({ queryKey: queryKeys.feed.all }, (data) => {
-    if (!data) return data
+  queryClient.setQueriesData<FeedCache>({ queryKey: queryKeys.feed.lists() }, (data) => {
+    if (!data?.pages) return data
     return {
       ...data,
       pages: data.pages.map((page) => ({
@@ -247,10 +258,12 @@ export function useSocialMutations() {
     mutationFn: ({ recipeId, next }: SocialToggleVars) =>
       next ? likeRecipe(recipeId) : unlikeRecipe(recipeId),
     onMutate: async ({ recipeId, next }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.feed.all })
+      // Cancel and snapshot exactly what gets patched — the activity strip is
+      // neither, and cancelling its in-flight fetch would leave the rail empty.
+      await queryClient.cancelQueries({ queryKey: queryKeys.feed.lists() })
       await settleEnvelopeEntry(queryClient, recipeId)
       const snapshot = snapshotCaches(queryClient, [
-        queryKeys.feed.all,
+        queryKeys.feed.lists(),
         queryKeys.social.envelope(recipeId),
       ])
       patchFeedCaches(queryClient, recipeId, (item) =>
@@ -279,11 +292,11 @@ export function useSocialMutations() {
     mutationFn: ({ recipeId, next }: SocialToggleVars) =>
       next ? saveRecipe(recipeId) : unsaveRecipe(recipeId),
     onMutate: async ({ recipeId, next }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.feed.all })
+      await queryClient.cancelQueries({ queryKey: queryKeys.feed.lists() })
       await queryClient.cancelQueries({ queryKey: queryKeys.saved.all })
       await settleEnvelopeEntry(queryClient, recipeId)
       const snapshot = snapshotCaches(queryClient, [
-        queryKeys.feed.all,
+        queryKeys.feed.lists(),
         queryKeys.social.envelope(recipeId),
         queryKeys.saved.all,
       ])
@@ -363,10 +376,10 @@ export function useSocialMutations() {
     mutationFn: ({ recipeId, rating }: RateVars) =>
       rating === null ? clearCooked(recipeId) : rateRecipe(recipeId, rating),
     onMutate: async ({ recipeId, rating }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.feed.all })
+      await queryClient.cancelQueries({ queryKey: queryKeys.feed.lists() })
       await settleEnvelopeEntry(queryClient, recipeId)
       const snapshot = snapshotCaches(queryClient, [
-        queryKeys.feed.all,
+        queryKeys.feed.lists(),
         queryKeys.social.envelope(recipeId),
       ])
 

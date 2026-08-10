@@ -86,13 +86,20 @@ function isFullyKnown(env: SocialEnvelope): boolean {
   )
 }
 
-/** Scan every cached feed page for this recipe's envelope. */
+/**
+ * Scan every cached feed page for this recipe's envelope.
+ *
+ * `feed.lists()`, not `feed.all` — only the list queries carry feed items, and
+ * the subtree also holds the redesign's activity strip, whose rows are not
+ * FeedItemResponses. The `?? []` below already tolerated that shape; the
+ * narrower key states the intent instead of surviving it.
+ */
 export function readEnvelopeFromFeedCaches(
   queryClient: QueryClient,
   recipeId: string,
 ): SocialEnvelope | null {
   const caches = queryClient.getQueriesData<InfiniteData<FeedListResponse>>({
-    queryKey: queryKeys.feed.all,
+    queryKey: queryKeys.feed.lists(),
   })
   for (const [, data] of caches) {
     for (const page of data?.pages ?? []) {
