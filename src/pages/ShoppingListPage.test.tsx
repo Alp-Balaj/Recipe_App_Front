@@ -782,14 +782,27 @@ describe('ShoppingListPage — empty state explains itself', () => {
 
   it('restores a hidden item into the VIEWED week', async () => {
     const marks: unknown[] = []
+    // A week genuinely different from `currentWeek` — at offset 0 the two are
+    // the SAME value, so a regression that sent `currentWeek` instead of the
+    // viewed week would pass unnoticed unless stepped away first (fix round 2).
+    const steppedWeek = new Date(weekStartOf(new Date()))
+    steppedWeek.setUTCDate(steppedWeek.getUTCDate() + 7)
+    const steppedWeekIso = steppedWeek.toISOString()
+
     server.use(
       http.get('/api/shopping-list', ({ request }) => {
-        const scope = new URL(request.url).searchParams.get('scope')
-        if (scope === 'All') return HttpResponse.json({ weeks: [], orphanedPurchasedNames: [] })
+        const url = new URL(request.url)
+        if (url.searchParams.get('scope') === 'All') {
+          return HttpResponse.json({ weeks: [], orphanedPurchasedNames: [] })
+        }
+        // Echoes back whichever week was actually requested — both the initial
+        // "this week" load and the stepped-week request that follows clicking
+        // Next carry the SAME hidden-item diagnostics, so Restore is reachable
+        // on whichever week the page is actually viewing at the time.
         return HttpResponse.json({
           weeks: [
             {
-              weekStartDate: weekStartOf(new Date()),
+              weekStartDate: url.searchParams.get('weekStart'),
               groups: [],
               purchasedCount: 0,
               totalCount: 0,
@@ -810,17 +823,21 @@ describe('ShoppingListPage — empty state explains itself', () => {
     )
     renderRoute('/shopping-list')
 
+    // Step away from the current week BEFORE restoring.
+    await userEvent.click(await screen.findByRole('button', { name: /next week/i }))
+
     await userEvent.click(await screen.findByRole('button', { name: /restore onion/i }))
 
     await waitFor(() => expect(marks).toHaveLength(1))
     // The unsuppress mark, explicitly unpurchased and unsuppressed, landing on
-    // the week actually being VIEWED — not last week, not some hardcoded week.
+    // the STEPPED week — not last week, and not `currentWeek` either.
     expect(marks[0]).toEqual({
-      weekStartDate: weekStartOf(new Date()),
+      weekStartDate: steppedWeekIso,
       key: 'onion',
       isPurchased: false,
       isSuppressed: false,
     })
+    expect(marks[0]).not.toMatchObject({ weekStartDate: weekStartOf(new Date()) })
   })
 
   it('jumps to another owing week and asks for THAT week next, proving the offset arithmetic end to end', async () => {
