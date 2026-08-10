@@ -38,6 +38,7 @@ import type { ShoppingGroup, ShoppingScope } from '@/api/shopping'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
 import AllBought from '@/components/shopping/AllBought'
+import EmptyWeekExplainer from '@/components/shopping/EmptyWeekExplainer'
 import ManualAddForm from '@/components/shopping/ManualAddForm'
 import SectionHeading from '@/components/shopping/SectionHeading'
 import { ProgressBar, ScopePills, SegmentedToggle } from '@/components/shopping/ShoppingControls'
@@ -124,11 +125,27 @@ export default function ShoppingListPage() {
   const scopedWeek = scope === 'Week' ? viewedWeek : null
 
   const { data, isLoading, isError } = useShoppingWeek(scopedWeek, scope)
-  const { setPurchased, suppress, addItem, removeItem } = useShoppingMutations(scopedWeek, scope)
+  const { setPurchased, suppress, addItem, removeItem, restore } = useShoppingMutations(scopedWeek, scope)
 
   const weeks = useMemo(() => data?.weeks ?? [], [data])
   const purchased = weeks.reduce((sum, week) => sum + week.purchasedCount, 0)
   const total = weeks.reduce((sum, week) => sum + week.totalCount, 0)
+
+  // The other-weeks probe (trust rework, Task 8): once the viewed week is
+  // confirmed empty, ask scope 'All' whether some OTHER week still owes
+  // something — the reason the list looks empty may be "you're looking at the
+  // wrong week." Gated on `!isLoading` too, not just `total === 0`: `total`
+  // starts at 0 before the primary fetch resolves (weeks defaults to []), and
+  // without the loading guard this query would fire on every single mount —
+  // including every non-empty week — for the instant before data arrives.
+  const probeEnabled = !isLoading && total === 0 && scope === 'Week'
+  const otherWeeksQuery = useShoppingWeek(null, 'All', probeEnabled)
+  const otherWeeks = useMemo(() => {
+    if (!otherWeeksQuery.data) return []
+    return otherWeeksQuery.data.weeks
+      .filter((week) => week.weekStartDate !== viewedWeek && week.totalCount - week.purchasedCount > 0)
+      .map((week) => ({ weekStartDate: week.weekStartDate, unboughtCount: week.totalCount - week.purchasedCount }))
+  }, [otherWeeksQuery.data, viewedWeek])
 
   const orphans = data?.orphanedPurchasedNames ?? []
   const showOrphans = orphans.length > 0 && orphans.join('|') !== dismissedOrphans
@@ -202,6 +219,31 @@ export default function ShoppingListPage() {
       suppress.mutate({ weekStartDate, key: group.key, isPurchased: group.isPurchased })
     },
     [removeItem, suppress],
+  )
+
+  /** Un-hide a suppressed Derived group, into the week currently being viewed. */
+  const onRestore = useCallback(
+    (key: string) => restore.mutate({ weekStartDate: viewedWeek, key, isPurchased: false }),
+    [restore, viewedWeek],
+  )
+
+  /**
+   * The other-weeks probe hands over an ABSOLUTE UTC-Monday ISO string, but the
+   * viewed week is stored as an OFFSET from the live `currentWeek` (see the
+   * comment above `weekOffset`'s declaration) — there is no absolute
+   * "viewedWeek" state to set directly. Converting back to an offset: both
+   * timestamps are UTC-midnight Mondays, so their difference is an exact
+   * multiple of a week: rounding (rather than truncating) keeps a DST-adjacent
+   * week from landing half a week off due to any floating-point slop in the ms
+   * arithmetic.
+   */
+  const onJumpToWeek = useCallback(
+    (weekStartDate: string) => {
+      const msPerWeek = 7 * 24 * 60 * 60 * 1000
+      const weeksFromNow = Math.round((new Date(weekStartDate).getTime() - new Date(currentWeek).getTime()) / msPerWeek)
+      setWeekOffset(weeksFromNow)
+    },
+    [currentWeek],
   )
 
   const clearSelection = useCallback(() => setSelection(new Set()), [])
@@ -380,13 +422,13 @@ export default function ShoppingListPage() {
       )}
 
       {!isLoading && !(isError && !offline) && total === 0 && (
-        <StateBlock
-          title="Nothing on your list yet."
-          body={
-            scope === 'Week' && viewedWeek !== currentWeek
-              ? `Nothing planned for ${weekRange(viewedWeek)}, or add something of your own above.`
-              : 'Plan some meals for this week, or add something of your own above.'
-          }
+        <EmptyWeekExplainer
+          weekLabel={weekRange(viewedWeek)}
+          isCurrentWeek={scope !== 'Week' || viewedWeek === currentWeek}
+          diagnostics={weeks[0]?.diagnostics}
+          otherWeeks={otherWeeks}
+          onRestore={onRestore}
+          onJumpToWeek={onJumpToWeek}
         />
       )}
 

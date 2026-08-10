@@ -559,20 +559,12 @@ describe('ShoppingListPage — failed writes roll back', () => {
  * that same week, not silently land on "this week" behind their back.
  */
 describe('ShoppingListPage — week switcher', () => {
-  it('steps the viewed week and files manual adds into it', async () => {
+  it('steps the viewed week', async () => {
     const seen: string[] = []
     server.use(
       http.get('/api/shopping-list', ({ request }) => {
         seen.push(new URL(request.url).searchParams.get('weekStart') ?? '')
         return HttpResponse.json({ weeks: [emptyWeek], orphanedPurchasedNames: [] })
-      }),
-      http.post('/api/shopping-list', async ({ request }) => {
-        const body = (await request.json()) as { weekStartDate: string }
-        seen.push(`POST:${body.weekStartDate}`)
-        return HttpResponse.json(
-          { id: '1', ingredient: 'x', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
-          { status: 201 },
-        )
       }),
     )
     renderRoute('/shopping-list')

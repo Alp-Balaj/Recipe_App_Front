@@ -34,13 +34,20 @@ import {
  * One scope's projection. `weekStart` must be a UTC-midnight Monday for scope
  * 'Week' (a missing one is a 400); for scope 'All' pass null — the server picks
  * the weeks and ignores the parameter.
+ *
+ * `enabled` (trust rework, Task 8) is an additional opt-in gate, ANDed with the
+ * scope/weekStart guard below — defaulted to `true` so both existing call
+ * sites (the page's primary query, the two-argument hook test) are unaffected.
+ * It exists for the other-weeks probe: `useShoppingWeek(null, 'All', total ===
+ * 0 && scope === 'Week')`, which must not fire while the primary list is still
+ * shopping-list-shaped (that would waste a request every time the list has rows).
  */
-export function useShoppingWeek(weekStart: string | null, scope: ShoppingScope) {
+export function useShoppingWeek(weekStart: string | null, scope: ShoppingScope, enabled = true) {
   return useQuery({
     queryKey: queryKeys.shopping.week(weekStart, scope),
     queryFn: ({ signal }) => getShoppingList({ weekStart, scope, signal }),
     // scope=Week without a week is the one request guaranteed to 400. Don't send it.
-    enabled: scope === 'All' || weekStart !== null,
+    enabled: (scope === 'All' || weekStart !== null) && enabled,
   })
 }
 
@@ -175,5 +182,13 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
   })
 
-  return { setPurchased, suppress, addItem, removeItem }
+  /** Un-hide a derived group (trust rework). No optimistic patch — only the server
+      holds the group's full shape, so this invalidates and lets the refetch render it. */
+  const restore = useMutation({
+    mutationFn: (vars: { weekStartDate: string; key: string; isPurchased: boolean }) =>
+      setMark({ ...vars, isSuppressed: false }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
+  })
+
+  return { setPurchased, suppress, addItem, removeItem, restore }
 }
