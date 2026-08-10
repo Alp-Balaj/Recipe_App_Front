@@ -80,6 +80,37 @@ it('expands to reveal a skip action per item, and disables every button while pe
   expect(screen.getByRole('button', { name: /hide items/i })).toBeDisabled()
 })
 
+// Fix round 1 (Task 10 review): a failed carry/dismiss used to be completely
+// silent. `isError` is what makes the banner actually say so.
+it('surfaces a failed carry/dismiss instead of staying silent', () => {
+  render(
+    <CarryoverBanner
+      carryover={carryover}
+      onCarry={noop}
+      onDismiss={noop}
+      onCarryAll={noop}
+      onDismissAll={noop}
+      isPending={false}
+      isError
+    />,
+  )
+  expect(screen.getByRole('status')).toHaveTextContent(/didn't carry over/i)
+})
+
+it('says nothing extra when there is no error', () => {
+  render(
+    <CarryoverBanner
+      carryover={carryover}
+      onCarry={noop}
+      onDismiss={noop}
+      onCarryAll={noop}
+      onDismissAll={noop}
+      isPending={false}
+    />,
+  )
+  expect(screen.queryByRole('status')).not.toBeInTheDocument()
+})
+
 it('toggles the expand label between show and hide', async () => {
   render(
     <CarryoverBanner

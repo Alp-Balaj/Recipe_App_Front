@@ -265,7 +265,9 @@ export default function ShoppingListPage() {
         await carryItem.mutateAsync({ item, fromWeek: carryover.weekStartDate, toWeek: currentWeek })
       }
     } catch {
-      // The failing item's own error is already on carryItem.error; stop the walk.
+      // Stop the walk. The failing item's own error now lands on carryItem.error,
+      // which the banner reads (its `isError` prop below) — this catch exists only
+      // to keep the loop from throwing an unhandled rejection into the click handler.
     } finally {
       setCarryoverBatchPending(false)
     }
@@ -280,7 +282,9 @@ export default function ShoppingListPage() {
         await dismissCarryover.mutateAsync({ item, fromWeek: carryover.weekStartDate })
       }
     } catch {
-      // The failing item's own error is already on dismissCarryover.error; stop the walk.
+      // Stop the walk. The failing item's own error now lands on dismissCarryover.error,
+      // which the banner reads (its `isError` prop below) — this catch exists only
+      // to keep the loop from throwing an unhandled rejection into the click handler.
     } finally {
       setCarryoverBatchPending(false)
     }
@@ -452,6 +456,7 @@ export default function ShoppingListPage() {
         <CarryoverBanner
           carryover={data.carryover}
           isPending={carryItem.isPending || dismissCarryover.isPending || carryoverBatchPending}
+          isError={carryItem.isError || dismissCarryover.isError}
           onCarry={(item) =>
             carryItem.mutate({ item, fromWeek: data.carryover!.weekStartDate, toWeek: currentWeek })
           }

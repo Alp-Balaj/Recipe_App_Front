@@ -467,11 +467,25 @@ describe('ShoppingListPage — the week it asks for', () => {
  * not an empty object, when nothing is owed).
  */
 describe('ShoppingListPage — carryover banner', () => {
+  // The Manual item's remainingDisplay is a realistic NON-null free-text quantity
+  // ("a couple of packs") — never null in practice against the real backend
+  // (fix round 1): a manual group never has a Total, so the carryover projection
+  // falls back to the group's own part's free-text Quantity, and a manual row
+  // always has exactly one part. A fixture that (wrongly) used null here let the
+  // carry-a-manual-item test pass against an MSW POST handler that accepts any
+  // body, while the real AddManualShoppingListItemRequestValidator's NotEmpty
+  // rule on Quantity 400s — this fixture is what would have caught that.
   const carryover = {
     weekStartDate: '2026-07-20T00:00:00Z',
     items: [
       { key: 'onion', displayName: 'Onion', remainingDisplay: '2 pcs', origin: 'Derived', manualItemId: null },
-      { key: 'manual:9', displayName: 'Batteries', remainingDisplay: null, origin: 'Manual', manualItemId: '9' },
+      {
+        key: 'manual:9',
+        displayName: 'Batteries',
+        remainingDisplay: 'a couple of packs',
+        origin: 'Manual',
+        manualItemId: '9',
+      },
     ],
   }
 
@@ -569,9 +583,52 @@ describe('ShoppingListPage — carryover banner', () => {
 
     await waitFor(() => expect(calls).toHaveLength(2))
     expect(calls[0]).toMatchObject({ type: 'add' })
+    // Fix round 1: the add's quantity must be non-empty — an empty (or null)
+    // string here is exactly what 400s against the real
+    // AddManualShoppingListItemRequestValidator's NotEmpty rule, and MSW's own
+    // POST handler (above) would accept the bad body silently if this assertion
+    // were missing.
+    const addBody = (calls[0] as { body: { quantity: string } }).body
+    expect(addBody.quantity.length).toBeGreaterThan(0)
+    expect(addBody.quantity).toBe('a couple of packs')
     expect(calls[1]).toEqual({ type: 'delete', body: '9' })
     // Never a suppression mark for a manual row — that would be a guaranteed 400.
     expect(calls.some((call) => call.type === 'mark')).toBe(false)
+  })
+
+  // The `?? ''` fallback in useShoppingWeek.ts's carryItem still needs a live
+  // path: a Derived, imprecise-only group (a pinch, a dash) can carry a null
+  // remainingDisplay from the backend (see ShoppingListCarryoverItemResponse's
+  // doc). This is NOT the manual-item bug above — a Derived item's fallback to
+  // '' is accepted by the real validator too, since MSW cannot reproduce a 400
+  // it wasn't told to send; this only pins what the CLIENT sends.
+  it("sends an empty quantity for a DERIVED item whose remaining display is null, never crashing", async () => {
+    const noRemaining = {
+      weekStartDate: '2026-07-20T00:00:00Z',
+      items: [
+        { key: 'pinch-salt', displayName: 'Salt', remainingDisplay: null, origin: 'Derived', manualItemId: null },
+      ],
+    }
+    const calls: { body: { quantity: string } }[] = []
+    server.use(
+      http.get('/api/shopping-list', () =>
+        HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [], carryover: noRemaining })),
+      http.post('/api/shopping-list', async ({ request }) => {
+        calls.push({ body: (await request.json()) as { quantity: string } })
+        return HttpResponse.json(
+          { id: '3', ingredient: 'Salt', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      http.put('/api/shopping-list/marks', () => new HttpResponse(null, { status: 204 })),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /carry salt/i }))
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].body.quantity).toBe('')
   })
 
   it('skips (dismisses) an item without adding anything', async () => {
@@ -630,6 +687,40 @@ describe('ShoppingListPage — carryover banner', () => {
 
     await waitFor(() => expect(order).toHaveLength(4))
     expect(order).toEqual(['add:Onion', 'mark:onion', 'add:Batteries', 'delete:9'])
+  })
+
+  // The `scope === 'Week'` half of the render gate had no coverage: the MSW
+  // handler above returns `carryover` regardless of scope, so deleting that
+  // clause from the page would leave every other test in this file green.
+  it('hides the banner under scope All, even though the backend still sends carryover', async () => {
+    server.use(listWithCarryover())
+    renderRoute('/shopping-list')
+
+    await screen.findByText(/last week had 2 unbought items/i)
+
+    const allPill = screen.getByRole('button', { name: 'All' })
+    await userEvent.click(allPill)
+    // Wait for the scope switch to actually land (the fixture's GET handler
+    // ignores the scope query param and answers identically either way, so the
+    // rows on screen would not otherwise prove anything switched) before
+    // asserting the banner's gone.
+    await waitFor(() => expect(allPill).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.queryByText(/last week had/i)).not.toBeInTheDocument()
+  })
+
+  // Fix round 1 (Task 10 review): a failed carry/dismiss used to be completely
+  // silent. Reading the mutation's own error is what makes the banner say so.
+  it('tells you when a carry fails, instead of staying silent', async () => {
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', () => new HttpResponse(null, { status: 500 })),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /carry onion/i }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/didn't carry over/i)
   })
 })
 

@@ -89,3 +89,58 @@ describe('useShoppingMutations — restore', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.shopping.all })
   })
 })
+
+/**
+ * carryItem/dismissCarryover's close-out (fix round 1, Task 10 review): a Manual
+ * carryover item with no `manualItemId` can only be a server bug, and used to
+ * fall through to `setMark` on its `manual:`-prefixed key — a guaranteed 400,
+ * fired AFTER `carryItem`'s add had already succeeded. It must no-op instead.
+ */
+describe('useShoppingMutations — carryItem/dismissCarryover close-out', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  function clientWrapper(client: QueryClient) {
+    return ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+  }
+
+  it('dismissCarryover no-ops rather than sending a guaranteed-400 suppress mark for a Manual item with no id', async () => {
+    const setMark = vi.spyOn(shopping, 'setMark').mockResolvedValue(undefined)
+    const deleteManualItem = vi.spyOn(shopping, 'deleteManualItem').mockResolvedValue(undefined)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    const { result } = renderHook(() => useShoppingMutations(null, 'All'), { wrapper: clientWrapper(client) })
+
+    result.current.dismissCarryover.mutate({
+      item: { key: 'manual:orphan', displayName: 'Ghost row', remainingDisplay: null, origin: 'Manual', manualItemId: null },
+      fromWeek: '2026-07-20T00:00:00Z',
+    })
+
+    await waitFor(() => expect(result.current.dismissCarryover.isSuccess).toBe(true))
+    expect(setMark).not.toHaveBeenCalled()
+    expect(deleteManualItem).not.toHaveBeenCalled()
+  })
+
+  it("carryItem's close-out no-ops the same way, after its add still runs", async () => {
+    const addManualItem = vi.spyOn(shopping, 'addManualItem').mockResolvedValue({
+      id: '1', ingredient: 'Ghost row', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null,
+    })
+    const setMark = vi.spyOn(shopping, 'setMark').mockResolvedValue(undefined)
+    const deleteManualItem = vi.spyOn(shopping, 'deleteManualItem').mockResolvedValue(undefined)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    const { result } = renderHook(() => useShoppingMutations(null, 'All'), { wrapper: clientWrapper(client) })
+
+    result.current.carryItem.mutate({
+      item: { key: 'manual:orphan', displayName: 'Ghost row', remainingDisplay: null, origin: 'Manual', manualItemId: null },
+      fromWeek: '2026-07-20T00:00:00Z',
+      toWeek: '2026-07-27T00:00:00Z',
+    })
+
+    await waitFor(() => expect(result.current.carryItem.isSuccess).toBe(true))
+    expect(addManualItem).toHaveBeenCalled()
+    expect(setMark).not.toHaveBeenCalled()
+    expect(deleteManualItem).not.toHaveBeenCalled()
+  })
+})

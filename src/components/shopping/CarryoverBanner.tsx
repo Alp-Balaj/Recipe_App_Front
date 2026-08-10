@@ -26,10 +26,18 @@ export interface CarryoverBannerProps {
   onCarryAll: () => void
   onDismissAll: () => void
   isPending: boolean
+  /**
+   * Fix round 1 (Task 10 review): a failed carry/dismiss used to be completely
+   * silent — nothing read `carryItem.error`/`dismissCarryover.error`, so a
+   * mid-batch 500 left items half-committed with no sign anything went wrong.
+   * Defaulted to `false` so every existing caller (this component's own tests)
+   * keeps compiling without passing it.
+   */
+  isError?: boolean
 }
 
 export default function CarryoverBanner(props: CarryoverBannerProps): JSX.Element {
-  const { carryover, onCarry, onDismiss, onCarryAll, onDismissAll, isPending } = props
+  const { carryover, onCarry, onDismiss, onCarryAll, onDismissAll, isPending, isError = false } = props
   const [expanded, setExpanded] = useState(false)
   const count = carryover.items.length
 
@@ -86,6 +94,12 @@ export default function CarryoverBanner(props: CarryoverBannerProps): JSX.Elemen
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {isError && (
+          <div role="status" style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+            Something didn't carry over — check your list before trying the rest again.
           </div>
         )}
       </div>

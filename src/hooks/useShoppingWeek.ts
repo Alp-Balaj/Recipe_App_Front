@@ -207,6 +207,22 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
    * patch — the invalidation-driven refetch is what makes it disappear from the
    * banner and (if targeted at the viewed week) appear as a fresh manual row.
    */
+  /**
+   * The close-out half of both mutations below: delete a Manual row for real,
+   * suppress a Derived group. A Manual item with no `manualItemId` can only be a
+   * server bug (see `remove` above, same reasoning) — a suppression mark for its
+   * `manual:`-prefixed key is a guaranteed 400, so this no-ops rather than falling
+   * through to `setMark` and firing a write known to be rejected. Under
+   * `carryItem` that fallthrough used to happen AFTER the add already succeeded,
+   * which would have left a duplicate row behind a failed close-out.
+   */
+  const closeOutCarryoverItem = (item: ShoppingCarryoverItem, fromWeek: string): Promise<unknown> => {
+    if (item.origin === 'Manual') {
+      return item.manualItemId ? deleteManualItem(item.manualItemId) : Promise.resolve()
+    }
+    return setMark({ weekStartDate: fromWeek, key: item.key, isPurchased: false, isSuppressed: true })
+  }
+
   const carryItem = useMutation({
     mutationFn: async (vars: { item: ShoppingCarryoverItem; fromWeek: string; toWeek: string }) => {
       const { item, fromWeek, toWeek } = vars
@@ -215,8 +231,7 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
         quantity: item.remainingDisplay ?? '',
         weekStartDate: toWeek,
       })
-      if (item.origin === 'Manual' && item.manualItemId) await deleteManualItem(item.manualItemId)
-      else await setMark({ weekStartDate: fromWeek, key: item.key, isPurchased: false, isSuppressed: true })
+      await closeOutCarryoverItem(item, fromWeek)
     },
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
   })
@@ -224,11 +239,8 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
   /** Dismiss one of last week's unbought items without carrying it — the same
       Manual-vs-Derived close-out `carryItem` uses, minus the add. */
   const dismissCarryover = useMutation({
-    mutationFn: async (vars: { item: ShoppingCarryoverItem; fromWeek: string }) => {
-      const { item, fromWeek } = vars
-      if (item.origin === 'Manual' && item.manualItemId) await deleteManualItem(item.manualItemId)
-      else await setMark({ weekStartDate: fromWeek, key: item.key, isPurchased: false, isSuppressed: true })
-    },
+    mutationFn: (vars: { item: ShoppingCarryoverItem; fromWeek: string }) =>
+      closeOutCarryoverItem(vars.item, vars.fromWeek),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
   })
 
