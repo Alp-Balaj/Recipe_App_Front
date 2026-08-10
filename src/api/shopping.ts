@@ -49,6 +49,14 @@ export type ShoppingGroupOrigin = 'Derived' | 'Manual'
 export interface ShoppingHiddenItem {
   key: string
   displayName: string
+  /**
+   * The hidden group's TICK, and it is load-bearing rather than informational. A mark is
+   * an explicit full set of BOTH flags, so Restore has to send an `isPurchased` — and
+   * before this arrived on the wire it had nothing to preserve and sent `false`, which
+   * unticked an ingredient you had already bought on its way back onto the list. Always
+   * pass this straight through to `restore.mutate`; never re-derive or default it.
+   */
+  isPurchased: boolean
 }
 
 /**

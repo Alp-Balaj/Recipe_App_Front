@@ -596,27 +596,33 @@ describe('ShoppingListPage — carryover banner', () => {
     expect(calls.some((call) => call.type === 'mark')).toBe(false)
   })
 
-  // The `?? ''` fallback in useShoppingWeek.ts's carryItem still needs a live
-  // path: a Derived, imprecise-only group (a pinch, a dash) can carry a null
-  // remainingDisplay from the backend (see ShoppingListCarryoverItemResponse's
-  // doc). This is NOT the manual-item bug above — a Derived item's fallback to
-  // '' is accepted by the real validator too, since MSW cannot reproduce a 400
-  // it wasn't told to send; this only pins what the CLIENT sends.
-  it("sends an empty quantity for a DERIVED item whose remaining display is null, never crashing", async () => {
-    const noRemaining = {
+  // RETARGETED by the final review. This case used to serve a DERIVED item with
+  // `remainingDisplay: null`, asserting the client sent `''` — a fixture the backend can no
+  // longer produce, so it was coverage of a dead branch. A Derived group's
+  // RemainingDisplay is its totals joined, falling back to its own first part's Quantity,
+  // and `Units.Format` never returns empty (an imprecise line renders "to taste"). So the
+  // real, reachable shape is an imprecise-only Derived group carrying raw text — and what
+  // matters is that the client passes that text THROUGH rather than flattening it to '',
+  // which is what would 400 against the real AddManualShoppingListItemRequestValidator.
+  // The `?? ''` in carryItem stays as written: it is the type-level guard for an optional
+  // field, not a branch anything now reaches.
+  it('carries a DERIVED imprecise-only item forward with its raw quantity text intact', async () => {
+    const impreciseOnly = {
       weekStartDate: '2026-07-20T00:00:00Z',
       items: [
-        { key: 'pinch-salt', displayName: 'Salt', remainingDisplay: null, origin: 'Derived', manualItemId: null },
+        // No total (a pinch plus a dash is not two of anything), so the backend falls back
+        // to the group's own first part text.
+        { key: 'salt', displayName: 'Salt', remainingDisplay: 'to taste', origin: 'Derived', manualItemId: null },
       ],
     }
     const calls: { body: { quantity: string } }[] = []
     server.use(
       http.get('/api/shopping-list', () =>
-        HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [], carryover: noRemaining })),
+        HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [], carryover: impreciseOnly })),
       http.post('/api/shopping-list', async ({ request }) => {
         calls.push({ body: (await request.json()) as { quantity: string } })
         return HttpResponse.json(
-          { id: '3', ingredient: 'Salt', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { id: '3', ingredient: 'Salt', quantity: 'to taste', isPurchased: false, createdAt: '', mealPlanId: null },
           { status: 201 },
         )
       }),
@@ -628,7 +634,9 @@ describe('ShoppingListPage — carryover banner', () => {
     await userEvent.click(screen.getByRole('button', { name: /carry salt/i }))
 
     await waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0].body.quantity).toBe('')
+    expect(calls[0].body.quantity).toBe('to taste')
+    // Never the empty string the real validator rejects.
+    expect(calls[0].body.quantity.length).toBeGreaterThan(0)
   })
 
   it('skips (dismisses) an item without adding anything', async () => {
@@ -807,7 +815,10 @@ describe('ShoppingListPage — empty state explains itself', () => {
               purchasedCount: 0,
               totalCount: 0,
               diagnostics: {
-                hiddenItems: [{ key: 'onion', displayName: 'Onion' }],
+                // The hidden group's own tick — false here, and the mark below must
+                // report the SAME value rather than a constant. See the next test for
+                // the case that tells those two apart.
+                hiddenItems: [{ key: 'onion', displayName: 'Onion', isPurchased: false }],
                 mealsWithoutIngredients: [],
                 unavailableRecipeCount: 0,
               },
@@ -829,8 +840,8 @@ describe('ShoppingListPage — empty state explains itself', () => {
     await userEvent.click(await screen.findByRole('button', { name: /restore onion/i }))
 
     await waitFor(() => expect(marks).toHaveLength(1))
-    // The unsuppress mark, explicitly unpurchased and unsuppressed, landing on
-    // the STEPPED week — not last week, and not `currentWeek` either.
+    // The unsuppress mark, carrying the hidden item's own (unpurchased) tick and
+    // landing on the STEPPED week — not last week, and not `currentWeek` either.
     expect(marks[0]).toEqual({
       weekStartDate: steppedWeekIso,
       key: 'onion',
@@ -838,6 +849,55 @@ describe('ShoppingListPage — empty state explains itself', () => {
       isSuppressed: false,
     })
     expect(marks[0]).not.toMatchObject({ weekStartDate: weekStartOf(new Date()) })
+  })
+
+  /**
+   * Spec §3.1: Restore sends `isSuppressed: false` PRESERVING `isPurchased`. The whole
+   * user-visible failure lives in this one flag — tick Onion bought, hide it (the page's
+   * `remove` correctly carries `isPurchased: true`), so the week's list is empty and the
+   * empty state offers Restore. Tapping it used to send `isPurchased: false`, the row came
+   * back UNTICKED, and the shopper bought a second onion.
+   *
+   * The test above pins the `false` case, which a hard-coded `false` also satisfies. This
+   * one is the half that cannot be faked.
+   */
+  it('preserves the purchase tick of a hidden item that was already bought', async () => {
+    const marks: unknown[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        const url = new URL(request.url)
+        if (url.searchParams.get('scope') === 'All') {
+          return HttpResponse.json({ weeks: [], orphanedPurchasedNames: [] })
+        }
+        return HttpResponse.json({
+          weeks: [
+            {
+              weekStartDate: url.searchParams.get('weekStart'),
+              groups: [],
+              purchasedCount: 0,
+              totalCount: 0,
+              diagnostics: {
+                // Bought, THEN hidden — exactly what `remove` writes for a ticked row.
+                hiddenItems: [{ key: 'onion', displayName: 'Onion', isPurchased: true }],
+                mealsWithoutIngredients: [],
+                unavailableRecipeCount: 0,
+              },
+            },
+          ],
+          orphanedPurchasedNames: [],
+        })
+      }),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        marks.push(await request.json())
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /restore onion/i }))
+
+    await waitFor(() => expect(marks).toHaveLength(1))
+    expect(marks[0]).toMatchObject({ key: 'onion', isPurchased: true, isSuppressed: false })
   })
 
   it('jumps to another owing week and asks for THAT week next, proving the offset arithmetic end to end', async () => {

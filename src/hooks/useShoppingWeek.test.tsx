@@ -88,6 +88,38 @@ describe('useShoppingMutations — restore', () => {
     expect(client.getQueryData(listKey)).toEqual(seeded)
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.shopping.all })
   })
+
+  /**
+   * Spec §3.1: `isSuppressed: false` PRESERVING `isPurchased`. `restore` is the write that
+   * has to carry a caller-supplied tick through untouched — the mark is an explicit full
+   * set of both flags, so anything this hook decided for itself would overwrite what the
+   * user actually did. The case above passes `false`, which a hard-coded `false` would also
+   * satisfy; this one is the half that pins the pass-through.
+   */
+  it('passes a preserved purchase tick straight through instead of forcing it false', async () => {
+    const setMark = vi.spyOn(shopping, 'setMark').mockResolvedValue(undefined)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    function clientWrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    }
+
+    const { result } = renderHook(
+      () => useShoppingMutations('2026-07-27T00:00:00.000Z', 'Week'),
+      { wrapper: clientWrapper },
+    )
+
+    result.current.restore.mutate({ weekStartDate: '2026-07-27T00:00:00Z', key: 'onion', isPurchased: true })
+
+    await waitFor(() => expect(result.current.restore.isSuccess).toBe(true))
+
+    expect(setMark).toHaveBeenCalledWith({
+      weekStartDate: '2026-07-27T00:00:00Z',
+      key: 'onion',
+      isPurchased: true,
+      isSuppressed: false,
+    })
+  })
 })
 
 /**

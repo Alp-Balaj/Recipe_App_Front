@@ -26,7 +26,13 @@ export interface EmptyWeekExplainerProps {
   isCurrentWeek: boolean
   diagnostics: ShoppingWeekDiagnostics | undefined
   otherWeeks: { weekStartDate: string; unboughtCount: number }[]
-  onRestore: (key: string) => void
+  /**
+   * Un-hide one item. `isPurchased` is the hidden group's OWN tick, read off the
+   * diagnostics entry and handed back untouched — a mark is an explicit full set of both
+   * flags, so restoring has to state one, and stating `false` for something the caller had
+   * already bought unticks it on its way back onto the list (spec §3.1).
+   */
+  onRestore: (key: string, isPurchased: boolean) => void
   onJumpToWeek: (weekStartDate: string) => void
 }
 
@@ -71,7 +77,7 @@ export default function EmptyWeekExplainer(props: EmptyWeekExplainerProps): JSX.
                 type="button"
                 aria-label={`Restore ${item.displayName}`}
                 style={smallButton}
-                onClick={() => onRestore(item.key)}
+                onClick={() => onRestore(item.key, item.isPurchased)}
               >
                 Restore
               </button>

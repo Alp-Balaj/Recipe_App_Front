@@ -232,9 +232,18 @@ export default function ShoppingListPage() {
     [removeItem, suppress],
   )
 
-  /** Un-hide a suppressed Derived group, into the week currently being viewed. */
+  /**
+   * Un-hide a suppressed Derived group, into the week currently being viewed.
+   *
+   * `isPurchased` is the hidden group's OWN tick, carried back from the diagnostics entry
+   * (`ShoppingHiddenItem.isPurchased`) rather than assumed. A mark is an explicit full set
+   * of both flags, so this write has to state one — and hard-coding `false` here was the
+   * mirror image of the bug `remove` above already avoids: tick Onion bought, hide it, then
+   * Restore, and the row came back UNTICKED and you bought a second onion (spec §3.1).
+   */
   const onRestore = useCallback(
-    (key: string) => restore.mutate({ weekStartDate: viewedWeek, key, isPurchased: false }),
+    (key: string, isPurchased: boolean) =>
+      restore.mutate({ weekStartDate: viewedWeek, key, isPurchased }),
     [restore, viewedWeek],
   )
 
@@ -452,7 +461,13 @@ export default function ShoppingListPage() {
 
   const banners = (
     <>
-      {scope === 'Week' && viewedWeek === currentWeek && data?.carryover && (
+      {/* sameWeek, not `===`: ONE week-equality rule in this file. Both operands happen to
+          be client-built today, so a raw string compare is correct by accident — but the
+          probe above already had to be fixed for exactly this ('…T00:00:00Z' from the server
+          never equals the client's '…T00:00:00.000Z'), and a future path that seeds a week
+          from a server string must not reintroduce the bug 300 lines from where it was
+          fixed. */}
+      {scope === 'Week' && sameWeek(viewedWeek, currentWeek) && data?.carryover && (
         <CarryoverBanner
           carryover={data.carryover}
           isPending={carryItem.isPending || dismissCarryover.isPending || carryoverBatchPending}
@@ -498,10 +513,12 @@ export default function ShoppingListPage() {
         <StateBlock title="Couldn't load your list" body="Check your connection and try again." />
       )}
 
+      {/* `sameWeek` on isCurrentWeek for the same reason as the carryover gate above — one
+          week-equality rule in this file, not two. */}
       {!isLoading && !(isError && !offline) && total === 0 && (
         <EmptyWeekExplainer
           weekLabel={weekRange(viewedWeek)}
-          isCurrentWeek={scope !== 'Week' || viewedWeek === currentWeek}
+          isCurrentWeek={scope !== 'Week' || sameWeek(viewedWeek, currentWeek)}
           diagnostics={weeks[0]?.diagnostics}
           otherWeeks={otherWeeks}
           onRestore={onRestore}

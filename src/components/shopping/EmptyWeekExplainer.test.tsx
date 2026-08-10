@@ -18,7 +18,7 @@ it('lists hidden items with a restore action', async () => {
       {...base}
       onRestore={onRestore}
       diagnostics={{
-        hiddenItems: [{ key: 'onion', displayName: 'Onion' }],
+        hiddenItems: [{ key: 'onion', displayName: 'Onion', isPurchased: false }],
         mealsWithoutIngredients: [],
         unavailableRecipeCount: 0,
       }}
@@ -26,7 +26,28 @@ it('lists hidden items with a restore action', async () => {
   )
   expect(screen.getByText(/hidden for this week/i)).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: /restore onion/i }))
-  expect(onRestore).toHaveBeenCalledWith('onion')
+  expect(onRestore).toHaveBeenCalledWith('onion', false)
+})
+
+// Spec §3.1: Restore preserves the tick. The component's whole job here is to hand back
+// the item's OWN isPurchased rather than a constant, so the two cases have to be
+// distinguishable — a `false` literal in the onClick would pass the test above and fail
+// this one.
+it('hands back a hidden item’s own purchase tick when it was already bought', async () => {
+  const onRestore = vi.fn()
+  render(
+    <EmptyWeekExplainer
+      {...base}
+      onRestore={onRestore}
+      diagnostics={{
+        hiddenItems: [{ key: 'onion', displayName: 'Onion', isPurchased: true }],
+        mealsWithoutIngredients: [],
+        unavailableRecipeCount: 0,
+      }}
+    />,
+  )
+  await userEvent.click(screen.getByRole('button', { name: /restore onion/i }))
+  expect(onRestore).toHaveBeenCalledWith('onion', true)
 })
 
 it('names silent meals and unavailable recipes', () => {
