@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import { useAuthGate } from '@/auth/AuthGateContext'
 import { Badge } from '@/components/ui/badge'
@@ -29,7 +29,12 @@ export default function RecipeDetailPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { data: recipe, isLoading, isError, error, refetch } = useRecipe(id)
-  const [cooking, setCooking] = useState(false)
+  // plan-page redesign: /plan's "Start cooking" needs to land IN cook mode, not
+  // beside a button that opens it. Read once as the initial state rather than
+  // kept in sync with the URL — closing cook mode must not be undone by the
+  // ?cook=1 that is still sitting in the address bar.
+  const [searchParams] = useSearchParams()
+  const [cooking, setCooking] = useState(() => searchParams.get('cook') === '1')
   // stream D (governor): the report dialog for this recipe.
   const [reporting, setReporting] = useState(false)
   // cp06: like/save via the decision-I3 envelope seam (feed-cache hits when

@@ -43,6 +43,12 @@ export const UserProfilePage = lazy(() => import('./pages/UserProfilePage'))
 export const FollowListPage = lazy(() => import('./pages/FollowListPage'))
 export const MealPlanWeekPage = lazy(() => import('./pages/MealPlanWeekPage'))
 export const MealPlanMonthPage = lazy(() => import('./pages/MealPlanMonthPage'))
+// plan-page redesign — /plan's new body (hero, week strip, calorie ribbon,
+// rating prompt) and the cook history behind its "All N cooks ›" link.
+// MealPlanPage renders MealPlanMonthPage for ?m= and below 1024px, and imports
+// it FROM HERE so the calendar keeps its own chunk.
+export const MealPlanPage = lazy(() => import('./pages/MealPlanPage'))
+export const CookHistoryPage = lazy(() => import('./pages/CookHistoryPage'))
 export const MealPlanDayPage = lazy(() => import('./pages/MealPlanDayPage'))
 export const ShoppingListPage = lazy(() => import('./pages/ShoppingListPage'))
 export const FoodScanPage = lazy(() => import('./pages/FoodScanPage'))

@@ -185,6 +185,21 @@ export const queryKeys = {
     insight: (planId: string) => ['grocery', 'insight', planId] as const,
   },
 
+  // plan-page redesign / roadmap spec 2 — SANCTIONED ADDITIVE EDIT to this frozen
+  // module, same rationale as the blocks below. Nothing already here changed.
+  cookLog: {
+    /**
+     * Everything cook-log-related — the INVALIDATION prefix. Logging a cook
+     * changes both the latest row and every page of the history, so writes
+     * invalidate here rather than trying to patch two differently-shaped caches.
+     */
+    all: ['cookLog'] as const,
+    /** GET /cook-log/latest — the newest cook + the lifetime total (/plan's §3). */
+    latest: () => ['cookLog', 'latest'] as const,
+    /** GET /cook-log — the keyset-paged history (useInfiniteQuery, /plan/cooks). */
+    list: () => ['cookLog', 'list'] as const,
+  },
+
   // stream D (governor) — SANCTIONED ADDITIVE EDIT to this frozen module, same
   // rationale as the blocks above. Nothing already here changed. The admin
   // surface is role-gated server-side; these keys only exist on /admin.
