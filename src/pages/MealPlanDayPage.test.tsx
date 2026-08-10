@@ -807,7 +807,10 @@ describe('the cook toggle on an already-cooked entry', () => {
 
     renderRoute('/plan/2026-07-27')
 
-    expect(await screen.findByText(/cooked/i)).toBeInTheDocument()
+    // The settled state, not just any "cooked" substring: the accent button
+    // itself, named for undo — a loose findByText(/cooked/i) would still pass
+    // if the mark button were showing beside it.
+    expect(await screen.findByRole('button', { name: /undo cooked for/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /mark .* as cooked/i })).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: /undo cooked for/i }))
@@ -818,14 +821,23 @@ describe('the cook toggle on an already-cooked entry', () => {
   // one ahead of time. Marking stays gated to past-or-today (offering it for
   // next Thursday's dinner is asking the user to lie); the undo is not, because
   // an undo the user cannot reach is the trust bug this roadmap exists to fix.
+  //
+  // This clicks the button rather than merely asserting it renders: a disabled
+  // button (MealCard renders disabled={!onUncook}) still satisfies a role query
+  // and toBeInTheDocument() — the click, and the DELETE it must produce, is what
+  // actually pins REACHABILITY rather than mere presence.
   it('keeps the undo reachable on a future day while hiding the mark action', async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
     vi.spyOn(api, 'getMealPlan').mockResolvedValue(cookedFuturePlan)
-    stubWithUncook([])
+    const uncookCalls: string[] = []
+    stubWithUncook(uncookCalls)
 
     renderRoute('/plan/2026-07-31')
 
-    expect(await screen.findByRole('button', { name: /undo cooked for/i })).toBeInTheDocument()
+    const undoButton = await screen.findByRole('button', { name: /undo cooked for/i })
     expect(screen.queryByRole('button', { name: /mark .* as cooked/i })).not.toBeInTheDocument()
+
+    await userEvent.click(undoButton)
+    await waitFor(() => expect(uncookCalls).toEqual(['entry-1']))
   })
 })
