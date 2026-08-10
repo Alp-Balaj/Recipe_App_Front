@@ -25,6 +25,7 @@ import {
   deleteManualItem,
   getShoppingList,
   setMark,
+  type ShoppingCarryoverItem,
   type ShoppingList,
   type ShoppingScope,
   type ShoppingWeek,
@@ -190,5 +191,39 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
   })
 
-  return { setPurchased, suppress, addItem, removeItem, restore }
+  /**
+   * Carry one of last week's unbought items into the current week: a manual row
+   * here, then close it out there (hide a derived group, delete a manual row).
+   * Sequential ON PURPOSE — if the add fails, last week's item is still owed and
+   * must not vanish. No optimistic patch: the item lives in last week's carryover
+   * block, not in either cached week's `groups`, so there is nothing local to
+   * patch — the invalidation-driven refetch is what makes it disappear from the
+   * banner and (if targeted at the viewed week) appear as a fresh manual row.
+   */
+  const carryItem = useMutation({
+    mutationFn: async (vars: { item: ShoppingCarryoverItem; fromWeek: string; toWeek: string }) => {
+      const { item, fromWeek, toWeek } = vars
+      await addManualItem({
+        ingredient: item.displayName,
+        quantity: item.remainingDisplay ?? '',
+        weekStartDate: toWeek,
+      })
+      if (item.origin === 'Manual' && item.manualItemId) await deleteManualItem(item.manualItemId)
+      else await setMark({ weekStartDate: fromWeek, key: item.key, isPurchased: false, isSuppressed: true })
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
+  })
+
+  /** Dismiss one of last week's unbought items without carrying it — the same
+      Manual-vs-Derived close-out `carryItem` uses, minus the add. */
+  const dismissCarryover = useMutation({
+    mutationFn: async (vars: { item: ShoppingCarryoverItem; fromWeek: string }) => {
+      const { item, fromWeek } = vars
+      if (item.origin === 'Manual' && item.manualItemId) await deleteManualItem(item.manualItemId)
+      else await setMark({ weekStartDate: fromWeek, key: item.key, isPurchased: false, isSuppressed: true })
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
+  })
+
+  return { setPurchased, suppress, addItem, removeItem, restore, carryItem, dismissCarryover }
 }

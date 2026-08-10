@@ -457,6 +457,182 @@ describe('ShoppingListPage — the week it asks for', () => {
   })
 })
 
+/**
+ * The carry-forward banner (trust rework, Task 10). Last week's unbought items
+ * arrive as `carryover` on the SAME response as the current week's list — never
+ * a separate fetch — and the banner is gated on three things at once: scope
+ * 'Week', the week actually being viewed being the current one (stepping away
+ * hides it, exactly like a receipt you'd only offer at the register you're
+ * standing at), and the field being present at all (the backend sends null,
+ * not an empty object, when nothing is owed).
+ */
+describe('ShoppingListPage — carryover banner', () => {
+  const carryover = {
+    weekStartDate: '2026-07-20T00:00:00Z',
+    items: [
+      { key: 'onion', displayName: 'Onion', remainingDisplay: '2 pcs', origin: 'Derived', manualItemId: null },
+      { key: 'manual:9', displayName: 'Batteries', remainingDisplay: null, origin: 'Manual', manualItemId: '9' },
+    ],
+  }
+
+  const listWithCarryover = () =>
+    http.get('/api/shopping-list', () =>
+      HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [], carryover }))
+
+  it('shows the debt for the current week and hides it once you step away', async () => {
+    server.use(listWithCarryover())
+    renderRoute('/shopping-list')
+
+    expect(await screen.findByText(/last week had 2 unbought items/i)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /next week/i }))
+    await waitFor(() => expect(screen.queryByText(/last week had/i)).not.toBeInTheDocument())
+  })
+
+  it('renders nothing when the backend says nothing is owed (absent field)', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    await screen.findByText('Flour')
+    expect(screen.queryByText(/unbought item/i)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when the backend sends carryover: null explicitly', async () => {
+    server.use(
+      http.get('/api/shopping-list', () =>
+        HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [], carryover: null })),
+    )
+    renderRoute('/shopping-list')
+
+    await screen.findByText('Flour')
+    expect(screen.queryByText(/unbought item/i)).not.toBeInTheDocument()
+  })
+
+  it('carries a DERIVED item: adds into this week first, then suppresses it in last week\'s', async () => {
+    const calls: { type: string; body: unknown }[] = []
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', async ({ request }) => {
+        calls.push({ type: 'add', body: await request.json() })
+        return HttpResponse.json(
+          { id: '1', ingredient: 'Onion', quantity: '2 pcs', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        calls.push({ type: 'mark', body: await request.json() })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /carry onion/i }))
+
+    await waitFor(() => expect(calls).toHaveLength(2))
+    // Sequential and in this exact order — the add must land before the close-out,
+    // never the reverse and never in parallel, so a failed add leaves the item owed.
+    expect(calls[0]).toMatchObject({
+      type: 'add',
+      body: { ingredient: 'Onion', quantity: '2 pcs', weekStartDate: weekStartOf(new Date()) },
+    })
+    expect(calls[1]).toMatchObject({
+      type: 'mark',
+      body: { key: 'onion', weekStartDate: carryover.weekStartDate, isPurchased: false, isSuppressed: true },
+    })
+  })
+
+  it('carries a MANUAL item by deleting its old row, never suppressing a manual: key', async () => {
+    const calls: { type: string; body?: unknown }[] = []
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', async ({ request }) => {
+        calls.push({ type: 'add', body: await request.json() })
+        return HttpResponse.json(
+          { id: '2', ingredient: 'Batteries', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      http.delete('/api/shopping-list/:id', ({ params }) => {
+        calls.push({ type: 'delete', body: params.id })
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.put('/api/shopping-list/marks', () => {
+        calls.push({ type: 'mark' })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /carry batteries/i }))
+
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[0]).toMatchObject({ type: 'add' })
+    expect(calls[1]).toEqual({ type: 'delete', body: '9' })
+    // Never a suppression mark for a manual row — that would be a guaranteed 400.
+    expect(calls.some((call) => call.type === 'mark')).toBe(false)
+  })
+
+  it('skips (dismisses) an item without adding anything', async () => {
+    const calls: { type: string }[] = []
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', () => {
+        calls.push({ type: 'add' })
+        return HttpResponse.json(
+          { id: '1', ingredient: 'x', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        calls.push({ type: 'mark', ...(await request.json() as object) })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /skip onion/i }))
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toMatchObject({ type: 'mark', key: 'onion', isSuppressed: true })
+  })
+
+  it('carry-all walks one item at a time, never firing the second add before the first closes out', async () => {
+    const order: string[] = []
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', async ({ request }) => {
+        const body = (await request.json()) as { ingredient: string }
+        order.push(`add:${body.ingredient}`)
+        return HttpResponse.json(
+          { id: '1', ingredient: body.ingredient, quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      // The Derived item's close-out is deliberately slow, so a parallel
+      // (brief's forEach) implementation would fire the second add before this
+      // resolves — a sequential walk must not.
+      http.put('/api/shopping-list/marks', async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        order.push('mark:onion')
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.delete('/api/shopping-list/:id', () => {
+        order.push('delete:9')
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /carry all/i }))
+
+    await waitFor(() => expect(order).toHaveLength(4))
+    expect(order).toEqual(['add:Onion', 'mark:onion', 'add:Batteries', 'delete:9'])
+  })
+})
+
 describe('ShoppingListPage — a tick reaches the other scope', () => {
   it('leaves the sibling scope stale without refetching the list in your hand', async () => {
     const seen: URL[] = []

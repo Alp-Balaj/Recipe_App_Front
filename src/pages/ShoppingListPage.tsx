@@ -38,6 +38,7 @@ import type { ShoppingGroup, ShoppingScope } from '@/api/shopping'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
 import AllBought from '@/components/shopping/AllBought'
+import CarryoverBanner from '@/components/shopping/CarryoverBanner'
 import EmptyWeekExplainer from '@/components/shopping/EmptyWeekExplainer'
 import ManualAddForm from '@/components/shopping/ManualAddForm'
 import SectionHeading from '@/components/shopping/SectionHeading'
@@ -125,7 +126,12 @@ export default function ShoppingListPage() {
   const scopedWeek = scope === 'Week' ? viewedWeek : null
 
   const { data, isLoading, isError } = useShoppingWeek(scopedWeek, scope)
-  const { setPurchased, suppress, addItem, removeItem, restore } = useShoppingMutations(scopedWeek, scope)
+  const { setPurchased, suppress, addItem, removeItem, restore, carryItem, dismissCarryover } =
+    useShoppingMutations(scopedWeek, scope)
+  /** True only while a Carry-all/Dismiss-all batch is walking its items — see
+      onCarryAll/onDismissAll below for why this isn't read off the mutations'
+      own `isPending` alone. */
+  const [carryoverBatchPending, setCarryoverBatchPending] = useState(false)
 
   const weeks = useMemo(() => data?.weeks ?? [], [data])
   const purchased = weeks.reduce((sum, week) => sum + week.purchasedCount, 0)
@@ -226,6 +232,54 @@ export default function ShoppingListPage() {
     (key: string) => restore.mutate({ weekStartDate: viewedWeek, key, isPurchased: false }),
     [restore, viewedWeek],
   )
+
+  /**
+   * Carry-all / dismiss-all walk the carryover items ONE AT A TIME, awaited —
+   * deliberately NOT the brief's `forEach` firing N concurrent mutation chains.
+   *
+   * Each chain is independent (distinct keys/manualItemIds can't clobber one
+   * another), so nothing here is a correctness bug either way. What tipped it:
+   * a single `useMutation` only tracks ONE call's state at a time, so N
+   * concurrent `.mutate()`s would make `carryItem.isPending` flicker false the
+   * instant the FIRST of the N chains settles — with 9 more still in flight,
+   * `disabled={isPending}` would go dark early and let a second batch or a
+   * lone item click fire mid-batch. Walking sequentially with `mutateAsync`
+   * keeps exactly one chain in flight, so `isPending` (or the explicit batch
+   * flag below, for the gap between one chain settling and the next starting)
+   * stays true for the batch's whole duration. It also caps a "Carry all" on a
+   * dozen items at one add/close-out pair in flight rather than a burst of
+   * twelve, and a failed item stops the walk instead of leaving a fan-out of
+   * settled/failed promises to reconcile.
+   */
+  const onCarryAll = useCallback(async () => {
+    const carryover = data?.carryover
+    if (!carryover) return
+    setCarryoverBatchPending(true)
+    try {
+      for (const item of carryover.items) {
+        await carryItem.mutateAsync({ item, fromWeek: carryover.weekStartDate, toWeek: currentWeek })
+      }
+    } catch {
+      // The failing item's own error is already on carryItem.error; stop the walk.
+    } finally {
+      setCarryoverBatchPending(false)
+    }
+  }, [data?.carryover, carryItem, currentWeek])
+
+  const onDismissAll = useCallback(async () => {
+    const carryover = data?.carryover
+    if (!carryover) return
+    setCarryoverBatchPending(true)
+    try {
+      for (const item of carryover.items) {
+        await dismissCarryover.mutateAsync({ item, fromWeek: carryover.weekStartDate })
+      }
+    } catch {
+      // The failing item's own error is already on dismissCarryover.error; stop the walk.
+    } finally {
+      setCarryoverBatchPending(false)
+    }
+  }, [data?.carryover, dismissCarryover])
 
   /**
    * The other-weeks probe hands over an ABSOLUTE UTC-Monday ISO string, but the
@@ -389,6 +443,19 @@ export default function ShoppingListPage() {
 
   const banners = (
     <>
+      {scope === 'Week' && viewedWeek === currentWeek && data?.carryover && (
+        <CarryoverBanner
+          carryover={data.carryover}
+          isPending={carryItem.isPending || dismissCarryover.isPending || carryoverBatchPending}
+          onCarry={(item) =>
+            carryItem.mutate({ item, fromWeek: data.carryover!.weekStartDate, toWeek: currentWeek })
+          }
+          onDismiss={(item) => dismissCarryover.mutate({ item, fromWeek: data.carryover!.weekStartDate })}
+          onCarryAll={onCarryAll}
+          onDismissAll={onDismissAll}
+        />
+      )}
+
       {showOrphans && (
         <div style={banner}>
           <span style={{ flex: 1, minWidth: 0 }}>
