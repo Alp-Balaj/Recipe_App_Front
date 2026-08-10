@@ -43,6 +43,58 @@ export type ShoppingScope = 'Week' | 'All'
 export type ShoppingGroupOrigin = 'Derived' | 'Manual'
 
 /**
+ * One ingredient hidden by a suppression mark or caught by unavailability. Backend
+ * source: Task 4's diagnostics, present only when diagnostics are computed.
+ */
+export interface ShoppingHiddenItem {
+  key: string
+  displayName: string
+}
+
+/**
+ * One meal whose plan entry has no ingredients left (all hidden). Backend source:
+ * Task 4's diagnostics, present only when diagnostics are computed.
+ */
+export interface ShoppingSilentMeal {
+  dishTitle: string
+  date: string
+  meal: string
+}
+
+/**
+ * Diagnostics for a week — hidden items, meals with no ingredients, and unavailable
+ * recipes. Present only when the backend computes them (Task 4). If absent, callers
+ * must assume no diagnostics data and render a normal list.
+ */
+export interface ShoppingWeekDiagnostics {
+  hiddenItems: ShoppingHiddenItem[]
+  mealsWithoutIngredients: ShoppingSilentMeal[]
+  unavailableRecipeCount: number
+}
+
+/**
+ * One carryover item from a prior week. Backend source: Task 5's carryover
+ * projection, present only when Week-scoped requests ask for the next week.
+ */
+export interface ShoppingCarryoverItem {
+  key: string
+  displayName: string
+  remainingDisplay?: string | null
+  origin: ShoppingGroupOrigin
+  manualItemId?: string | null
+}
+
+/**
+ * Carryover from a prior week — unticked items that remain in scope for this week.
+ * Present only when the backend computes it. If absent, callers must assume no
+ * carryover and render a fresh list.
+ */
+export interface ShoppingCarryover {
+  weekStartDate: string
+  items: ShoppingCarryoverItem[]
+}
+
+/**
  * One dish's contribution to a group. `quantity` is a PRE-RENDERED display string
  * ("2.5 cups"), in the unit that dish's recipe was WRITTEN in. Still do not parse
  * or add these — stream G made the server able to sum, and `ShoppingGroup.totals`
@@ -119,6 +171,12 @@ export interface ShoppingWeek {
   groups: ShoppingGroup[]
   purchasedCount: number
   totalCount: number
+  /**
+   * Diagnostics (hidden items, silent meals, unavailable recipes). Present only
+   * when the backend computes them; if absent, no diagnostics data exists for this
+   * week. Callers must guard: `week.diagnostics?.hiddenItems ?? []`.
+   */
+  diagnostics?: ShoppingWeekDiagnostics
 }
 
 /**
@@ -130,6 +188,12 @@ export interface ShoppingWeek {
 export interface ShoppingList {
   weeks: ShoppingWeek[]
   orphanedPurchasedNames: string[]
+  /**
+   * Carryover from a prior week (unticked, unsuppressed items). Present only
+   * when the backend computes it; if absent or null, no carryover exists. Callers
+   * must guard: `list.carryover?.items ?? []`.
+   */
+  carryover?: ShoppingCarryover | null
 }
 
 /** The row POST /shopping-list answers with (manual adds only). */
