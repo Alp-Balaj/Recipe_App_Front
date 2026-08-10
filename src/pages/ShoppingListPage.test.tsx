@@ -70,6 +70,15 @@ const listHandler = (orphans: string[] = []) =>
   http.get('/api/shopping-list', () =>
     HttpResponse.json({ weeks: [week], orphanedPurchasedNames: orphans }))
 
+/** A week with nothing on it — used by the switcher tests, which care about the
+ * requested weekStart, not the rendered rows. */
+const emptyWeek = {
+  weekStartDate: '2026-07-27T00:00:00Z',
+  groups: [],
+  purchasedCount: 0,
+  totalCount: 0,
+}
+
 /** Answers per requested scope, recording each request so the query can be asserted. */
 const scopedHandler = (seen: URL[]) =>
   http.get('/api/shopping-list', ({ request }) => {
@@ -541,5 +550,89 @@ describe('ShoppingListPage — failed writes roll back', () => {
     await waitFor(() => expect(screen.queryByText('Bin bags')).not.toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('Bin bags')).toBeInTheDocument())
     expect(gets).toHaveLength(1)
+  })
+})
+
+/**
+ * A user who plans ahead must be able to SEE the week they planned, not just the
+ * current one — and anything they add by hand while looking at it must file into
+ * that same week, not silently land on "this week" behind their back.
+ */
+describe('ShoppingListPage — week switcher', () => {
+  it('steps the viewed week and files manual adds into it', async () => {
+    const seen: string[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('weekStart') ?? '')
+        return HttpResponse.json({ weeks: [emptyWeek], orphanedPurchasedNames: [] })
+      }),
+      http.post('/api/shopping-list', async ({ request }) => {
+        const body = (await request.json()) as { weekStartDate: string }
+        seen.push(`POST:${body.weekStartDate}`)
+        return HttpResponse.json(
+          { id: '1', ingredient: 'x', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    const next = await screen.findByRole('button', { name: /next week/i })
+    await userEvent.click(next)
+
+    const expected = new Date(weekStartOf(new Date()))
+    expected.setUTCDate(expected.getUTCDate() + 7)
+    await waitFor(() => expect(seen).toContain(expected.toISOString()))
+  })
+
+  it('files a manual add into the stepped week once one is visible', async () => {
+    const seen: string[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('weekStart') ?? '')
+        return HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [] })
+      }),
+      http.post('/api/shopping-list', async ({ request }) => {
+        const body = (await request.json()) as { weekStartDate: string }
+        seen.push(`POST:${body.weekStartDate}`)
+        return HttpResponse.json(
+          { id: '1', ingredient: 'x', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    const next = await screen.findByRole('button', { name: /next week/i })
+    await userEvent.click(next)
+
+    const expected = new Date(weekStartOf(new Date()))
+    expected.setUTCDate(expected.getUTCDate() + 7)
+
+    await userEvent.click(await screen.findByRole('button', { name: /add something of your own/i }))
+    await userEvent.type(screen.getByLabelText('Ingredient'), 'Milk')
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => expect(seen).toContain(`POST:${expected.toISOString()}`))
+  })
+
+  it('returns to the current week and stops filing adds into the stepped one', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    const next = await screen.findByRole('button', { name: /next week/i })
+    await userEvent.click(next)
+
+    // Two controls now read "This week": the scope pill (aria-pressed) and the
+    // switcher's back-to-now button (plain). Only the latter is under test here.
+    const findBackToNow = () =>
+      screen
+        .getAllByRole('button', { name: 'This week' })
+        .find((button) => !button.hasAttribute('aria-pressed'))
+
+    await waitFor(() => expect(findBackToNow()).toBeTruthy())
+    await userEvent.click(findBackToNow()!)
+
+    await waitFor(() => expect(findBackToNow()).toBeUndefined())
   })
 })

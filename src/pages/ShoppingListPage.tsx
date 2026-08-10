@@ -71,6 +71,13 @@ const GROUPINGS: { value: GroupBy; label: string }[] = [
   { value: 'dish', label: 'By dish' },
 ]
 
+/** Step a UTC-Monday ISO string by whole weeks — the only week math this page does. */
+function addWeeks(week: string, count: number): string {
+  const date = new Date(week)
+  date.setUTCDate(date.getUTCDate() + count * 7)
+  return date.toISOString()
+}
+
 export default function ShoppingListPage() {
   const [scope, setScope] = useState<ShoppingScope>('Week')
   const [groupBy, setGroupBy] = useState<GroupBy>('aisle')
@@ -103,9 +110,18 @@ export default function ShoppingListPage() {
   // across Monday 00:00 UTC keeps asking for last week and files manual adds into
   // it — the same time-coupling that quietly broke the day-page tests.
   const currentWeek = weekStartOf(new Date())
+  // The viewed week is stored as an OFFSET from `currentWeek`, not an absolute
+  // date — a plain useState(currentWeek) would freeze at whatever `currentWeek`
+  // was at mount, reintroducing exactly the time-coupling the comment above
+  // warns about (a session left open across Monday 00:00 UTC would keep showing
+  // last week once stepping is possible). An offset re-derives against the live
+  // `currentWeek` every render, so "not stepped away" keeps following the clock,
+  // and only an explicit Previous/Next/This-week action changes what is shown.
+  const [weekOffset, setWeekOffset] = useState(0)
+  const viewedWeek = weekOffset === 0 ? currentWeek : addWeeks(currentWeek, weekOffset)
   // scope 'All' IGNORES weekStart server-side, and the cache key says so by
   // holding null — the two scopes are genuinely different projections.
-  const scopedWeek = scope === 'Week' ? currentWeek : null
+  const scopedWeek = scope === 'Week' ? viewedWeek : null
 
   const { data, isLoading, isError } = useShoppingWeek(scopedWeek, scope)
   const { setPurchased, suppress, addItem, removeItem } = useShoppingMutations(scopedWeek, scope)
@@ -301,6 +317,34 @@ export default function ShoppingListPage() {
     </button>
   )
 
+  // Only scope 'Week' has a single viewed week to step — under 'All' every week
+  // owing is already on the page, so there is nothing here to switch between.
+  const weekSwitcher = scope === 'Week' && (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <button
+        type="button"
+        aria-label="Previous week"
+        style={weekArrow}
+        onClick={() => setWeekOffset((offset) => offset - 1)}
+      >
+        ‹
+      </button>
+      {weekOffset !== 0 && (
+        <button type="button" style={backToNow} onClick={() => setWeekOffset(0)}>
+          This week
+        </button>
+      )}
+      <button
+        type="button"
+        aria-label="Next week"
+        style={weekArrow}
+        onClick={() => setWeekOffset((offset) => offset + 1)}
+      >
+        ›
+      </button>
+    </span>
+  )
+
   const banners = (
     <>
       {showOrphans && (
@@ -338,7 +382,11 @@ export default function ShoppingListPage() {
       {!isLoading && !(isError && !offline) && total === 0 && (
         <StateBlock
           title="Nothing on your list yet."
-          body="Plan some meals for this week, or add something of your own above."
+          body={
+            scope === 'Week' && viewedWeek !== currentWeek
+              ? `Nothing planned for ${weekRange(viewedWeek)}, or add something of your own above.`
+              : 'Plan some meals for this week, or add something of your own above.'
+          }
         />
       )}
 
@@ -414,7 +462,11 @@ export default function ShoppingListPage() {
 
   const addForm = (
     <ManualAddForm
-      onAdd={(item) => addItem.mutateAsync({ ...item, weekStartDate: currentWeek })}
+      // Under 'All' there is no single viewed week, so a manual add still targets
+      // `currentWeek` — exactly as before this page could step at all.
+      onAdd={(item) =>
+        addItem.mutateAsync({ ...item, weekStartDate: scope === 'Week' ? viewedWeek : currentWeek })
+      }
       isPending={addItem.isPending}
       isError={addItem.isError}
       compact={compact}
@@ -424,7 +476,7 @@ export default function ShoppingListPage() {
   const finished = allBought && (
     <AllBought
       total={total}
-      range={scope === 'Week' ? weekRange(currentWeek) : null}
+      range={scope === 'Week' ? weekRange(viewedWeek) : null}
       aisles={aisles}
       nextDish={dishes[0] ?? null}
       compact={compact}
@@ -447,9 +499,12 @@ export default function ShoppingListPage() {
           <div style={desktopHeader}>
             <div style={{ minWidth: 0 }}>
               <div style={eyebrow}>SHOPPING LIST</div>
-              <h1 style={desktopTitle}>
-                {scope === 'Week' ? weekRange(currentWeek) : 'Every week still owing'}
-              </h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h1 style={desktopTitle}>
+                  {scope === 'Week' ? weekRange(viewedWeek) : 'Every week still owing'}
+                </h1>
+                {weekSwitcher}
+              </div>
             </div>
 
             <SegmentedToggle
@@ -530,6 +585,7 @@ export default function ShoppingListPage() {
             {!allBought && (
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                 <h1 style={mobileTitle}>Shopping list</h1>
+                {weekSwitcher}
                 {total > 0 && (
                   <span style={mobileProgress}>
                     <span style={srOnly}>Bought </span>
@@ -696,6 +752,28 @@ const scanStyle: CSSProperties = {
 }
 
 const hideBoughtStyle: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--accent)',
+  fontFamily: 'inherit',
+  fontSize: 12.5,
+  fontWeight: 800,
+  padding: 0,
+}
+
+const weekArrow: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--accent)',
+  fontFamily: 'inherit',
+  fontSize: 18,
+  fontWeight: 800,
+  padding: '0 6px',
+}
+
+const backToNow: CSSProperties = {
   cursor: 'pointer',
   border: 'none',
   background: 'transparent',
