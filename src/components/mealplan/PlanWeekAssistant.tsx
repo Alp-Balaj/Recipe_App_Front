@@ -229,6 +229,16 @@ export default function PlanWeekAssistant({
           <span role="status" style={outcome.aborted ? errorText : successText}>
             {outcome.added === 0 && outcome.skipped === 0 && 'Nothing was accepted.'}
             {outcome.added > 0 && `Added ${outcome.added} ${outcome.added === 1 ? 'meal' : 'meals'}.`}
+            {/*
+              Task 9 (shopping-trust): names the consequence without inventing
+              a count. ProposedSlot.recipe is a MealPlanEntryRecipeSummary
+              (api/mealPlans.ts) — id/title/times/calories only, no ingredients
+              — and this card has no other corpus to look one up in. A pointer
+              to the shopping list is the honest version of "what did this do",
+              appended rather than folded into the sentence above so it stays a
+              minimal edit on the existing line.
+            */}
+            {outcome.added > 0 && ' Check your shopping list →'}
             {outcome.skipped > 0 &&
               ` ${outcome.skipped} ${outcome.skipped === 1 ? 'slot' : 'slots'} couldn't be added${
                 outcome.aborted ? ' — connection trouble, the rest were not attempted' : ' — those slots were already taken'

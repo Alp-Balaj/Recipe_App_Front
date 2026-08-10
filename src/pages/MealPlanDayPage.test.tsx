@@ -93,6 +93,46 @@ const cornSalad = makeRecipe({
   ],
 })
 
+// Shopping-list consequence banner (Task 9). These carry the corpus's own
+// notion of ingredients — reached only through the picker corpus's saved /
+// mine / history sources, never the bare browse list (PickerContent strips
+// ingredients when it maps the browse page, see usePickerCorpus.ts).
+const tomatoSoup = makeRecipe({
+  id: 'recipe-soup',
+  title: 'Tomato soup',
+  ingredients: [
+    { name: 'Tomato', quantity: 4, unit: 'Piece' },
+    { name: 'Onion', quantity: 1, unit: 'Piece' },
+    { name: 'Basil', quantity: 1, unit: 'Bunch' },
+  ],
+})
+
+const noIngredientDish = makeRecipe({
+  id: 'recipe-empty',
+  title: 'Buttered toast',
+  ingredients: [],
+})
+
+/**
+ * Same idea as stubRecipeDetails, but also answers /recipes/mine with a
+ * caller-supplied recipe so the page's own usePickerCorpus (not just
+ * PickerContent's) carries that recipe's ingredients — the source
+ * setPlaced's ingredientCount lookup reads from.
+ */
+function stubPickerCorpus(mineRecipe: RecipeResponse) {
+  vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
+    if (path === '/recipes') {
+      return Promise.resolve({ items: [shakshuka, cornSalad], nextCursor: null })
+    }
+    if (path === '/recipes/mine') return Promise.resolve({ items: [mineRecipe], nextCursor: null })
+    if (path === '/users/me/saved-recipes') return Promise.resolve({ items: [], nextCursor: null })
+    if (path === '/recipes/recipe-shakshuka') return Promise.resolve(shakshuka)
+    if (path === '/recipes/recipe-corn') return Promise.resolve(cornSalad)
+    if (path === `/recipes/${mineRecipe.id}`) return Promise.resolve(mineRecipe)
+    return Promise.resolve(undefined)
+  }) as unknown as typeof client.apiFetch)
+}
+
 /**
  * Route apiFetch by path so the two recipe details resolve independently.
  * The bare /recipes list must answer with a real page shape — the picker's
@@ -337,6 +377,57 @@ describe('the day page', () => {
     const nav = await screen.findByRole('navigation', { name: /nearby days/i })
     const links = within(nav).getAllByRole('link')
     expect(links.map((a) => a.getAttribute('href'))).toEqual(['/plan/2026-07-28', '/plan/2026-07-30'])
+  })
+
+  // ── The shopping-list consequence (Task 9) ──────────────────────────────
+
+  it('names the shopping-list consequence when a meal is placed', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan) // breakfast + lunch filled, dinner open
+    vi.spyOn(api, 'getMealPlans').mockResolvedValue({ items: [summary], nextCursor: null })
+    vi.spyOn(api, 'addMealPlanEntry').mockResolvedValue({
+      id: 'entry-soup',
+      dayOfWeek: 'Wednesday',
+      mealType: 'Dinner',
+      recipe: { id: 'recipe-soup', title: 'Tomato soup', imageUrl: null, totalTimeMinutes: 20 },
+    })
+    stubPickerCorpus(tomatoSoup)
+    const user = userEvent.setup()
+
+    renderRoute('/plan/2026-07-29')
+
+    await user.click(await screen.findByRole('button', { name: /add a recipe for dinner/i }))
+    // History outranks Mine in the default segment (there's a planned-before
+    // recipe in the fixture plan), so the picker opens on "Again" — jump to
+    // "Mine", which is where the corpus-sourced fixture recipe actually lives.
+    await user.click(await screen.findByRole('tab', { name: /^mine/i }))
+    await user.click(await screen.findByRole('button', { name: 'Tomato soup' }))
+
+    expect(await screen.findByText(/3 ingredients on your shopping list/i)).toBeInTheDocument()
+  })
+
+  it('warns when the placed recipe has no ingredient list', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan) // breakfast + lunch filled, dinner open
+    vi.spyOn(api, 'getMealPlans').mockResolvedValue({ items: [summary], nextCursor: null })
+    vi.spyOn(api, 'addMealPlanEntry').mockResolvedValue({
+      id: 'entry-toast',
+      dayOfWeek: 'Wednesday',
+      mealType: 'Dinner',
+      recipe: { id: 'recipe-empty', title: 'Buttered toast', imageUrl: null, totalTimeMinutes: 5 },
+    })
+    stubPickerCorpus(noIngredientDish)
+    const user = userEvent.setup()
+
+    renderRoute('/plan/2026-07-29')
+
+    await user.click(await screen.findByRole('button', { name: /add a recipe for dinner/i }))
+    // Same reason as the sibling test: jump past the default "Again" segment
+    // to "Mine", where the corpus-sourced fixture recipe lives.
+    await user.click(await screen.findByRole('tab', { name: /^mine/i }))
+    await user.click(await screen.findByRole('button', { name: 'Buttered toast' }))
+
+    expect(await screen.findByText(/no ingredient list/i)).toBeInTheDocument()
   })
 })
 
