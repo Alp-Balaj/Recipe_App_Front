@@ -25,6 +25,7 @@ import {
   deleteManualItem,
   getShoppingList,
   setMark,
+  type ShoppingCarryoverItem,
   type ShoppingList,
   type ShoppingScope,
   type ShoppingWeek,
@@ -34,18 +35,32 @@ import {
  * One scope's projection. `weekStart` must be a UTC-midnight Monday for scope
  * 'Week' (a missing one is a 400); for scope 'All' pass null — the server picks
  * the weeks and ignores the parameter.
+ *
+ * `enabled` (trust rework, Task 8) is an additional opt-in gate, ANDed with the
+ * scope/weekStart guard below — defaulted to `true` so both existing call
+ * sites (the page's primary query, the two-argument hook test) are unaffected.
+ * It exists for the other-weeks probe: `useShoppingWeek(null, 'All', total ===
+ * 0 && scope === 'Week')`, which must not fire while the primary list is still
+ * shopping-list-shaped (that would waste a request every time the list has rows).
  */
-export function useShoppingWeek(weekStart: string | null, scope: ShoppingScope) {
+export function useShoppingWeek(weekStart: string | null, scope: ShoppingScope, enabled = true) {
   return useQuery({
     queryKey: queryKeys.shopping.week(weekStart, scope),
     queryFn: ({ signal }) => getShoppingList({ weekStart, scope, signal }),
     // scope=Week without a week is the one request guaranteed to 400. Don't send it.
-    enabled: scope === 'All' || weekStart !== null,
+    enabled: (scope === 'All' || weekStart !== null) && enabled,
   })
 }
 
-/** Weeks arrive as '…T00:00:00Z' but are requested as '…T00:00:00.000Z' — compare instants. */
-function sameWeek(a: string, b: string): boolean {
+/**
+ * Weeks arrive as '…T00:00:00Z' but are requested as '…T00:00:00.000Z' — compare
+ * instants, never the raw strings. Exported (trust rework, Task 8) because the
+ * other-weeks probe in ShoppingListPage.tsx has the exact same hazard: comparing
+ * a probe week's `weekStartDate` against the client-built `viewedWeek` with `!==`
+ * would treat the viewed week itself as an "other" week whenever the two arrive
+ * in different ISO spellings of the same instant.
+ */
+export function sameWeek(a: string, b: string): boolean {
   return new Date(a).getTime() === new Date(b).getTime()
 }
 
@@ -175,5 +190,59 @@ export function useShoppingMutations(weekStart: string | null, scope: ShoppingSc
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
   })
 
-  return { setPurchased, suppress, addItem, removeItem }
+  /** Un-hide a derived group (trust rework). No optimistic patch — only the server
+      holds the group's full shape, so this invalidates and lets the refetch render it. */
+  const restore = useMutation({
+    mutationFn: (vars: { weekStartDate: string; key: string; isPurchased: boolean }) =>
+      setMark({ ...vars, isSuppressed: false }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
+  })
+
+  /**
+   * Carry one of last week's unbought items into the current week: a manual row
+   * here, then close it out there (hide a derived group, delete a manual row).
+   * Sequential ON PURPOSE — if the add fails, last week's item is still owed and
+   * must not vanish. No optimistic patch: the item lives in last week's carryover
+   * block, not in either cached week's `groups`, so there is nothing local to
+   * patch — the invalidation-driven refetch is what makes it disappear from the
+   * banner and (if targeted at the viewed week) appear as a fresh manual row.
+   */
+  /**
+   * The close-out half of both mutations below: delete a Manual row for real,
+   * suppress a Derived group. A Manual item with no `manualItemId` can only be a
+   * server bug (see `remove` above, same reasoning) — a suppression mark for its
+   * `manual:`-prefixed key is a guaranteed 400, so this no-ops rather than falling
+   * through to `setMark` and firing a write known to be rejected. Under
+   * `carryItem` that fallthrough used to happen AFTER the add already succeeded,
+   * which would have left a duplicate row behind a failed close-out.
+   */
+  const closeOutCarryoverItem = (item: ShoppingCarryoverItem, fromWeek: string): Promise<unknown> => {
+    if (item.origin === 'Manual') {
+      return item.manualItemId ? deleteManualItem(item.manualItemId) : Promise.resolve()
+    }
+    return setMark({ weekStartDate: fromWeek, key: item.key, isPurchased: false, isSuppressed: true })
+  }
+
+  const carryItem = useMutation({
+    mutationFn: async (vars: { item: ShoppingCarryoverItem; fromWeek: string; toWeek: string }) => {
+      const { item, fromWeek, toWeek } = vars
+      await addManualItem({
+        ingredient: item.displayName,
+        quantity: item.remainingDisplay ?? '',
+        weekStartDate: toWeek,
+      })
+      await closeOutCarryoverItem(item, fromWeek)
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
+  })
+
+  /** Dismiss one of last week's unbought items without carrying it — the same
+      Manual-vs-Derived close-out `carryItem` uses, minus the add. */
+  const dismissCarryover = useMutation({
+    mutationFn: (vars: { item: ShoppingCarryoverItem; fromWeek: string }) =>
+      closeOutCarryoverItem(vars.item, vars.fromWeek),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all }),
+  })
+
+  return { setPurchased, suppress, addItem, removeItem, restore, carryItem, dismissCarryover }
 }

@@ -70,6 +70,15 @@ const listHandler = (orphans: string[] = []) =>
   http.get('/api/shopping-list', () =>
     HttpResponse.json({ weeks: [week], orphanedPurchasedNames: orphans }))
 
+/** A week with nothing on it — used by the switcher tests, which care about the
+ * requested weekStart, not the rendered rows. */
+const emptyWeek = {
+  weekStartDate: '2026-07-27T00:00:00Z',
+  groups: [],
+  purchasedCount: 0,
+  totalCount: 0,
+}
+
 /** Answers per requested scope, recording each request so the query can be asserted. */
 const scopedHandler = (seen: URL[]) =>
   http.get('/api/shopping-list', ({ request }) => {
@@ -448,6 +457,482 @@ describe('ShoppingListPage — the week it asks for', () => {
   })
 })
 
+/**
+ * The carry-forward banner (trust rework, Task 10). Last week's unbought items
+ * arrive as `carryover` on the SAME response as the current week's list — never
+ * a separate fetch — and the banner is gated on three things at once: scope
+ * 'Week', the week actually being viewed being the current one (stepping away
+ * hides it, exactly like a receipt you'd only offer at the register you're
+ * standing at), and the field being present at all (the backend sends null,
+ * not an empty object, when nothing is owed).
+ */
+describe('ShoppingListPage — carryover banner', () => {
+  // The Manual item's remainingDisplay is a realistic NON-null free-text quantity
+  // ("a couple of packs") — never null in practice against the real backend
+  // (fix round 1): a manual group never has a Total, so the carryover projection
+  // falls back to the group's own part's free-text Quantity, and a manual row
+  // always has exactly one part. A fixture that (wrongly) used null here let the
+  // carry-a-manual-item test pass against an MSW POST handler that accepts any
+  // body, while the real AddManualShoppingListItemRequestValidator's NotEmpty
+  // rule on Quantity 400s — this fixture is what would have caught that.
+  const carryover = {
+    weekStartDate: '2026-07-20T00:00:00Z',
+    items: [
+      { key: 'onion', displayName: 'Onion', remainingDisplay: '2 pcs', origin: 'Derived', manualItemId: null },
+      {
+        key: 'manual:9',
+        displayName: 'Batteries',
+        remainingDisplay: 'a couple of packs',
+        origin: 'Manual',
+        manualItemId: '9',
+      },
+    ],
+  }
+
+  const listWithCarryover = () =>
+    http.get('/api/shopping-list', () =>
+      HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [], carryover }))
+
+  it('shows the debt for the current week and hides it once you step away', async () => {
+    server.use(listWithCarryover())
+    renderRoute('/shopping-list')
+
+    expect(await screen.findByText(/last week had 2 unbought items/i)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /next week/i }))
+    await waitFor(() => expect(screen.queryByText(/last week had/i)).not.toBeInTheDocument())
+  })
+
+  it('renders nothing when the backend says nothing is owed (absent field)', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    await screen.findByText('Flour')
+    expect(screen.queryByText(/unbought item/i)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when the backend sends carryover: null explicitly', async () => {
+    server.use(
+      http.get('/api/shopping-list', () =>
+        HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [], carryover: null })),
+    )
+    renderRoute('/shopping-list')
+
+    await screen.findByText('Flour')
+    expect(screen.queryByText(/unbought item/i)).not.toBeInTheDocument()
+  })
+
+  it('carries a DERIVED item: adds into this week first, then suppresses it in last week\'s', async () => {
+    const calls: { type: string; body: unknown }[] = []
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', async ({ request }) => {
+        calls.push({ type: 'add', body: await request.json() })
+        return HttpResponse.json(
+          { id: '1', ingredient: 'Onion', quantity: '2 pcs', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        calls.push({ type: 'mark', body: await request.json() })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /carry onion/i }))
+
+    await waitFor(() => expect(calls).toHaveLength(2))
+    // Sequential and in this exact order — the add must land before the close-out,
+    // never the reverse and never in parallel, so a failed add leaves the item owed.
+    expect(calls[0]).toMatchObject({
+      type: 'add',
+      body: { ingredient: 'Onion', quantity: '2 pcs', weekStartDate: weekStartOf(new Date()) },
+    })
+    expect(calls[1]).toMatchObject({
+      type: 'mark',
+      body: { key: 'onion', weekStartDate: carryover.weekStartDate, isPurchased: false, isSuppressed: true },
+    })
+  })
+
+  it('carries a MANUAL item by deleting its old row, never suppressing a manual: key', async () => {
+    const calls: { type: string; body?: unknown }[] = []
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', async ({ request }) => {
+        calls.push({ type: 'add', body: await request.json() })
+        return HttpResponse.json(
+          { id: '2', ingredient: 'Batteries', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      http.delete('/api/shopping-list/:id', ({ params }) => {
+        calls.push({ type: 'delete', body: params.id })
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.put('/api/shopping-list/marks', () => {
+        calls.push({ type: 'mark' })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /carry batteries/i }))
+
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[0]).toMatchObject({ type: 'add' })
+    // Fix round 1: the add's quantity must be non-empty — an empty (or null)
+    // string here is exactly what 400s against the real
+    // AddManualShoppingListItemRequestValidator's NotEmpty rule, and MSW's own
+    // POST handler (above) would accept the bad body silently if this assertion
+    // were missing.
+    const addBody = (calls[0] as { body: { quantity: string } }).body
+    expect(addBody.quantity.length).toBeGreaterThan(0)
+    expect(addBody.quantity).toBe('a couple of packs')
+    expect(calls[1]).toEqual({ type: 'delete', body: '9' })
+    // Never a suppression mark for a manual row — that would be a guaranteed 400.
+    expect(calls.some((call) => call.type === 'mark')).toBe(false)
+  })
+
+  // RETARGETED by the final review. This case used to serve a DERIVED item with
+  // `remainingDisplay: null`, asserting the client sent `''` — a fixture the backend can no
+  // longer produce, so it was coverage of a dead branch. A Derived group's
+  // RemainingDisplay is its totals joined, falling back to its own first part's Quantity,
+  // and `Units.Format` never returns empty (an imprecise line renders "to taste"). So the
+  // real, reachable shape is an imprecise-only Derived group carrying raw text — and what
+  // matters is that the client passes that text THROUGH rather than flattening it to '',
+  // which is what would 400 against the real AddManualShoppingListItemRequestValidator.
+  // The `?? ''` in carryItem stays as written: it is the type-level guard for an optional
+  // field, not a branch anything now reaches.
+  it('carries a DERIVED imprecise-only item forward with its raw quantity text intact', async () => {
+    const impreciseOnly = {
+      weekStartDate: '2026-07-20T00:00:00Z',
+      items: [
+        // No total (a pinch plus a dash is not two of anything), so the backend falls back
+        // to the group's own first part text.
+        { key: 'salt', displayName: 'Salt', remainingDisplay: 'to taste', origin: 'Derived', manualItemId: null },
+      ],
+    }
+    const calls: { body: { quantity: string } }[] = []
+    server.use(
+      http.get('/api/shopping-list', () =>
+        HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [], carryover: impreciseOnly })),
+      http.post('/api/shopping-list', async ({ request }) => {
+        calls.push({ body: (await request.json()) as { quantity: string } })
+        return HttpResponse.json(
+          { id: '3', ingredient: 'Salt', quantity: 'to taste', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      http.put('/api/shopping-list/marks', () => new HttpResponse(null, { status: 204 })),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /carry salt/i }))
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].body.quantity).toBe('to taste')
+    // Never the empty string the real validator rejects.
+    expect(calls[0].body.quantity.length).toBeGreaterThan(0)
+  })
+
+  it('skips (dismisses) an item without adding anything', async () => {
+    const calls: { type: string }[] = []
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', () => {
+        calls.push({ type: 'add' })
+        return HttpResponse.json(
+          { id: '1', ingredient: 'x', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        calls.push({ type: 'mark', ...(await request.json() as object) })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /skip onion/i }))
+
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toMatchObject({ type: 'mark', key: 'onion', isSuppressed: true })
+  })
+
+  it('carry-all walks one item at a time, never firing the second add before the first closes out', async () => {
+    const order: string[] = []
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', async ({ request }) => {
+        const body = (await request.json()) as { ingredient: string }
+        order.push(`add:${body.ingredient}`)
+        return HttpResponse.json(
+          { id: '1', ingredient: body.ingredient, quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+      // The Derived item's close-out is deliberately slow, so a parallel
+      // (brief's forEach) implementation would fire the second add before this
+      // resolves — a sequential walk must not.
+      http.put('/api/shopping-list/marks', async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30))
+        order.push('mark:onion')
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.delete('/api/shopping-list/:id', () => {
+        order.push('delete:9')
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /carry all/i }))
+
+    await waitFor(() => expect(order).toHaveLength(4))
+    expect(order).toEqual(['add:Onion', 'mark:onion', 'add:Batteries', 'delete:9'])
+  })
+
+  // The `scope === 'Week'` half of the render gate had no coverage: the MSW
+  // handler above returns `carryover` regardless of scope, so deleting that
+  // clause from the page would leave every other test in this file green.
+  it('hides the banner under scope All, even though the backend still sends carryover', async () => {
+    server.use(listWithCarryover())
+    renderRoute('/shopping-list')
+
+    await screen.findByText(/last week had 2 unbought items/i)
+
+    const allPill = screen.getByRole('button', { name: 'All' })
+    await userEvent.click(allPill)
+    // Wait for the scope switch to actually land (the fixture's GET handler
+    // ignores the scope query param and answers identically either way, so the
+    // rows on screen would not otherwise prove anything switched) before
+    // asserting the banner's gone.
+    await waitFor(() => expect(allPill).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.queryByText(/last week had/i)).not.toBeInTheDocument()
+  })
+
+  // Fix round 1 (Task 10 review): a failed carry/dismiss used to be completely
+  // silent. Reading the mutation's own error is what makes the banner say so.
+  it('tells you when a carry fails, instead of staying silent', async () => {
+    server.use(
+      listWithCarryover(),
+      http.post('/api/shopping-list', () => new HttpResponse(null, { status: 500 })),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /show items/i }))
+    await userEvent.click(screen.getByRole('button', { name: /carry onion/i }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/didn't carry over/i)
+  })
+})
+
+/**
+ * The explaining empty state (trust rework, Task 8) — hidden items, silent
+ * meals, and other owing weeks all read from data that must be trusted at
+ * face value, or the surface whose whole point is "stop lying to the user"
+ * lies to them instead.
+ */
+describe('ShoppingListPage — empty state explains itself', () => {
+  it('does not offer the viewed week back to itself when it arrives in a different ISO spelling', async () => {
+    const emptyThisWeek = { weekStartDate: weekStartOf(new Date()), groups: [], purchasedCount: 0, totalCount: 0 }
+    // The SAME instant as the viewed week, spelled WITHOUT the milliseconds the
+    // client's own weekStartOf()/toISOString() produce — exactly the hazard
+    // `sameWeek()` (src/hooks/useShoppingWeek.ts) exists to guard against. A raw
+    // `!==` string comparison would wrongly treat this as an "other" week.
+    const sameInstantDifferentSpelling = {
+      weekStartDate: weekStartOf(new Date()).replace('.000Z', 'Z'),
+      groups: [],
+      purchasedCount: 0,
+      totalCount: 5,
+    }
+    // An UNAMBIGUOUS other week (a genuinely different instant), included only
+    // as a synchronization anchor: waiting for ITS button proves the probe's
+    // response has already landed and been rendered — both entries come off the
+    // SAME otherWeeks array in the SAME render, so once "7 items" is on screen,
+    // whether "5 items" is (wrongly) also there is settled, not still in flight.
+    // Asserting the negative right after the probe's OWN first render (instead
+    // of after some unrelated fallback text that renders before the probe even
+    // resolves) is what makes this a real regression test instead of one that
+    // passes by accident regardless of the bug.
+    const genuineOtherWeek = {
+      weekStartDate: new Date(
+        new Date(weekStartOf(new Date())).getTime() - 14 * 24 * 60 * 60 * 1000,
+      ).toISOString(),
+      groups: [],
+      purchasedCount: 0,
+      totalCount: 7,
+    }
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        const scope = new URL(request.url).searchParams.get('scope')
+        return HttpResponse.json(
+          scope === 'All'
+            ? { weeks: [sameInstantDifferentSpelling, genuineOtherWeek], orphanedPurchasedNames: [] }
+            : { weeks: [emptyThisWeek], orphanedPurchasedNames: [] },
+        )
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    // The unambiguous other week's button is the signal that the probe's data
+    // has been incorporated into this render.
+    await screen.findByRole('button', { name: /7 items/i })
+    // Self-contradiction if this is ALSO present: "your plan for THIS week has
+    // 5 items", directly under a list that just said this week has nothing on it.
+    expect(screen.queryByRole('button', { name: /5 items/i })).not.toBeInTheDocument()
+  })
+
+  it('restores a hidden item into the VIEWED week', async () => {
+    const marks: unknown[] = []
+    // A week genuinely different from `currentWeek` — at offset 0 the two are
+    // the SAME value, so a regression that sent `currentWeek` instead of the
+    // viewed week would pass unnoticed unless stepped away first (fix round 2).
+    const steppedWeek = new Date(weekStartOf(new Date()))
+    steppedWeek.setUTCDate(steppedWeek.getUTCDate() + 7)
+    const steppedWeekIso = steppedWeek.toISOString()
+
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        const url = new URL(request.url)
+        if (url.searchParams.get('scope') === 'All') {
+          return HttpResponse.json({ weeks: [], orphanedPurchasedNames: [] })
+        }
+        // Echoes back whichever week was actually requested — both the initial
+        // "this week" load and the stepped-week request that follows clicking
+        // Next carry the SAME hidden-item diagnostics, so Restore is reachable
+        // on whichever week the page is actually viewing at the time.
+        return HttpResponse.json({
+          weeks: [
+            {
+              weekStartDate: url.searchParams.get('weekStart'),
+              groups: [],
+              purchasedCount: 0,
+              totalCount: 0,
+              diagnostics: {
+                // The hidden group's own tick — false here, and the mark below must
+                // report the SAME value rather than a constant. See the next test for
+                // the case that tells those two apart.
+                hiddenItems: [{ key: 'onion', displayName: 'Onion', isPurchased: false }],
+                mealsWithoutIngredients: [],
+                unavailableRecipeCount: 0,
+              },
+            },
+          ],
+          orphanedPurchasedNames: [],
+        })
+      }),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        marks.push(await request.json())
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    // Step away from the current week BEFORE restoring.
+    await userEvent.click(await screen.findByRole('button', { name: /next week/i }))
+
+    await userEvent.click(await screen.findByRole('button', { name: /restore onion/i }))
+
+    await waitFor(() => expect(marks).toHaveLength(1))
+    // The unsuppress mark, carrying the hidden item's own (unpurchased) tick and
+    // landing on the STEPPED week — not last week, and not `currentWeek` either.
+    expect(marks[0]).toEqual({
+      weekStartDate: steppedWeekIso,
+      key: 'onion',
+      isPurchased: false,
+      isSuppressed: false,
+    })
+    expect(marks[0]).not.toMatchObject({ weekStartDate: weekStartOf(new Date()) })
+  })
+
+  /**
+   * Spec §3.1: Restore sends `isSuppressed: false` PRESERVING `isPurchased`. The whole
+   * user-visible failure lives in this one flag — tick Onion bought, hide it (the page's
+   * `remove` correctly carries `isPurchased: true`), so the week's list is empty and the
+   * empty state offers Restore. Tapping it used to send `isPurchased: false`, the row came
+   * back UNTICKED, and the shopper bought a second onion.
+   *
+   * The test above pins the `false` case, which a hard-coded `false` also satisfies. This
+   * one is the half that cannot be faked.
+   */
+  it('preserves the purchase tick of a hidden item that was already bought', async () => {
+    const marks: unknown[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        const url = new URL(request.url)
+        if (url.searchParams.get('scope') === 'All') {
+          return HttpResponse.json({ weeks: [], orphanedPurchasedNames: [] })
+        }
+        return HttpResponse.json({
+          weeks: [
+            {
+              weekStartDate: url.searchParams.get('weekStart'),
+              groups: [],
+              purchasedCount: 0,
+              totalCount: 0,
+              diagnostics: {
+                // Bought, THEN hidden — exactly what `remove` writes for a ticked row.
+                hiddenItems: [{ key: 'onion', displayName: 'Onion', isPurchased: true }],
+                mealsWithoutIngredients: [],
+                unavailableRecipeCount: 0,
+              },
+            },
+          ],
+          orphanedPurchasedNames: [],
+        })
+      }),
+      http.put('/api/shopping-list/marks', async ({ request }) => {
+        marks.push(await request.json())
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    await userEvent.click(await screen.findByRole('button', { name: /restore onion/i }))
+
+    await waitFor(() => expect(marks).toHaveLength(1))
+    expect(marks[0]).toMatchObject({ key: 'onion', isPurchased: true, isSuppressed: false })
+  })
+
+  it('jumps to another owing week and asks for THAT week next, proving the offset arithmetic end to end', async () => {
+    const otherWeekStart = new Date(weekStartOf(new Date()))
+    otherWeekStart.setUTCDate(otherWeekStart.getUTCDate() + 14)
+    const otherWeekIso = otherWeekStart.toISOString()
+
+    const seenWeekRequests: string[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        const url = new URL(request.url)
+        if (url.searchParams.get('scope') === 'All') {
+          return HttpResponse.json({
+            weeks: [{ weekStartDate: otherWeekIso, groups: [], purchasedCount: 2, totalCount: 5 }],
+            orphanedPurchasedNames: [],
+          })
+        }
+        seenWeekRequests.push(url.searchParams.get('weekStart') ?? '')
+        return HttpResponse.json({
+          weeks: [
+            { weekStartDate: url.searchParams.get('weekStart'), groups: [], purchasedCount: 0, totalCount: 0 },
+          ],
+          orphanedPurchasedNames: [],
+        })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    // 5 - 2 = 3 unbought, named on the jump button.
+    await userEvent.click(await screen.findByRole('button', { name: /3 items/i }))
+
+    await waitFor(() => expect(seenWeekRequests).toContain(otherWeekIso))
+  })
+})
+
 describe('ShoppingListPage — a tick reaches the other scope', () => {
   it('leaves the sibling scope stale without refetching the list in your hand', async () => {
     const seen: URL[] = []
@@ -541,5 +1026,81 @@ describe('ShoppingListPage — failed writes roll back', () => {
     await waitFor(() => expect(screen.queryByText('Bin bags')).not.toBeInTheDocument())
     await waitFor(() => expect(screen.getByText('Bin bags')).toBeInTheDocument())
     expect(gets).toHaveLength(1)
+  })
+})
+
+/**
+ * A user who plans ahead must be able to SEE the week they planned, not just the
+ * current one — and anything they add by hand while looking at it must file into
+ * that same week, not silently land on "this week" behind their back.
+ */
+describe('ShoppingListPage — week switcher', () => {
+  it('steps the viewed week', async () => {
+    const seen: string[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('weekStart') ?? '')
+        return HttpResponse.json({ weeks: [emptyWeek], orphanedPurchasedNames: [] })
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    const next = await screen.findByRole('button', { name: /next week/i })
+    await userEvent.click(next)
+
+    const expected = new Date(weekStartOf(new Date()))
+    expected.setUTCDate(expected.getUTCDate() + 7)
+    await waitFor(() => expect(seen).toContain(expected.toISOString()))
+  })
+
+  it('files a manual add into the stepped week once one is visible', async () => {
+    const seen: string[] = []
+    server.use(
+      http.get('/api/shopping-list', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('weekStart') ?? '')
+        return HttpResponse.json({ weeks: [week], orphanedPurchasedNames: [] })
+      }),
+      http.post('/api/shopping-list', async ({ request }) => {
+        const body = (await request.json()) as { weekStartDate: string }
+        seen.push(`POST:${body.weekStartDate}`)
+        return HttpResponse.json(
+          { id: '1', ingredient: 'x', quantity: '', isPurchased: false, createdAt: '', mealPlanId: null },
+          { status: 201 },
+        )
+      }),
+    )
+    renderRoute('/shopping-list')
+
+    const next = await screen.findByRole('button', { name: /next week/i })
+    await userEvent.click(next)
+
+    const expected = new Date(weekStartOf(new Date()))
+    expected.setUTCDate(expected.getUTCDate() + 7)
+
+    await userEvent.click(await screen.findByRole('button', { name: /add something of your own/i }))
+    await userEvent.type(screen.getByLabelText('Ingredient'), 'Milk')
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => expect(seen).toContain(`POST:${expected.toISOString()}`))
+  })
+
+  it('returns to the current week and stops filing adds into the stepped one', async () => {
+    server.use(listHandler())
+    renderRoute('/shopping-list')
+
+    const next = await screen.findByRole('button', { name: /next week/i })
+    await userEvent.click(next)
+
+    // Two controls now read "This week": the scope pill (aria-pressed) and the
+    // switcher's back-to-now button (plain). Only the latter is under test here.
+    const findBackToNow = () =>
+      screen
+        .getAllByRole('button', { name: 'This week' })
+        .find((button) => !button.hasAttribute('aria-pressed'))
+
+    await waitFor(() => expect(findBackToNow()).toBeTruthy())
+    await userEvent.click(findBackToNow()!)
+
+    await waitFor(() => expect(findBackToNow()).toBeUndefined())
   })
 })

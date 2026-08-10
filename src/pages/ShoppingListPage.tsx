@@ -36,8 +36,10 @@ import { Link } from 'react-router-dom'
 import { weekStartOf } from '@/api/mealPlans'
 import type { ShoppingGroup, ShoppingScope } from '@/api/shopping'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import { useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
+import { sameWeek, useShoppingMutations, useShoppingWeek } from '@/hooks/useShoppingWeek'
 import AllBought from '@/components/shopping/AllBought'
+import CarryoverBanner from '@/components/shopping/CarryoverBanner'
+import EmptyWeekExplainer from '@/components/shopping/EmptyWeekExplainer'
 import ManualAddForm from '@/components/shopping/ManualAddForm'
 import SectionHeading from '@/components/shopping/SectionHeading'
 import { ProgressBar, ScopePills, SegmentedToggle } from '@/components/shopping/ShoppingControls'
@@ -71,6 +73,13 @@ const GROUPINGS: { value: GroupBy; label: string }[] = [
   { value: 'dish', label: 'By dish' },
 ]
 
+/** Step a UTC-Monday ISO string by whole weeks — the only week math this page does. */
+function addWeeks(week: string, count: number): string {
+  const date = new Date(week)
+  date.setUTCDate(date.getUTCDate() + count * 7)
+  return date.toISOString()
+}
+
 export default function ShoppingListPage() {
   const [scope, setScope] = useState<ShoppingScope>('Week')
   const [groupBy, setGroupBy] = useState<GroupBy>('aisle')
@@ -103,16 +112,51 @@ export default function ShoppingListPage() {
   // across Monday 00:00 UTC keeps asking for last week and files manual adds into
   // it — the same time-coupling that quietly broke the day-page tests.
   const currentWeek = weekStartOf(new Date())
+  // The viewed week is stored as an OFFSET from `currentWeek`, not an absolute
+  // date — a plain useState(currentWeek) would freeze at whatever `currentWeek`
+  // was at mount, reintroducing exactly the time-coupling the comment above
+  // warns about (a session left open across Monday 00:00 UTC would keep showing
+  // last week once stepping is possible). An offset re-derives against the live
+  // `currentWeek` every render, so "not stepped away" keeps following the clock,
+  // and only an explicit Previous/Next/This-week action changes what is shown.
+  const [weekOffset, setWeekOffset] = useState(0)
+  const viewedWeek = weekOffset === 0 ? currentWeek : addWeeks(currentWeek, weekOffset)
   // scope 'All' IGNORES weekStart server-side, and the cache key says so by
   // holding null — the two scopes are genuinely different projections.
-  const scopedWeek = scope === 'Week' ? currentWeek : null
+  const scopedWeek = scope === 'Week' ? viewedWeek : null
 
   const { data, isLoading, isError } = useShoppingWeek(scopedWeek, scope)
-  const { setPurchased, suppress, addItem, removeItem } = useShoppingMutations(scopedWeek, scope)
+  const { setPurchased, suppress, addItem, removeItem, restore, carryItem, dismissCarryover } =
+    useShoppingMutations(scopedWeek, scope)
+  /** True only while a Carry-all/Dismiss-all batch is walking its items — see
+      onCarryAll/onDismissAll below for why this isn't read off the mutations'
+      own `isPending` alone. */
+  const [carryoverBatchPending, setCarryoverBatchPending] = useState(false)
 
   const weeks = useMemo(() => data?.weeks ?? [], [data])
   const purchased = weeks.reduce((sum, week) => sum + week.purchasedCount, 0)
   const total = weeks.reduce((sum, week) => sum + week.totalCount, 0)
+
+  // The other-weeks probe (trust rework, Task 8): once the viewed week is
+  // confirmed empty, ask scope 'All' whether some OTHER week still owes
+  // something — the reason the list looks empty may be "you're looking at the
+  // wrong week." Gated on `!isLoading` too, not just `total === 0`: `total`
+  // starts at 0 before the primary fetch resolves (weeks defaults to []), and
+  // without the loading guard this query would fire on every single mount —
+  // including every non-empty week — for the instant before data arrives.
+  const probeEnabled = !isLoading && total === 0 && scope === 'Week'
+  const otherWeeksQuery = useShoppingWeek(null, 'All', probeEnabled)
+  const otherWeeks = useMemo(() => {
+    if (!otherWeeksQuery.data) return []
+    return otherWeeksQuery.data.weeks
+      // Compare INSTANTS, not raw strings: the probe's weeks arrive as
+      // '…T00:00:00Z' while `viewedWeek` is client-built via .toISOString()
+      // ('…T00:00:00.000Z') — the same hazard `sameWeek` already guards for the
+      // mark-overlay cache patches below. A `!==` here would let the viewed
+      // week leak into "other weeks still owing" under a Week/All query race.
+      .filter((week) => !sameWeek(week.weekStartDate, viewedWeek) && week.totalCount - week.purchasedCount > 0)
+      .map((week) => ({ weekStartDate: week.weekStartDate, unboughtCount: week.totalCount - week.purchasedCount }))
+  }, [otherWeeksQuery.data, viewedWeek])
 
   const orphans = data?.orphanedPurchasedNames ?? []
   const showOrphans = orphans.length > 0 && orphans.join('|') !== dismissedOrphans
@@ -186,6 +230,92 @@ export default function ShoppingListPage() {
       suppress.mutate({ weekStartDate, key: group.key, isPurchased: group.isPurchased })
     },
     [removeItem, suppress],
+  )
+
+  /**
+   * Un-hide a suppressed Derived group, into the week currently being viewed.
+   *
+   * `isPurchased` is the hidden group's OWN tick, carried back from the diagnostics entry
+   * (`ShoppingHiddenItem.isPurchased`) rather than assumed. A mark is an explicit full set
+   * of both flags, so this write has to state one — and hard-coding `false` here was the
+   * mirror image of the bug `remove` above already avoids: tick Onion bought, hide it, then
+   * Restore, and the row came back UNTICKED and you bought a second onion (spec §3.1).
+   */
+  const onRestore = useCallback(
+    (key: string, isPurchased: boolean) =>
+      restore.mutate({ weekStartDate: viewedWeek, key, isPurchased }),
+    [restore, viewedWeek],
+  )
+
+  /**
+   * Carry-all / dismiss-all walk the carryover items ONE AT A TIME, awaited —
+   * deliberately NOT the brief's `forEach` firing N concurrent mutation chains.
+   *
+   * Each chain is independent (distinct keys/manualItemIds can't clobber one
+   * another), so nothing here is a correctness bug either way. What tipped it:
+   * a single `useMutation` only tracks ONE call's state at a time, so N
+   * concurrent `.mutate()`s would make `carryItem.isPending` flicker false the
+   * instant the FIRST of the N chains settles — with 9 more still in flight,
+   * `disabled={isPending}` would go dark early and let a second batch or a
+   * lone item click fire mid-batch. Walking sequentially with `mutateAsync`
+   * keeps exactly one chain in flight, so `isPending` (or the explicit batch
+   * flag below, for the gap between one chain settling and the next starting)
+   * stays true for the batch's whole duration. It also caps a "Carry all" on a
+   * dozen items at one add/close-out pair in flight rather than a burst of
+   * twelve, and a failed item stops the walk instead of leaving a fan-out of
+   * settled/failed promises to reconcile.
+   */
+  const onCarryAll = useCallback(async () => {
+    const carryover = data?.carryover
+    if (!carryover) return
+    setCarryoverBatchPending(true)
+    try {
+      for (const item of carryover.items) {
+        await carryItem.mutateAsync({ item, fromWeek: carryover.weekStartDate, toWeek: currentWeek })
+      }
+    } catch {
+      // Stop the walk. The failing item's own error now lands on carryItem.error,
+      // which the banner reads (its `isError` prop below) — this catch exists only
+      // to keep the loop from throwing an unhandled rejection into the click handler.
+    } finally {
+      setCarryoverBatchPending(false)
+    }
+  }, [data?.carryover, carryItem, currentWeek])
+
+  const onDismissAll = useCallback(async () => {
+    const carryover = data?.carryover
+    if (!carryover) return
+    setCarryoverBatchPending(true)
+    try {
+      for (const item of carryover.items) {
+        await dismissCarryover.mutateAsync({ item, fromWeek: carryover.weekStartDate })
+      }
+    } catch {
+      // Stop the walk. The failing item's own error now lands on dismissCarryover.error,
+      // which the banner reads (its `isError` prop below) — this catch exists only
+      // to keep the loop from throwing an unhandled rejection into the click handler.
+    } finally {
+      setCarryoverBatchPending(false)
+    }
+  }, [data?.carryover, dismissCarryover])
+
+  /**
+   * The other-weeks probe hands over an ABSOLUTE UTC-Monday ISO string, but the
+   * viewed week is stored as an OFFSET from the live `currentWeek` (see the
+   * comment above `weekOffset`'s declaration) — there is no absolute
+   * "viewedWeek" state to set directly. Converting back to an offset: both
+   * timestamps are UTC-midnight Mondays, so their difference is an exact
+   * multiple of a week: rounding (rather than truncating) keeps a DST-adjacent
+   * week from landing half a week off due to any floating-point slop in the ms
+   * arithmetic.
+   */
+  const onJumpToWeek = useCallback(
+    (weekStartDate: string) => {
+      const msPerWeek = 7 * 24 * 60 * 60 * 1000
+      const weeksFromNow = Math.round((new Date(weekStartDate).getTime() - new Date(currentWeek).getTime()) / msPerWeek)
+      setWeekOffset(weeksFromNow)
+    },
+    [currentWeek],
   )
 
   const clearSelection = useCallback(() => setSelection(new Set()), [])
@@ -301,8 +431,56 @@ export default function ShoppingListPage() {
     </button>
   )
 
+  // Only scope 'Week' has a single viewed week to step — under 'All' every week
+  // owing is already on the page, so there is nothing here to switch between.
+  const weekSwitcher = scope === 'Week' && (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <button
+        type="button"
+        aria-label="Previous week"
+        style={weekArrow}
+        onClick={() => setWeekOffset((offset) => offset - 1)}
+      >
+        ‹
+      </button>
+      {weekOffset !== 0 && (
+        <button type="button" style={backToNow} onClick={() => setWeekOffset(0)}>
+          This week
+        </button>
+      )}
+      <button
+        type="button"
+        aria-label="Next week"
+        style={weekArrow}
+        onClick={() => setWeekOffset((offset) => offset + 1)}
+      >
+        ›
+      </button>
+    </span>
+  )
+
   const banners = (
     <>
+      {/* sameWeek, not `===`: ONE week-equality rule in this file. Both operands happen to
+          be client-built today, so a raw string compare is correct by accident — but the
+          probe above already had to be fixed for exactly this ('…T00:00:00Z' from the server
+          never equals the client's '…T00:00:00.000Z'), and a future path that seeds a week
+          from a server string must not reintroduce the bug 300 lines from where it was
+          fixed. */}
+      {scope === 'Week' && sameWeek(viewedWeek, currentWeek) && data?.carryover && (
+        <CarryoverBanner
+          carryover={data.carryover}
+          isPending={carryItem.isPending || dismissCarryover.isPending || carryoverBatchPending}
+          isError={carryItem.isError || dismissCarryover.isError}
+          onCarry={(item) =>
+            carryItem.mutate({ item, fromWeek: data.carryover!.weekStartDate, toWeek: currentWeek })
+          }
+          onDismiss={(item) => dismissCarryover.mutate({ item, fromWeek: data.carryover!.weekStartDate })}
+          onCarryAll={onCarryAll}
+          onDismissAll={onDismissAll}
+        />
+      )}
+
       {showOrphans && (
         <div style={banner}>
           <span style={{ flex: 1, minWidth: 0 }}>
@@ -335,10 +513,16 @@ export default function ShoppingListPage() {
         <StateBlock title="Couldn't load your list" body="Check your connection and try again." />
       )}
 
+      {/* `sameWeek` on isCurrentWeek for the same reason as the carryover gate above — one
+          week-equality rule in this file, not two. */}
       {!isLoading && !(isError && !offline) && total === 0 && (
-        <StateBlock
-          title="Nothing on your list yet."
-          body="Plan some meals for this week, or add something of your own above."
+        <EmptyWeekExplainer
+          weekLabel={weekRange(viewedWeek)}
+          isCurrentWeek={scope !== 'Week' || sameWeek(viewedWeek, currentWeek)}
+          diagnostics={weeks[0]?.diagnostics}
+          otherWeeks={otherWeeks}
+          onRestore={onRestore}
+          onJumpToWeek={onJumpToWeek}
         />
       )}
 
@@ -414,7 +598,11 @@ export default function ShoppingListPage() {
 
   const addForm = (
     <ManualAddForm
-      onAdd={(item) => addItem.mutateAsync({ ...item, weekStartDate: currentWeek })}
+      // Under 'All' there is no single viewed week, so a manual add still targets
+      // `currentWeek` — exactly as before this page could step at all.
+      onAdd={(item) =>
+        addItem.mutateAsync({ ...item, weekStartDate: scope === 'Week' ? viewedWeek : currentWeek })
+      }
       isPending={addItem.isPending}
       isError={addItem.isError}
       compact={compact}
@@ -424,7 +612,7 @@ export default function ShoppingListPage() {
   const finished = allBought && (
     <AllBought
       total={total}
-      range={scope === 'Week' ? weekRange(currentWeek) : null}
+      range={scope === 'Week' ? weekRange(viewedWeek) : null}
       aisles={aisles}
       nextDish={dishes[0] ?? null}
       compact={compact}
@@ -447,9 +635,12 @@ export default function ShoppingListPage() {
           <div style={desktopHeader}>
             <div style={{ minWidth: 0 }}>
               <div style={eyebrow}>SHOPPING LIST</div>
-              <h1 style={desktopTitle}>
-                {scope === 'Week' ? weekRange(currentWeek) : 'Every week still owing'}
-              </h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h1 style={desktopTitle}>
+                  {scope === 'Week' ? weekRange(viewedWeek) : 'Every week still owing'}
+                </h1>
+                {weekSwitcher}
+              </div>
             </div>
 
             <SegmentedToggle
@@ -530,6 +721,7 @@ export default function ShoppingListPage() {
             {!allBought && (
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                 <h1 style={mobileTitle}>Shopping list</h1>
+                {weekSwitcher}
                 {total > 0 && (
                   <span style={mobileProgress}>
                     <span style={srOnly}>Bought </span>
@@ -696,6 +888,28 @@ const scanStyle: CSSProperties = {
 }
 
 const hideBoughtStyle: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--accent)',
+  fontFamily: 'inherit',
+  fontSize: 12.5,
+  fontWeight: 800,
+  padding: 0,
+}
+
+const weekArrow: CSSProperties = {
+  cursor: 'pointer',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--accent)',
+  fontFamily: 'inherit',
+  fontSize: 18,
+  fontWeight: 800,
+  padding: '0 6px',
+}
+
+const backToNow: CSSProperties = {
   cursor: 'pointer',
   border: 'none',
   background: 'transparent',

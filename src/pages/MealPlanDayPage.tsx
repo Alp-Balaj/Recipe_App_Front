@@ -35,7 +35,8 @@ import { useCurrentWeekPlan, useEnsureWeekPlan, useMealPlanDetail } from '@/hook
 import { useDayRecipes } from '@/hooks/useDayRecipes'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import { shortDayLabel } from '@/hooks/usePickerCorpus'
+import { shortDayLabel, usePickerCorpus } from '@/hooks/usePickerCorpus'
+import { useAuth } from '@/auth/AuthContext'
 import {
   addDays,
   dayHeadingOf,
@@ -86,6 +87,13 @@ interface Placed {
    * invalidate the week it actually touched.
    */
   weekStart: string
+  /**
+   * How many ingredient lines this placement added to the shopping list.
+   * Null means unknown (the recipe wasn't found in the picker's corpus, or
+   * the corpus never loaded its ingredients) — rendered as nothing extra,
+   * not as zero. Task 9: naming the shopping-list consequence of a placement.
+   */
+  ingredientCount: number | null
 }
 
 function DayView({ date }: { date: Date }) {
@@ -102,6 +110,13 @@ function DayView({ date }: { date: Date }) {
   const [pickerMeal, setPickerMeal] = useState<MealTypeName | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [placed, setPlaced] = useState<Placed | null>(null)
+
+  // Same corpus the picker itself reads (PickerContent's own usePickerCorpus
+  // call), same query keys — so this shares its cache rather than costing a
+  // second fetch. It is what lets a successful add name what the placed
+  // recipe did to the shopping list, without fetching the recipe again.
+  const { user } = useAuth()
+  const corpus = usePickerCorpus(user?.userId, pickerMeal !== null)
 
   const weekEntries = useMemo(() => detail.data?.entries ?? [], [detail.data])
   const entries = useMemo(
@@ -140,14 +155,16 @@ function DayView({ date }: { date: Date }) {
       })
       return { entry, planId: id }
     },
-    onSuccess: ({ entry, planId: id }) => {
+    onSuccess: ({ entry, planId: id }, vars) => {
       refreshPlan(id)
+      const recipe = corpus.byId.get(vars.recipeId)
       setPlaced({
         planId: id,
         entryId: entry.id,
         title: entry.recipe.title,
         where: entry.mealType.toLowerCase(),
         weekStart,
+        ingredientCount: recipe?.ingredients?.length ?? null,
       })
     },
     onError: (err: unknown) =>
@@ -178,6 +195,9 @@ function DayView({ date }: { date: Date }) {
         title: entry.recipe.title,
         where: `tomorrow's ${entry.mealType.toLowerCase()}`,
         weekStart: targetWeek,
+        // Not resolved here — this is the leftovers gesture, not a picker
+        // pick, so there is no picker corpus lookup to reuse.
+        ingredientCount: null,
       })
     },
     // A taken slot is the expected failure here, not an error condition — you
@@ -239,6 +259,9 @@ function DayView({ date }: { date: Date }) {
         title: entry.recipe.title,
         where: entry.mealType.toLowerCase(),
         weekStart,
+        // A swap can fail and restore the original mid-flight (see mutationFn
+        // above) — not worth threading the corpus lookup through that path too.
+        ingredientCount: null,
       }),
     onError: () => setMessage("Couldn't swap that meal. What was there has been kept."),
   })
@@ -360,7 +383,10 @@ function DayView({ date }: { date: Date }) {
           {placed && (
             <div role="status" style={undoBanner}>
               <span style={{ flex: 1, minWidth: 0 }}>
-                Added <strong>{placed.title}</strong> to {placed.where}.
+                Added <strong>{placed.title}</strong> to {placed.where}
+                {placed.ingredientCount === null ? '.' : placed.ingredientCount === 0
+                  ? ' — it has no ingredient list, so it adds nothing to your shopping list.'
+                  : ` — ${placed.ingredientCount} ingredients on your shopping list.`}
               </span>
               <button
                 type="button"
