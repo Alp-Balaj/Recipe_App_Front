@@ -24,6 +24,7 @@ import {
   BrowsePage,
   ChatPage,
   CookedPage,
+  CookedDishPage,
   CookHistoryPage,
   FeedPage,
   FollowListPage,
@@ -130,6 +131,11 @@ export const routes: RouteObject[] = [
           // the bottom bar is full, and the nav restructure that would free a
           // slot for it is a separate piece of work.
           { path: '/cooked', element: page(CookedPage) },
+          // KAN-5 — the dish page, on the same terms. Its own ROUTE rather than
+          // a panel over the list (design D9), so the phone back gesture returns
+          // to /cooked instead of closing the app. Declared after /cooked, which
+          // it cannot shadow: one segment versus two.
+          { path: '/cooked/:recipeId', element: page(CookedDishPage) },
           { path: '/shopping-list', element: page(ShoppingListPage) },
           // Stream N (food scanner) — SANCTIONED ADDITIVE route registration,
           // same discipline as the additive routes above. Not in navItems.ts:

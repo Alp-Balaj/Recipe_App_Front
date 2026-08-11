@@ -7,9 +7,12 @@
 // stream behind /plan/cooks — the two answer different questions and neither is
 // a filter of the other.
 //
-// Wire contract (backend KAN-4):
-//   GET /users/me/cooked-recipes → 200 CookedDishListResponse (?cursor&limit)
-//                                | 401 for a guest (the whole list is caller-scoped)
+// Wire contract (backend KAN-4, KAN-5):
+//   GET /users/me/cooked-recipes            → 200 CookedDishListResponse (?cursor&limit)
+//                                           | 401 for a guest (the list is caller-scoped)
+//   GET /users/me/cooked-recipes/{recipeId} → 200 CookedDishDetailResponse
+//                                           | 404 for a dish the LIST would not show either
+//                                           | 401 for a guest
 //
 // Dishes the user rated but never cooked are excluded server-side (design D8) —
 // rating has been able to create such rows since 30 July, and this client must
@@ -58,6 +61,32 @@ export interface CookedDishListResponse {
 }
 
 /**
+ * The dish page's header (KAN-5) — one `CookedDish`, plus the one fact only that
+ * page needs.
+ *
+ * `dish` is the SAME row shape the list ships, from the same server-side
+ * projection, so the row a user tapped and the header they land on cannot
+ * disagree about the title, the rating, or which note is the dish's latest.
+ */
+export interface CookedDishDetail {
+  dish: CookedDish
+  /**
+   * How many of this dish's cooks the cook log does NOT hold — its lifetime
+   * count minus the cooks actually recorded, never negative.
+   *
+   * Non-zero for a dish cooked before the cook log existed (10 August): the
+   * count is real, the rows are simply not there. Render it as an explicit line
+   * ("N cooks before notes existed") and do NOT synthesise rows to fill the gap
+   * — the cook log is the complete record of every cook it has, and putting
+   * invented events in it is the one thing that would make it untrustworthy.
+   *
+   * Computed server-side because the client cannot do the arithmetic without
+   * holding every page of the log at once.
+   */
+  untrackedCooks: number
+}
+
+/**
  * One page of the caller's dishes, most recently cooked first.
  *
  * Page on `nextCursor`, never on `items.length`: the server drops rows it cannot
@@ -73,4 +102,19 @@ export function getCookedDishes(
     query: { cursor, limit },
     signal,
   })
+}
+
+/**
+ * One dish, for its own page.
+ *
+ * 404s on exactly the dishes the list omits — one the caller never cooked, one
+ * they only rated, and one with neither a readable recipe nor a cook to title
+ * it — so a page cannot exist behind a row the list refuses to show. It does NOT
+ * 404 for an unavailable recipe: that dish is still the caller's record and its
+ * page is where the notes live.
+ *
+ * The dish's cooks are a separate, paged read — `getCookLog({ recipeId })`.
+ */
+export function getCookedDish(recipeId: string, signal?: AbortSignal): Promise<CookedDishDetail> {
+  return apiFetch<CookedDishDetail>(`/users/me/cooked-recipes/${recipeId}`, { signal })
 }

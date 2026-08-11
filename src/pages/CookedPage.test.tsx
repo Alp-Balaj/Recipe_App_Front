@@ -64,7 +64,7 @@ describe('/cooked', () => {
     expect(screen.getByText(/^Cooked twice · last /)).toHaveTextContent(/August/)
   })
 
-  it('keeps an unavailable dish readable, but not clickable', async () => {
+  it('keeps an unavailable dish readable, and still reachable', async () => {
     vi.spyOn(cookedApi, 'getCookedDishes').mockResolvedValue({
       items: [dish({ recipeAvailable: false })],
       nextCursor: null,
@@ -76,7 +76,17 @@ describe('/cooked', () => {
     // reader's record. The dish stays, titled from the cook's snapshot.
     expect(await screen.findByText('Pide with minced lamb')).toBeInTheDocument()
     expect(screen.getByText('unavailable')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /Pide/ })).not.toBeInTheDocument()
+
+    // KAN-5 changed where the row points. Under KAN-4 an unavailable dish was
+    // deliberately inert, because the only destination was the recipe. Now the
+    // destination is the dish's OWN page — the caller's log, which needs no
+    // recipe — and leaving this row inert would strand the notes this ticket
+    // exists to make editable. Still no link to /recipes: that is what
+    // `recipeAvailable: false` withholds.
+    expect(await screen.findByRole('link', { name: /Pide/ })).toHaveAttribute(
+      'href',
+      '/cooked/r-pide',
+    )
   })
 
   it('never names why a recipe went away', async () => {
@@ -96,7 +106,7 @@ describe('/cooked', () => {
     expect(screen.queryByText(/deleted|removed|private|hidden|unshared/i)).not.toBeInTheDocument()
   })
 
-  it('links a dish whose recipe is still open to you', async () => {
+  it('opens the dish page, not the recipe', async () => {
     vi.spyOn(cookedApi, 'getCookedDishes').mockResolvedValue({
       items: [dish()],
       nextCursor: null,
@@ -104,9 +114,11 @@ describe('/cooked', () => {
 
     renderRoute('/cooked')
 
+    // KAN-5: tapping a dish opens every time the user made it, with the notes
+    // they left. The recipe is one link further in, on that page.
     expect(await screen.findByRole('link', { name: /Pide/ })).toHaveAttribute(
       'href',
-      '/recipes/r-pide',
+      '/cooked/r-pide',
     )
   })
 

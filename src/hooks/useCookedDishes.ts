@@ -8,9 +8,9 @@
 // the tail of such a list.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/api/queryKeys'
-import { getCookedDishes } from '@/api/cooked'
+import { getCookedDish, getCookedDishes } from '@/api/cooked'
 
 /** Rows per page. Backend default is 20, clamped to 50. */
 export const COOKED_PAGE_SIZE = 20
@@ -23,5 +23,21 @@ export function useCookedDishes(enabled = true) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled,
+  })
+}
+
+/**
+ * One dish's header — title, availability, rating, and how many of its cooks
+ * predate the cook log (KAN-5).
+ *
+ * Deliberately a plain `useQuery` beside the page's infinite list of cooks
+ * rather than a field on it: the header is read once, the cooks are read per
+ * "Show older cooks", and folding them together would re-fetch the header on
+ * every page.
+ */
+export function useCookedDish(recipeId: string) {
+  return useQuery({
+    queryKey: queryKeys.cooked.dish(recipeId),
+    queryFn: ({ signal }) => getCookedDish(recipeId, signal),
   })
 }

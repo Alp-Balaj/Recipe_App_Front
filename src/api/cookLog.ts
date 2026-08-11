@@ -9,7 +9,7 @@
 //
 // Wire contract (backend feat/plan-cook-log, verified 2026-08-10):
 //   POST   /cook-log                      → 201 CookLogResponse | 404 (recipe/entry not yours)
-//   GET    /cook-log                      → 200 CookLogListResponse   (?cursor&limit)
+//   GET    /cook-log                      → 200 CookLogListResponse   (?cursor&limit&recipeId)
 //   GET    /cook-log/latest               → 200 CookLogLatestResponse (never 404)
 //   PATCH  /cook-log/{id}                 → 200 CookLogResponse | 404
 //   DELETE /cook-log/entries/{entryId}    → 204 | 404 (entry not on one of the caller's plans)
@@ -94,9 +94,19 @@ export function uncookEntry(mealPlanEntryId: string): Promise<void> {
   return apiFetch<void>(`/cook-log/entries/${mealPlanEntryId}`, { method: 'DELETE' })
 }
 
-export function getCookLog(params: { cursor?: string; limit?: number; signal?: AbortSignal } = {}): Promise<CookLogListResponse> {
-  const { cursor, limit, signal } = params
-  return apiFetch<CookLogListResponse>('/cook-log', { query: { cursor, limit }, signal })
+/**
+ * One page of the caller's cooks, newest first.
+ *
+ * `recipeId` (KAN-5) narrows it to a single dish — what /cooked/:recipeId pages
+ * — through the same (cookedAt, id) cursor. Omitting it means EVERY dish, and
+ * the filter narrows the CALLER's log rather than widening it to the recipe's:
+ * another user's cooks of the same recipe, and their notes, are never in scope.
+ */
+export function getCookLog(
+  params: { cursor?: string; limit?: number; recipeId?: string; signal?: AbortSignal } = {},
+): Promise<CookLogListResponse> {
+  const { cursor, limit, recipeId, signal } = params
+  return apiFetch<CookLogListResponse>('/cook-log', { query: { cursor, limit, recipeId }, signal })
 }
 
 export function getLatestCook(signal?: AbortSignal): Promise<CookLogLatest> {

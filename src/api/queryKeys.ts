@@ -136,6 +136,11 @@ export const queryKeys = {
     all: ['cooked'] as const,
     /** GET /users/me/cooked-recipes — the dish list (useInfiniteQuery, /cooked). */
     list: () => ['cooked', 'list'] as const,
+    // KAN-5. Under the same `all` prefix as the list on purpose: a cook or a
+    // rating changes both the row and the header, and one invalidation should
+    // reach both.
+    /** GET /users/me/cooked-recipes/{id} — one dish's header (/cooked/:recipeId). */
+    dish: (recipeId: string) => ['cooked', 'dish', recipeId] as const,
   },
   social: {
     /** All per-recipe social envelopes (the decision-I3 seam for non-feed surfaces). */
@@ -211,8 +216,12 @@ export const queryKeys = {
     all: ['cookLog'] as const,
     /** GET /cook-log/latest — the newest cook + the lifetime total (/plan's §3). */
     latest: () => ['cookLog', 'latest'] as const,
+    // SANCTIONED ADDITIVE EDIT (KAN-5): the recipe filter joins the key, so one
+    // dish's cooks cannot overwrite the unfiltered history. Defaulted, exactly
+    // like `users.followers(id, q = '')` above, so /plan/cooks keeps its current
+    // key shape with an empty trailing segment.
     /** GET /cook-log — the keyset-paged history (useInfiniteQuery, /plan/cooks). */
-    list: () => ['cookLog', 'list'] as const,
+    list: (recipeId = '') => ['cookLog', 'list', recipeId] as const,
   },
 
   // stream D (governor) — SANCTIONED ADDITIVE EDIT to this frozen module, same

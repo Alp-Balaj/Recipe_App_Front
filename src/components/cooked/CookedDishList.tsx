@@ -26,6 +26,10 @@
 import { useEffect, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import type { CookedDish } from '@/api/cooked'
+// Shared with CookedDishPage (KAN-5): the dish page opens directly out of this
+// row, so the same last-cooked date is on screen either side of one tap. Two
+// copies of the formatter drifted into wording it two ways.
+import { longDate, timesCooked } from '@/components/cooked/cookedFormats'
 import StateBlock from '@/components/ui/StateBlock'
 import { useCookedDishes } from '@/hooks/useCookedDishes'
 import { resolveImageUrl } from '@/lib/images'
@@ -174,14 +178,19 @@ function DishRow({ dish, last }: { dish: CookedDish; last: boolean }) {
     ...(last ? null : { borderBottom: '1px solid var(--hair)' }),
   }
 
-  // A dish you can no longer open is still a dish you made; it just has nowhere
-  // to link to.
-  return dish.recipeAvailable ? (
-    <Link to={`/recipes/${dish.recipeId}`} style={{ ...style, textDecoration: 'none' }}>
+  // The row opens the DISH page, not the recipe (KAN-5) — every time the user
+  // made it, and every note they left. The recipe is one link further in, on
+  // that page, where it can be withheld on its own terms.
+  //
+  // An unavailable dish links here TOO, which is the change from KAN-4's
+  // recipe-or-nothing rule. Its notes are exactly the ones this ticket exists to
+  // make editable and they live nowhere else, so leaving the row inert would
+  // strand the record it is a row of. Nothing about the destination needs the
+  // recipe: the page is the caller's own log.
+  return (
+    <Link to={`/cooked/${dish.recipeId}`} style={{ ...style, textDecoration: 'none' }}>
       {body}
     </Link>
-  ) : (
-    <div style={style}>{body}</div>
   )
 }
 
@@ -196,22 +205,6 @@ function Stars({ rating }: { rating: number }) {
       ))}
     </span>
   )
-}
-
-function timesCooked(count: number): string {
-  if (count === 1) return 'Cooked once'
-  if (count === 2) return 'Cooked twice'
-  return `Cooked ${count} times`
-}
-
-function longDate(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
-    year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
-  })
 }
 
 const rowStyle: CSSProperties = {

@@ -66,7 +66,13 @@ export function requiresAuth(pathname: string): boolean {
     // line a guest deep-linking /cooked would get "Couldn't load your dishes"
     // — a bug that reads as a broken page rather than as a sign-in prompt, and
     // exactly the one /plan/cooks still has.
-    pathname === '/cooked'
+    pathname === '/cooked' ||
+    // KAN-5: and the dish page behind it, on the same terms — both endpoints it
+    // reads are caller-scoped and answer 401, so a guest deep-linking one dish
+    // would otherwise get "Couldn't load this dish" instead of the sign-in
+    // prompt. A prefix, not an exact match: every path under /cooked/ is one of
+    // the caller's own dishes.
+    pathname.startsWith('/cooked/')
   )
 }
 

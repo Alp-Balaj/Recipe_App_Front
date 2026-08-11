@@ -52,6 +52,8 @@ export const CookHistoryPage = lazy(() => import('./pages/CookHistoryPage'))
 // Cooked (KAN-4) — the dish list. Beside CookHistoryPage rather than replacing
 // it: /plan/cooks is the same cooking in time order and stays.
 export const CookedPage = lazy(() => import('./pages/CookedPage'))
+// KAN-5 — one dish's cooks and their notes, behind a row of the list above.
+export const CookedDishPage = lazy(() => import('./pages/CookedDishPage'))
 export const MealPlanDayPage = lazy(() => import('./pages/MealPlanDayPage'))
 export const ShoppingListPage = lazy(() => import('./pages/ShoppingListPage'))
 export const FoodScanPage = lazy(() => import('./pages/FoodScanPage'))

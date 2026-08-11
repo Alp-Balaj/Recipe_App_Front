@@ -39,6 +39,23 @@ export function useCookHistory() {
   })
 }
 
+/**
+ * One dish's cooks, newest first — /cooked/:recipeId (KAN-5).
+ *
+ * The same read as `useCookHistory` with the recipe filter on it, under its own
+ * cache key: the two lists hold the same SHAPE but different sets, and sharing
+ * a key would let a dish page's single-dish pages answer /plan/cooks.
+ */
+export function useDishCooks(recipeId: string) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.cookLog.list(recipeId),
+    queryFn: ({ pageParam, signal }) =>
+      getCookLog({ cursor: pageParam as string | undefined, limit: 20, recipeId, signal }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  })
+}
+
 export function useCookLogMutations() {
   const queryClient = useQueryClient()
 
