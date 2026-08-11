@@ -6,9 +6,19 @@
 // something to browse, and the one prompt worth answering (rate the last cook)
 // already lives on /plan.
 //
-// A row whose recipe has since been deleted still renders — the title is
+// A row whose recipe has since become unavailable still renders — the title is
 // snapshotted on the cook, which is the entire reason that column exists. It
 // simply stops being a link.
+//
+// "Unavailable" is ONE state and the copy must keep it that way (KAN-2, design
+// D14, docs/adr/0001). A recipe leaves reach either because its author removed
+// it or because they stopped sharing it with you, and the server sends a single
+// `recipeAvailable: false` for both — on purpose, because naming the second
+// cause would report an author's private visibility decision to a stranger.
+// This page used to label the row "recipe deleted", which was a guess: for a
+// withdrawn recipe it was simply false, and for a removed one it taught users
+// to read the badge as a fact about the author. Say only that you cannot open
+// it.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CSSProperties } from 'react'
@@ -93,7 +103,7 @@ function CookRow({ row, last }: { row: CookLogEntry; last: boolean }) {
         <span style={when}>{longDate(row.cookedAt)}</span>
         {row.note && <span style={note}>“{row.note}”</span>}
       </div>
-      {!row.recipeAvailable && <span style={gone}>recipe deleted</span>}
+      {!row.recipeAvailable && <span style={gone}>unavailable</span>}
     </>
   )
 
@@ -102,7 +112,7 @@ function CookRow({ row, last }: { row: CookLogEntry; last: boolean }) {
     ...(last ? null : { borderBottom: '1px solid var(--hair)' }),
   }
 
-  // A dish that no longer exists is still a fact about your week; it just has
+  // A dish you can no longer open is still a fact about your week; it just has
   // nowhere to link to.
   return row.recipeAvailable ? (
     <Link to={`/recipes/${row.recipeId}`} style={{ ...style, textDecoration: 'none' }}>

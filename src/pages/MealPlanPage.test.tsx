@@ -256,6 +256,36 @@ describe('/plan — the planning front door', () => {
     expect(screen.getByText('All 34 cooks ›')).toHaveAttribute('href', '/plan/cooks')
   })
 
+  it('will not offer to re-cook a dish the caller can no longer open', async () => {
+    stubPlan()
+    stubCookLog({
+      latest: {
+        latest: {
+          id: 'c9',
+          recipeId: 'r-pide',
+          recipeTitle: 'Pide with minced lamb',
+          mealPlanEntryId: null,
+          cookedAt: '2026-08-07T19:00:00.000Z',
+          note: null,
+          recipeAvailable: false,
+        },
+        totalCount: 1,
+      },
+    })
+    renderRoute('/plan')
+
+    // The record survives the recipe leaving reach — that is the whole of
+    // ADR-0001 — so the card still renders from the snapshotted title and the
+    // note stays writable.
+    expect(await screen.findByText('Pide with minced lamb')).toBeInTheDocument()
+    expect(screen.getByLabelText('Note about this cook')).toBeEnabled()
+
+    // But planning it again needs the recipe's content, which is gone. Pressing
+    // this used to 404: POST /meal-plans/{id}/entries applies the same
+    // visibility policy the cook log now reads through.
+    expect(screen.getByRole('button', { name: 'Cook it again ›' })).toBeDisabled()
+  })
+
   it('saves a note without touching the rating when the stars were not moved', async () => {
     const patch = vi
       .spyOn(cookLogApi, 'updateCookNote')

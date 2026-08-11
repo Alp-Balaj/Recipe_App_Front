@@ -30,15 +30,22 @@ export interface CookLogEntry {
    * join. It is what keeps a cook readable after its recipe is soft-deleted.
    */
   recipeTitle: string
-  /** Null when the recipe has no photo, and also once it is gone. */
+  /** Null when the recipe has no photo, and also once it is unavailable. */
   recipeImageUrl?: string | null
   /** The plan slot this cook satisfied; null for an ad-hoc cook. */
   mealPlanEntryId?: string | null
   cookedAt: string
   note?: string | null
   /**
-   * False once the recipe no longer exists. The row still renders; the client
-   * must not offer to open or re-cook a dish that is gone.
+   * "Can I open this recipe?" — NOT "does it still exist". False both when the
+   * author removed it and when they stopped sharing it with this reader
+   * (backend KAN-2). The row still renders from `recipeTitle` and its note
+   * stays editable; the client must not offer to open or re-cook it.
+   *
+   * There is deliberately no second field naming WHICH cause, and the client
+   * must not try to infer one: saying "deleted" about a recipe the author
+   * merely made private reports that author's visibility decision to a
+   * stranger. Copy says "unavailable" and stops there.
    */
   recipeAvailable: boolean
 }

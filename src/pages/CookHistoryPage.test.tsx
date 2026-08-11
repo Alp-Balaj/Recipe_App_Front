@@ -34,7 +34,7 @@ describe('/plan/cooks', () => {
     expect(screen.getByText('“dough needs a longer rest”')).toBeInTheDocument()
   })
 
-  it('keeps a deleted recipe’s cook readable, but not clickable', async () => {
+  it('keeps an unavailable recipe’s cook readable, but not clickable', async () => {
     vi.spyOn(cookLogApi, 'getCookLog').mockResolvedValue({
       items: [cook({ recipeAvailable: false })],
       nextCursor: null,
@@ -43,10 +43,28 @@ describe('/plan/cooks', () => {
     renderRoute('/plan/cooks')
 
     // The snapshotted title is the whole reason that column exists: an author
-    // deleting a recipe must not delete YOUR record of having cooked it.
+    // withdrawing a recipe must not withdraw YOUR record of having cooked it.
     expect(await screen.findByText('Pide with minced lamb')).toBeInTheDocument()
-    expect(screen.getByText('recipe deleted')).toBeInTheDocument()
+    expect(screen.getByText('unavailable')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Pide/ })).not.toBeInTheDocument()
+  })
+
+  it('never names why a recipe went away', async () => {
+    vi.spyOn(cookLogApi, 'getCookLog').mockResolvedValue({
+      items: [cook({ recipeAvailable: false })],
+      nextCursor: null,
+    })
+
+    renderRoute('/plan/cooks')
+
+    await screen.findByText('Pide with minced lamb')
+
+    // Unavailable is ONE state (design D14). The server deliberately sends a single
+    // flag for "removed" and "no longer shared with you", so any copy here that
+    // picks one of them is either a guess or — worse, when it guesses right —
+    // reporting an author's private visibility decision to a stranger, which
+    // ADR-0001 calls out as the leak itself.
+    expect(screen.queryByText(/deleted|removed|private|hidden|unshared/i)).not.toBeInTheDocument()
   })
 
   it('links a cook whose recipe still exists', async () => {

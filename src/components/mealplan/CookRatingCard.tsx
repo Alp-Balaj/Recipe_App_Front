@@ -78,7 +78,7 @@ export default function CookRatingCard({
           role="presentation"
         />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {/* The snapshotted title, so this still reads after the recipe is gone. */}
+          {/* The snapshotted title, so this still reads after the recipe leaves reach. */}
           <span style={dishTitle}>{cook.recipeTitle}</span>
           <span style={cookedWhen}>cooked {whenPhrase(cook.cookedAt)}</span>
         </div>
@@ -133,7 +133,10 @@ export default function CookRatingCard({
           type="button"
           onClick={onCookAgain}
           disabled={cookAgainPending || !cook.recipeAvailable}
-          // A dish whose recipe is gone can be remembered but not re-planned.
+          // A dish you can no longer open can be remembered but not re-planned:
+          // repeating it POSTs a plan entry, which the server gates on the same
+          // visibility recipeAvailable now reports (KAN-2). The tooltip names no
+          // cause — removed and no-longer-shared are one state (design D14).
           title={cook.recipeAvailable ? undefined : 'This recipe is no longer available.'}
           style={cookAgain}
         >
