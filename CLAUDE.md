@@ -2,6 +2,27 @@
 
 React 18 + Vite 5 + TypeScript (strict) + Tailwind 3. Import alias `@` → `src/`.
 
+## Agent skills
+
+### Issue tracker
+
+Jira Cloud space `KAN` on `alpbalaj1203.atlassian.net`, label `frontend`,
+reached through the Atlassian MCP server (configured in `.mcp.json`, so a fresh
+clone only has to authenticate). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, as Jira labels under their default names.
+See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+The glossary is `CONTEXT.md` and the decisions are `docs/adr/` — both in the
+**sibling `Recipe_App_Back` checkout**, not this repo. They are deliberately
+not duplicated here: `CONTEXT.md` opens by naming itself the domain shared by
+both repos, and two copies of a ubiquitous language drift, which is the one
+thing a shared vocabulary cannot survive. See `docs/agents/domain.md`.
+
 ## npm scripts
 
 - `npm run dev` — Vite dev server (default port 5173)
@@ -81,21 +102,35 @@ page, never above `ThemeRoot`/`AppShell`: higher up it would unmount the layout
 on every navigation and reset `ThemeRoot`'s `mode` state, strobing dark mode
 back to light on every click.
 
+The table below is the whole of `src/router.tsx` as it stands, in file order.
+`src/routeChunks.test.ts` asserts the page count (**28**) on purpose, so an
+additive route bumps that number deliberately rather than by accident.
+
 | Route | Page file | Filled by |
 |---|---|---|
 | /login | `LoginPage.tsx` | checkpoint 02 |
 | /register | `RegisterPage.tsx` | checkpoint 02 |
+| /welcome | `OnboardingPage.tsx` | stream K (onboarding) |
+| /feed | `FeedPage.tsx` | social-feed |
+| /users/:id | `UserProfilePage.tsx` | social-feed |
+| /users/:id/followers | `FollowListPage.tsx` | social-feed cp2 (one page, reads its kind off the pathname) |
+| /users/:id/following | `FollowListPage.tsx` | social-feed cp2 (same page) |
 | /chat | `ChatPage.tsx` | lane C (07/08) |
-| /discover | `BrowsePage.tsx` | lane A (04) |
-| /profile | `ProfilePage.tsx` | checkpoint 02 (real username/logout) |
-| /recipes/new | `RecipeFormPage.tsx` | lane B (05) |
-| /recipes/mine | `MyRecipesPage.tsx` | lane B (06) |
-| /recipes/:id | `RecipeDetailPage.tsx` | lane A (03) |
+| /chat/:conversationId | `ChatPage.tsx` | lane C (07/08) |
+| /discover | `BrowsePage.tsx` | lane A (04), rebuilt editorial by the Discover/Scan redesign |
 | /plan | `MealPlanPage.tsx` | plan-page redesign (front door; renders `MealPlanMonthPage` for `?m=` and below 1024px) |
-| /plan/cooks | `CookHistoryPage.tsx` | plan-page redesign (the cook log's history) |
 | /plan/week/:start | `MealPlanWeekPage.tsx` | meal-planning-ui, rehomed by the redesign, rebuilt days-as-rows by the week/shopping rework |
+| /plan/cooks | `CookHistoryPage.tsx` | plan-page redesign (the cook log's history) |
 | /plan/:date | `MealPlanDayPage.tsx` | meal-plan redesign (one day) |
 | /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui, rewritten by the week/shopping rework (per-week projection + mark overlay) |
+| /scan | `FoodScanPage.tsx` | stream N (food scanner), reshaped as a guided flow by the Discover/Scan redesign |
+| /admin | `AdminLayout` + tabs | moderation; the subtree is `reports`, `users`, `users/:id`, `recipes/:id`, `events` |
+| /notifications | `NotificationsPage.tsx` | stream A (notifications) |
+| /profile | `ProfilePage.tsx` | checkpoint 02 (real username/logout) |
+| /recipes/new | `RecipeFormPage.tsx` | lane B (05) |
+| /recipes/import | `RecipeImportPage.tsx` | stream L (import) |
+| /recipes/mine | `MyRecipesPage.tsx` | lane B (06) |
+| /recipes/:id | `RecipeDetailPage.tsx` | lane A (03) |
 | / and unknown | redirect → /discover | — |
 
 The Plan tab lands on `/plan`. Since the plan-page redesign that is the
