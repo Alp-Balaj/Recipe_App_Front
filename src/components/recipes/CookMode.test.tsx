@@ -436,6 +436,20 @@ describe('CookMode — finishing', () => {
     expect(onRate).toHaveBeenCalledWith(4)
   })
 
+  it('retracts through the same action when the given star is tapped again', async () => {
+    server.use(http.post('*/recipes/:id/cooked', () => HttpResponse.json(cooked)))
+
+    const onRate = vi.fn()
+    renderCookMode({ onRate, myRating: 4 })
+    await walkToFinish()
+
+    await userEvent.click(await screen.findByLabelText('Remove your 4-star rating'))
+    // Null means "no rating", and the page turns that into the rating-only
+    // clear (KAN-12). This surface must not grow a delete path of its own: the
+    // one it used to reach erased every cook of the dish, notes included.
+    expect(onRate).toHaveBeenCalledWith(null)
+  })
+
   it('D18: a failed log holds the panel open with a retry', async () => {
     let attempts = 0
     server.use(

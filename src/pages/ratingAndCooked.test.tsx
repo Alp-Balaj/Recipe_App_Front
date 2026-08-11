@@ -93,7 +93,7 @@ describe('the rating control', () => {
       http.put('*/recipes/:id/rating', async ({ request }) => {
         const body = (await request.json()) as { rating: number }
         sent.push(body.rating)
-        return HttpResponse.json({ recipeId: recipe.id, timesCooked: 0, rating: body.rating })
+        return HttpResponse.json({ recipeId: recipe.id, timesCooked: 0, rating: body.rating, cookedByMe: true })
       }),
     )
     renderRoute(`/recipes/${recipe.id}`)
@@ -106,20 +106,28 @@ describe('the rating control', () => {
     expect(await screen.findByText(/3\.0 from 2 ratings/)).toBeInTheDocument()
   })
 
-  it('retracts when the already-picked star is tapped again', async () => {
+  it('retracts when the already-picked star is tapped again — and takes only the rating (KAN-12)', async () => {
     const recipe = givenRecipe({ averageRating: 5, ratingCount: 1, myRating: 5, cookedByMe: true })
-    let deletes = 0
+    let ratingDeletes = 0
+    let cookedDeletes = 0
     server.use(
+      http.delete('*/recipes/:id/rating', () => {
+        ratingDeletes += 1
+        // The cooks survive, so the reply is the row that is LEFT, not a zeroed one.
+        return HttpResponse.json({ recipeId: recipe.id, timesCooked: 4, rating: null, cookedByMe: true })
+      }),
+      // Reaching this one instead would hard-delete four cooks and their notes.
       http.delete('*/recipes/:id/cooked', () => {
-        deletes += 1
-        return HttpResponse.json({ recipeId: recipe.id, timesCooked: 0, rating: null })
+        cookedDeletes += 1
+        return HttpResponse.json({ recipeId: recipe.id, timesCooked: 0, rating: null, cookedByMe: false })
       }),
     )
     renderRoute(`/recipes/${recipe.id}`)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Remove your 5-star rating' }))
 
-    await waitFor(() => expect(deletes).toBe(1))
+    await waitFor(() => expect(ratingDeletes).toBe(1))
+    expect(cookedDeletes).toBe(0)
     // The only rating is gone, so the average returns to unknown rather than 0.
     expect(await screen.findByText(/No ratings yet/)).toBeInTheDocument()
   })
