@@ -436,6 +436,37 @@ describe('CookMode — finishing', () => {
     expect(onRate).toHaveBeenCalledWith(4)
   })
 
+  it('KAN-7: will not send a rating before the cook it depends on has landed', async () => {
+    // The server refuses a rating with no cook behind it, so a star tapped while
+    // the cook is still in flight comes back a 409 and rolls off again with
+    // nothing on screen to explain it. A slow connection is exactly when a
+    // person taps early, so the window is widest when it hurts most.
+    let release: (() => void) | undefined
+    server.use(
+      http.post('*/recipes/:id/cooked', async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return HttpResponse.json(cooked)
+      }),
+    )
+
+    const onRate = vi.fn()
+    renderCookMode({ onRate })
+    await walkToFinish()
+
+    // Still in flight — the panel is up and the stars are on screen, which is
+    // the whole reason this is reachable rather than theoretical.
+    expect(screen.getByText('How did it go?')).toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Rate 4 out of 5'))
+    expect(onRate).not.toHaveBeenCalled()
+
+    release?.()
+    expect(await screen.findByText('Logged. How did it go?')).toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('Rate 4 out of 5'))
+    expect(onRate).toHaveBeenCalledWith(4)
+  })
+
   it('retracts through the same action when the given star is tapped again', async () => {
     server.use(http.post('*/recipes/:id/cooked', () => HttpResponse.json(cooked)))
 

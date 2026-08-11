@@ -21,6 +21,8 @@ import {
 } from './recipeVisuals'
 import RecipeInsights from '@/components/recipes/RecipeInsights'
 import CookMode from '@/components/recipes/CookMode'
+import TrackCookPrompt from '@/components/recipes/TrackCookPrompt'
+import { needsACookFirst } from '@/api/social'
 import { formatTemperature, label } from '@/api/vocabulary'
 import { sourceDomain } from '@/api/import'
 
@@ -43,6 +45,11 @@ export default function RecipeDetailPage() {
   const [cooking, setCooking] = useState(() => searchParams.get('cook') === '1')
   // stream D (governor): the report dialog for this recipe.
   const [reporting, setReporting] = useState(false)
+  // KAN-7: the star the reader tapped, held while they are asked for the cook
+  // it needs. Null means nothing is pending — the value is what makes this a
+  // held gesture rather than a flag, because the prompt has to finish the
+  // rating the user actually made, not re-ask for it.
+  const [ratingNeedingACook, setRatingNeedingACook] = useState<number | null>(null)
   // cp06: like/save via the decision-I3 envelope seam (feed-cache hits when
   // the reader arrived from /feed). F1 (decision recipe-social-envelope-
   // endpoint): when the caches can't answer — notably for the recipe's OWN
@@ -349,7 +356,25 @@ export default function RecipeDetailPage() {
             pending={setRating.isPending}
             onRate={(value) => {
               if (!requireAuth()) return
-              setRating.mutate({ recipeId: recipe.id, rating: value })
+              setRating.mutate(
+                { recipeId: recipe.id, rating: value },
+                {
+                  // KAN-7. The server refuses a rating with no cook of the
+                  // caller's own behind it, and that refusal is the ONE error
+                  // here with a next step: hold the star and go and ask for the
+                  // cook. The optimistic patch has already been rolled back by
+                  // the mutation's own onError, so the row the reader is looking
+                  // at is honest while they decide.
+                  //
+                  // `value !== null` is not defensive — a retract cannot be
+                  // refused this way, and treating a 409 on one as "track a
+                  // cook" would offer to CREATE a cook in answer to a gesture
+                  // that was taking something back.
+                  onError: (err) => {
+                    if (value !== null && needsACookFirst(err)) setRatingNeedingACook(value)
+                  },
+                },
+              )
             }}
           />
 
@@ -402,6 +427,27 @@ export default function RecipeDetailPage() {
           requireAuth={requireAuth}
           onExit={() => setCooking(false)}
           planEntryId={planEntryId}
+        />
+      )}
+
+      {/* KAN-7 — "You cooked this before? Track it." Rendered beside cook mode
+          rather than inside the rating row because it is a sheet over the page,
+          and because dismissing it must leave the row exactly as it was found:
+          no cook, no rating, nothing half-written. */}
+      {ratingNeedingACook !== null && (
+        <TrackCookPrompt
+          recipe={{ id: recipe.id, title: recipe.title }}
+          onClose={() => setRatingNeedingACook(null)}
+          onCooked={async () => {
+            // mutateAsync, and the prompt is cleared only AFTER it resolves: the
+            // cook is on the server by this point, so a rating that fails here
+            // leaves half a gesture done. Closing first would hide that behind a
+            // star that quietly rolled back, with the cook already recorded and
+            // nothing on screen admitting it. A rejection propagates, and the
+            // prompt's retry re-rates without logging a second cook.
+            await setRating.mutateAsync({ recipeId: recipe.id, rating: ratingNeedingACook })
+            setRatingNeedingACook(null)
+          }}
         />
       )}
 
