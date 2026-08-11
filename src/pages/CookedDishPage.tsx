@@ -30,6 +30,14 @@
 // "unavailable" is ONE state (design D14, ADR-0001): the server sends a single
 // flag for "removed" and "no longer shared with you" on purpose, because naming
 // the second reports an author's private visibility decision to a stranger.
+//
+// On a wide window this same component is the right-hand PANE of /cooked
+// (KAN-9), rendered through that route's outlet with the dish list still on
+// screen beside it. Everything below is unchanged in either shape except the two
+// things that only make sense as a whole screen: the back link (the list it
+// points at is right there — "no navigation between them") and the phone's top
+// padding. It reads the one shared breakpoint rather than taking a prop, so the
+// pane and its host cannot disagree about which shape they are in.
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CSSProperties } from 'react'
@@ -38,9 +46,11 @@ import { ApiError } from '@/api/client'
 import type { CookLogEntry } from '@/api/cookLog'
 import CookNote from '@/components/cooked/CookNote'
 import { cookDate, longDate, timesCooked } from '@/components/cooked/cookedFormats'
+import { COOKED_TWO_PANE } from '@/components/cooked/cookedLayout'
 import StateBlock from '@/components/ui/StateBlock'
 import { useCookedDish } from '@/hooks/useCookedDishes'
 import { useCookLogMutations, useDishCooks } from '@/hooks/useCookLog'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { resolveImageUrl } from '@/lib/images'
 import { gradientFor } from '@/pages/recipeVisuals'
 
@@ -52,6 +62,7 @@ function isMissing(error: unknown): boolean {
 export default function CookedDishPage() {
   const { recipeId = '' } = useParams<{ recipeId: string }>()
   const navigate = useNavigate()
+  const inPane = useMediaQuery(COOKED_TWO_PANE)
   const dish = useCookedDish(recipeId)
   const cooks = useDishCooks(recipeId)
   const { saveNote } = useCookLogMutations()
@@ -60,12 +71,17 @@ export default function CookedDishPage() {
   const detail = dish.data
 
   return (
-    <div className="scroll" style={page}>
+    <div className="scroll" style={inPane ? panePage : page}>
       <div style={canvas}>
         <header style={{ marginBottom: 18 }}>
-          <Link to="/cooked" style={back}>
-            ‹ Cooked
-          </Link>
+          {/* Whole-screen only. In the pane the list is already on screen, and
+              a link back to it would be navigation away from something the
+              reader can see — the one thing the two-pane view removes. */}
+          {!inPane && (
+            <Link to="/cooked" style={back}>
+              ‹ Cooked
+            </Link>
+          )}
           <h1 style={title}>{detail?.dish.title ?? 'This dish'}</h1>
           {detail && (
             <div style={subtitle}>
@@ -238,6 +254,17 @@ const page: CSSProperties = {
   overflowY: 'auto',
   overflowX: 'hidden',
   padding: '54px 18px 24px',
+}
+
+// The pane (KAN-9). Still absolutely positioned — it docks to the pane's own
+// `position: relative` box, so it scrolls independently of the list beside it.
+// The 54px above is room for the phone's status area, which a pane sitting
+// under the desktop shell does not have; it aligns with the list's own top
+// padding instead.
+const panePage: CSSProperties = {
+  ...page,
+  bottom: 0,
+  padding: '32px 24px 24px',
 }
 
 const canvas: CSSProperties = {

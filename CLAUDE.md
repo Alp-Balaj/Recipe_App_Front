@@ -62,6 +62,16 @@ prefix** (`/auth/*`, `/recipes/*` at the root). The Vite dev proxy bridges both:
 > `shoppingModel.ts` so the page's several counters cannot disagree.
 > `/shopping-list` is in AppShell's `isWidePage` list for the rail's sake.
 
+> **Scoped exception — `/cooked`** (KAN-9, the two-pane dish list). Adds **no**
+> palette tokens and no new page. Above **1180px** (`COOKED_TWO_PANE` in
+> `src/components/cooked/cookedLayout.ts` — one constant, read by both halves)
+> `CookedPage` is a layout: a 380px list pane beside `/cooked/:recipeId` in its
+> own scroller. Below it, nothing changes — the dish is its own screen, the list
+> is not even fetched. `/cooked` joins `/shopping-list` in AppShell's
+> `isWidePage` list to get the room; between 1024 and 1180px that only widens
+> the pane the page is centred in, since the page keeps its own 720px canvas.
+> Search is a **server** parameter (`?q=`), never a filter over loaded pages.
+
 - **Inline styles over CSS variables** — `var(--surface)`, `var(--surface2)`, `var(--accent)`, `var(--accent-ink)`, `var(--muted)`, `var(--border)`, `var(--cardsh)`, `var(--tagbg)`, `var(--chipbg)`, … defined per theme in `src/index.css`.
 - **Theming**: `data-mode="light|dark"` on the `.app-shell` root (owned by `src/components/ThemeRoot.tsx`); pages read `{ mode, setMode, toggleMode }` via `useOutletContext<ThemeContextValue>()`.
 - **Cards**: `background: var(--surface)`, `border: 1px solid var(--border)`, `boxShadow: var(--cardsh)`, borderRadius 18–22.
@@ -82,7 +92,11 @@ changed or reordered. `/feed`, `/users/:id`, `/chat/:conversationId`, `/plan`,
 way. Anything else in this file still stops and goes through an explicit
 reviewed commit — including **removals**: `/plan/week` was retired on
 2026-07-30 as one of those, once the Plan tab moved to `/plan` and nothing
-pointed at the redirect any more.
+pointed at the redirect any more — and **nesting**: `/admin` grew its tab
+subtree that way (2026-08-09), and KAN-9 made `/cooked/:recipeId` a child of
+`/cooked` (2026-08-11) so the dish list stays mounted beside the dish on a wide
+window. Neither added, removed or reordered a path; both changed the shape of
+entries that already existed, which is why neither was additive.
 
 **Pages are lazy — never import one statically** (stream F, 2026-08-05, a
 reviewed commit touching `router.tsx` and `AppShell.tsx`). Every page module is
@@ -103,8 +117,9 @@ on every navigation and reset `ThemeRoot`'s `mode` state, strobing dark mode
 back to light on every click.
 
 The table below is the whole of `src/router.tsx` as it stands, in file order.
-`src/routeChunks.test.ts` asserts the page count (**29**) on purpose, so an
-additive route bumps that number deliberately rather than by accident.
+`src/routeChunks.test.ts` asserts the page count (**30**) on purpose, so an
+additive route bumps that number deliberately rather than by accident. (Nesting
+an existing route under another does not: KAN-9 left it at 30.)
 
 | Route | Page file | Filled by |
 |---|---|---|
@@ -122,7 +137,8 @@ additive route bumps that number deliberately rather than by accident.
 | /plan/week/:start | `MealPlanWeekPage.tsx` | meal-planning-ui, rehomed by the redesign, rebuilt days-as-rows by the week/shopping rework |
 | /plan/cooks | `CookHistoryPage.tsx` | plan-page redesign (the cook log's history) |
 | /plan/:date | `MealPlanDayPage.tsx` | meal-plan redesign (one day) |
-| /cooked | `CookedPage.tsx` | KAN-4 (the dish collection; account-only, reached from the Profile tab and a link on /plan) |
+| /cooked | `CookedPage.tsx` | KAN-4 (the dish collection; account-only, reached from the Profile tab and a link on /plan). Since KAN-9 also the LAYOUT for the child below |
+| /cooked/:recipeId | `CookedDishPage.tsx` | KAN-5 (one dish's cooks and notes), nested under `/cooked` by KAN-9 — renders in the pane beside the list above 1180px, alone below it |
 | /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui, rewritten by the week/shopping rework (per-week projection + mark overlay) |
 | /scan | `FoodScanPage.tsx` | stream N (food scanner), reshaped as a guided flow by the Discover/Scan redesign |
 | /admin | `AdminLayout` + tabs | moderation; the subtree is `reports`, `users`, `users/:id`, `recipes/:id`, `events` |

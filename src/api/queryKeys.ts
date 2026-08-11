@@ -134,8 +134,14 @@ export const queryKeys = {
   cooked: {
     /** Everything Cooked-related — the invalidation prefix after a cook or a rating. */
     all: ['cooked'] as const,
+    // KAN-9: the search term is PART of the key, exactly as it is for the follow
+    // lists above. Search is server-side, so "the dishes" and "the dishes matching
+    // stew" are two different reads with two different cursors — sharing one key
+    // would append a filtered page onto an unfiltered one and page the union of
+    // them. Defaulted, so `list()` is still the unfiltered list, and both spellings
+    // stay under the `all` prefix every cook/rating invalidation uses.
     /** GET /users/me/cooked-recipes — the dish list (useInfiniteQuery, /cooked). */
-    list: () => ['cooked', 'list'] as const,
+    list: (q = '') => ['cooked', 'list', q] as const,
     // KAN-5. Under the same `all` prefix as the list on purpose: a cook or a
     // rating changes both the row and the header, and one invalidation should
     // reach both.

@@ -6,6 +6,11 @@
 // render, so a page CAN come back shorter than the page size with more behind
 // it — deriving "there is more" from `items.length === PAGE_SIZE` would hide
 // the tail of such a list.
+//
+// `q` (KAN-9) is a server parameter, sent with EVERY page and carried in the
+// query key. It is never a filter over the pages already loaded: the collection
+// is keyset-paged, so a client-side filter would answer for the pages in hand
+// and quietly report nothing for a dish the reader definitely cooked.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
@@ -15,11 +20,11 @@ import { getCookedDish, getCookedDishes } from '@/api/cooked'
 /** Rows per page. Backend default is 20, clamped to 50. */
 export const COOKED_PAGE_SIZE = 20
 
-export function useCookedDishes(enabled = true) {
+export function useCookedDishes(q = '', enabled = true) {
   return useInfiniteQuery({
-    queryKey: queryKeys.cooked.list(),
+    queryKey: queryKeys.cooked.list(q),
     queryFn: ({ pageParam, signal }) =>
-      getCookedDishes({ cursor: pageParam, limit: COOKED_PAGE_SIZE, signal }),
+      getCookedDishes({ cursor: pageParam, limit: COOKED_PAGE_SIZE, q: q || undefined, signal }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled,
