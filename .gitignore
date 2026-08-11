@@ -1,5 +1,10 @@
 # Dependencies
-node_modules/
+# No trailing slash, deliberately. `node_modules/` matches a DIRECTORY only, and
+# parallel-work git worktrees symlink this to the main checkout's copy rather
+# than paying npm ci per tree — a symlink git then reported as untracked, one
+# `git add -A` away from committing an absolute path that resolves on exactly
+# one machine.
+node_modules
 
 # Build output
 dist/
