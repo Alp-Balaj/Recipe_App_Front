@@ -18,6 +18,7 @@ import {
   uncookEntry,
   updateCookNote,
   type CookLogEntry,
+  type PastCookFields,
 } from '@/api/cookLog'
 
 /** The newest cook + the lifetime total — everything /plan's §3 card renders. */
@@ -99,10 +100,20 @@ export function useCookLogMutations() {
   // panel and MealCard's "I cooked this" both call through this mutation, and
   // a paused-offline mutation with no resume leaves the user believing they
   // logged a cook that never landed, with no error and no retry offered.
+  //
+  // KAN-6's backdated cook goes through THIS mutation rather than a second one,
+  // and the reset above is why that matters rather than being tidiness: a cook
+  // dated two years ago changes TimesCooked, FirstCookedAt and possibly the
+  // dish's note without moving LastCookedAt at all. A dish that stays put is the
+  // case a narrower cache update is most likely to miss, because nothing about
+  // the list's ORDER changed to make the staleness visible.
   const log = useMutation({
     networkMode: 'always',
-    mutationFn: (vars: { recipeId: string; mealPlanEntryId?: string | null }) =>
-      logCook(vars.recipeId, vars.mealPlanEntryId),
+    mutationFn: (vars: {
+      recipeId: string
+      mealPlanEntryId?: string | null
+      past?: PastCookFields
+    }) => logCook(vars.recipeId, vars.mealPlanEntryId, vars.past),
     onSuccess: invalidate,
   })
 

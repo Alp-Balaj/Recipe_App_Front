@@ -36,7 +36,14 @@ interface Props {
   /** The question this picker answers, e.g. "What's for Wednesday dinner?". */
   question: string
   subtitle?: string
-  onPick: (recipeId: string) => void
+  /**
+   * The chosen recipe. The second argument is ADDITIVE (KAN-6) and every caller
+   * before it ignores it: the planner places by id and re-reads the plan, but
+   * "Add a cook" has to NAME the dish in its next step, and the row the user
+   * just tapped already carries the title — asking the server for it again
+   * would be a round trip to learn something that was on screen.
+   */
+  onPick: (recipeId: string, recipe: PickerRecipe) => void
   onClose?: () => void
   /**
    * recipeId → where it already sits this week ("Tue", "Tue, Thu"). A warning,
@@ -51,6 +58,23 @@ interface Props {
   alreadyNeeded?: ReadonlySet<string>
   /** Where fill mode goes after this placement, e.g. "then: Thu →". */
   nextHint?: string
+  /**
+   * Label and placeholder for the search field. ADDITIVE (KAN-6), defaulting to
+   * what every planner caller already showed. "Add a cook" overrides it because
+   * the corpus it cares about is All — telling that user they are searching
+   * "your recipes" would describe the one lens their dish is least likely to be
+   * in, and the picker not being saved-only is the point of it being here.
+   */
+  searchLabel?: string
+  /**
+   * Which lens to open on, overriding the corpus-led default below. ADDITIVE
+   * (KAN-6): the planner's default leads with what you have cooked or planned
+   * before, which is right when you are choosing what to eat next. "Add a cook"
+   * wants the opposite — the dish it exists to capture is the one your personal
+   * lenses do NOT have, so opening on a personal segment would hide it behind a
+   * tab the user has to notice.
+   */
+  defaultSegment?: PickerSegment
   /** 'panel' fills its docked column; 'sheet' sits inside a Modal. */
   variant?: 'panel' | 'sheet'
 }
@@ -70,6 +94,8 @@ export default function PickerContent({
   plannedDays,
   alreadyNeeded,
   nextHint,
+  searchLabel = 'Search your recipes',
+  defaultSegment,
   variant = 'sheet',
 }: Props) {
   const { user } = useAuth()
@@ -86,6 +112,7 @@ export default function PickerContent({
   // what you've cooked, fall through to All for someone with no history yet.
   const segment: PickerSegment =
     chosen ??
+    defaultSegment ??
     (corpus.counts.again > 0
       ? 'again'
       : corpus.counts.saved > 0
@@ -133,7 +160,7 @@ export default function PickerContent({
       setCursor((c) => Math.max(c - 1, 0))
     } else if (event.key === 'Enter' && results[activeIndex]) {
       event.preventDefault()
-      onPick(results[activeIndex].id)
+      onPick(results[activeIndex].id, results[activeIndex])
     }
   }
 
@@ -162,8 +189,8 @@ export default function PickerContent({
         // the picker's primary control; opening it and typing is the fast path.
         autoFocus
         value={query}
-        aria-label="Search your recipes"
-        placeholder="Search your recipes"
+        aria-label={searchLabel}
+        placeholder={searchLabel}
         style={searchInput}
         onChange={(e) => {
           setQuery(e.target.value)
@@ -221,7 +248,7 @@ export default function PickerContent({
               active={index === activeIndex}
               plannedOn={plannedDays?.get(recipe.id)}
               alreadyNeeded={alreadyNeeded}
-              onPick={() => onPick(recipe.id)}
+              onPick={() => onPick(recipe.id, recipe)}
             />
           ))}
 
