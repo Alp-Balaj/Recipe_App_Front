@@ -103,7 +103,7 @@ on every navigation and reset `ThemeRoot`'s `mode` state, strobing dark mode
 back to light on every click.
 
 The table below is the whole of `src/router.tsx` as it stands, in file order.
-`src/routeChunks.test.ts` asserts the page count (**28**) on purpose, so an
+`src/routeChunks.test.ts` asserts the page count (**29**) on purpose, so an
 additive route bumps that number deliberately rather than by accident.
 
 | Route | Page file | Filled by |
@@ -122,6 +122,7 @@ additive route bumps that number deliberately rather than by accident.
 | /plan/week/:start | `MealPlanWeekPage.tsx` | meal-planning-ui, rehomed by the redesign, rebuilt days-as-rows by the week/shopping rework |
 | /plan/cooks | `CookHistoryPage.tsx` | plan-page redesign (the cook log's history) |
 | /plan/:date | `MealPlanDayPage.tsx` | meal-plan redesign (one day) |
+| /cooked | `CookedPage.tsx` | KAN-4 (the dish collection; account-only, reached from the Profile tab and a link on /plan) |
 | /shopping-list | `ShoppingListPage.tsx` | meal-planning-ui, rewritten by the week/shopping rework (per-week projection + mark overlay) |
 | /scan | `FoodScanPage.tsx` | stream N (food scanner), reshaped as a guided flow by the Discover/Scan redesign |
 | /admin | `AdminLayout` + tabs | moderation; the subtree is `reports`, `users`, `users/:id`, `recipes/:id`, `events` |

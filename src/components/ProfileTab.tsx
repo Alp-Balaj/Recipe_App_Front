@@ -28,6 +28,7 @@ import { deriveBadges, earnedBadgeCount, type ProfileBadge } from '@/lib/profile
 import { gradientFor } from '@/pages/recipeVisuals'
 import type { Mode } from './ThemeRoot'
 import ProfileActivityTab from './profile/ProfileActivityTab'
+import ProfileCookedTab from './profile/ProfileCookedTab'
 import ProfileRecipesTab from './profile/ProfileRecipesTab'
 import ProfileSavedTab from './profile/ProfileSavedTab'
 import SettingsView from './profile/SettingsView'
@@ -37,11 +38,16 @@ interface Props {
   onSetMode: (mode: Mode) => void
 }
 
-type ContentTab = 'recipes' | 'saved' | 'activity'
+// KAN-4 (design D16) adds 'cooked' — the fourth tab. It sits between Saved and
+// Activity because the first three are all collections the user keeps ABOUT
+// themselves (what they wrote, what they bookmarked, what they made) and
+// Activity is the odd one out: a derived stream rather than a collection.
+type ContentTab = 'recipes' | 'saved' | 'cooked' | 'activity'
 
 const TABS: { id: ContentTab; label: string }[] = [
   { id: 'recipes', label: '▦ Recipes' },
   { id: 'saved', label: '⚑ Saved' },
+  { id: 'cooked', label: '◍ Cooked' },
   { id: 'activity', label: '⟳ Activity' },
 ]
 
@@ -100,6 +106,8 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
         return <ProfileRecipesTab columns={columns} />
       case 'saved':
         return <ProfileSavedTab />
+      case 'cooked':
+        return <ProfileCookedTab />
       case 'activity':
         return <ProfileActivityTab />
     }

@@ -419,6 +419,16 @@ export function useSocialMutations() {
 
       return { snapshot }
     },
+    // KAN-4: Cooked shows this rating on its row, and the retraction branch
+    // (rating === null → clearCooked) deletes the dish outright.
+    //
+    // RESET, not invalidate — see the note in useCookLog.ts. Removing a row
+    // shifts every later page by one, and invalidate would refetch each page
+    // from the cursor it was originally fetched with, silently dropping the
+    // dish that slid across the boundary.
+    onSettled: () => {
+      void queryClient.resetQueries({ queryKey: queryKeys.cooked.all })
+    },
     onError: (_err, _vars, context) => {
       if (context) restoreCaches(queryClient, context.snapshot)
     },
@@ -454,6 +464,12 @@ export function useSocialMutations() {
       patchEnvelopeCache(queryClient, recipeId, (env) =>
         env.cookedByMe === true ? env : { ...env, cookedByMe: true },
       )
+      // KAN-4: this is the gesture that puts a dish INTO Cooked, or moves it
+      // back to the top and bumps its count. Nothing in the caches above holds
+      // a dish row, so there is nothing to patch. Reset rather than invalidate —
+      // this is the gesture that MOVES a dish, which is exactly what the note in
+      // useCookLog.ts is about.
+      void queryClient.resetQueries({ queryKey: queryKeys.cooked.all })
     },
   })
 

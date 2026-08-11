@@ -23,6 +23,7 @@ import {
   AdminEventsTab,
   BrowsePage,
   ChatPage,
+  CookedPage,
   CookHistoryPage,
   FeedPage,
   FollowListPage,
@@ -121,6 +122,14 @@ export const routes: RouteObject[] = [
           // date, so neither shadows the other.
           { path: '/plan/cooks', element: page(CookHistoryPage) },
           { path: '/plan/:date', element: page(MealPlanDayPage) },
+          // Cooked (KAN-4) — SANCTIONED ADDITIVE route registration, exactly
+          // how /plan/cooks landed: a NEW path pointing at a NEW page, nothing
+          // existing changed or reordered. Deliberately NOT under /plan — the
+          // dish collection is not a planning surface, it is reached from the
+          // Profile tab and from a link on /plan. Not in navItems.ts either:
+          // the bottom bar is full, and the nav restructure that would free a
+          // slot for it is a separate piece of work.
+          { path: '/cooked', element: page(CookedPage) },
           { path: '/shopping-list', element: page(ShoppingListPage) },
           // Stream N (food scanner) — SANCTIONED ADDITIVE route registration,
           // same discipline as the additive routes above. Not in navItems.ts:

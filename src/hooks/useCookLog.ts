@@ -48,11 +48,25 @@ export function useCookLogMutations() {
   //
   // `queryKeys.shopping.all` is the PREFIX every scoped week key is built from — see
   // queryKeys.shopping.week(). Aiming at anything narrower would miss the scope=All view.
+  //
+  // KAN-4 adds a fifth, and it is the ONE that must be RESET rather than
+  // invalidated. Cooked is keyed on (LastCookedAt, RecipeId) and a cook CHANGES
+  // LastCookedAt — unlike every other keyset list in this app, whose sort key
+  // (SavedAt, CreatedAt) is written once and never moves.
+  //
+  // Invalidate refetches each loaded page from the cursor it was originally
+  // fetched with. Move a dish to the top and every later page shifts by one, so
+  // the dish that slid across a page boundary is fetched by neither: with pages
+  // [A,B] and [C,D], cooking D re-reads page 1 as [D,A] and page 2 from the
+  // stored cursor(B) as [C] — B is simply gone from the list until a remount.
+  // Reset drops the stored cursors and starts again from page 1, which is also
+  // where the just-cooked dish now is.
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.cookLog.all })
     void queryClient.invalidateQueries({ queryKey: queryKeys.feed.all })
     void queryClient.invalidateQueries({ queryKey: queryKeys.mealPlans.all })
     void queryClient.invalidateQueries({ queryKey: queryKeys.shopping.all })
+    void queryClient.resetQueries({ queryKey: queryKeys.cooked.all })
   }
 
   /**
@@ -110,6 +124,16 @@ export function useCookLogMutations() {
     onSuccess: (updated: CookLogEntry) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.cookLog.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.mealPlans.all })
+      // KAN-4, on the same terms as the plan cache above: no counter moved, but
+      // Cooked's row shows the dish's latest NON-EMPTY note, so writing one —
+      // or clearing one, which promotes the note before it — changes what this
+      // read says.
+      //
+      // Invalidate, NOT the reset the cook paths use: annotating a cook moves no
+      // dish and adds no row, so every stored cursor still points where it did.
+      // Resetting here would throw away a reader's loaded pages for a change of
+      // text on a row they can already see.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.cooked.all })
       return updated
     },
   })

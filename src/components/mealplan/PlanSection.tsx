@@ -28,7 +28,13 @@ export default function PlanSection({ index, title, meta, action, children }: Pr
         <span style={numeral}>№{index}</span>
         <h2 style={titleStyle}>{title}</h2>
         {meta && <span style={metaStyle}>{meta}</span>}
-        {action && <span style={{ marginLeft: 'auto', flexShrink: 0 }}>{action}</span>}
+        {/* KAN-4 relaxed flexShrink: 0 → minWidth: 0. §3 now carries TWO links
+            ("Cooked ›" and "All N cooks ›"), which an unshrinkable action makes
+            about 350px of fixed content — wider than a 320px phone, pushing the
+            row off-screen. Shrinkable, the pair wraps instead. The single-link
+            sections are unaffected: nothing shrinks unless the row runs out of
+            room, and their one short link never does. */}
+        {action && <span style={{ marginLeft: 'auto', minWidth: 0 }}>{action}</span>}
       </div>
       {children}
     </section>

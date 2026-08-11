@@ -122,6 +122,21 @@ export const queryKeys = {
     /** GET /users/me/saved-recipes — the profile Saved tab (useInfiniteQuery). */
     list: () => ['saved', 'list'] as const,
   },
+  // Cooked (KAN-4) — SANCTIONED ADDITIVE EDIT to this frozen module, same rationale
+  // as the blocks around it. Nothing already here changed.
+  //
+  // Shaped like `saved` above because the two are siblings: a per-user collection
+  // read one keyset page at a time. Deliberately NOT under `cookLog`, even though
+  // both are about cooking — a cook write invalidates `cookLog.all`, and a dish row
+  // is a different shape from a cook row, so folding them together would hand a
+  // future patcher two shapes under one prefix. That is exactly the assumption the
+  // feed redesign's cache-key bug was built on.
+  cooked: {
+    /** Everything Cooked-related — the invalidation prefix after a cook or a rating. */
+    all: ['cooked'] as const,
+    /** GET /users/me/cooked-recipes — the dish list (useInfiniteQuery, /cooked). */
+    list: () => ['cooked', 'list'] as const,
+  },
   social: {
     /** All per-recipe social envelopes (the decision-I3 seam for non-feed surfaces). */
     envelopes: ['social', 'envelope'] as const,

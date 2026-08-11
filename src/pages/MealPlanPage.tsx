@@ -371,12 +371,22 @@ function LastCookSection() {
     <PlanSection
       index={3}
       title="How did it go?"
+      // Two destinations, and the pair is the point (KAN-4, design D16). Cooked
+      // is the DISH collection — one row per recipe, with its rating and last
+      // note — and is always offered, because it is where this section's whole
+      // purpose accumulates. "All N cooks" is the same cooking as a time-ordered
+      // log, and only appears once there is a log to open.
       action={
-        latest.data && latest.data.totalCount > 0 ? (
-          <Link to="/plan/cooks" style={sectionLink}>
-            All {latest.data.totalCount} {latest.data.totalCount === 1 ? 'cook' : 'cooks'} ›
+        <span style={sectionLinks}>
+          <Link to="/cooked" style={sectionLink}>
+            Cooked ›
           </Link>
-        ) : undefined
+          {latest.data && latest.data.totalCount > 0 && (
+            <Link to="/plan/cooks" style={sectionLink}>
+              All {latest.data.totalCount} {latest.data.totalCount === 1 ? 'cook' : 'cooks'} ›
+            </Link>
+          )}
+        </span>
       }
     >
       {latest.isLoading ? (
@@ -560,6 +570,20 @@ const sectionLink: CSSProperties = {
   fontWeight: 700,
   color: 'var(--accent)',
   textDecoration: 'none',
+}
+
+// KAN-4: the §3 heading now carries two links. flex rather than two bare
+// siblings so they keep an even gap, and wrapping + right-alignment so the pair
+// stacks on a narrow phone instead of pushing the heading off-screen — see the
+// note beside PlanSection's action span, which had to stop being flexShrink: 0
+// for this to be able to happen at all.
+const sectionLinks: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  justifyContent: 'flex-end',
+  alignItems: 'baseline',
+  columnGap: 14,
+  rowGap: 4,
 }
 
 const denominator: CSSProperties = {

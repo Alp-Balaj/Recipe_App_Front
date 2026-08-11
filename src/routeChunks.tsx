@@ -49,6 +49,9 @@ export const MealPlanMonthPage = lazy(() => import('./pages/MealPlanMonthPage'))
 // it FROM HERE so the calendar keeps its own chunk.
 export const MealPlanPage = lazy(() => import('./pages/MealPlanPage'))
 export const CookHistoryPage = lazy(() => import('./pages/CookHistoryPage'))
+// Cooked (KAN-4) — the dish list. Beside CookHistoryPage rather than replacing
+// it: /plan/cooks is the same cooking in time order and stays.
+export const CookedPage = lazy(() => import('./pages/CookedPage'))
 export const MealPlanDayPage = lazy(() => import('./pages/MealPlanDayPage'))
 export const ShoppingListPage = lazy(() => import('./pages/ShoppingListPage'))
 export const FoodScanPage = lazy(() => import('./pages/FoodScanPage'))

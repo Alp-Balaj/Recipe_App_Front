@@ -60,7 +60,13 @@ export function requiresAuth(pathname: string): boolean {
     // open-loops slice 3: notifications are inherently account-only — every
     // endpoint behind this route is caller-scoped, so a guest deep-linking it
     // would otherwise render an empty page against three 401s.
-    pathname === '/notifications'
+    pathname === '/notifications' ||
+    // Cooked (KAN-4): a private collection of the caller's own dishes, so its
+    // one endpoint is caller-scoped and answers 401 to a guest. Without this
+    // line a guest deep-linking /cooked would get "Couldn't load your dishes"
+    // — a bug that reads as a broken page rather than as a sign-in prompt, and
+    // exactly the one /plan/cooks still has.
+    pathname === '/cooked'
   )
 }
 
