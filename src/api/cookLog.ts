@@ -69,17 +69,75 @@ export interface CookLogLatest {
 }
 
 /**
+ * A cook that already happened, being recorded after the fact (KAN-6).
+ *
+ * `cookedAt` is a DAY, not a moment — see `middayUtc`, which is the only
+ * supported way to build it. The server keeps its date, stores the row at
+ * midday UTC, and rejects a date in the future or from before the caller's
+ * account existed with a 400 keyed on `cookedAt`.
+ *
+ * Omit it entirely and the cook is stamped "now", which is what every caller
+ * before KAN-6 meant and still means.
+ */
+export interface PastCookFields {
+  cookedAt?: string
+  note?: string | null
+}
+
+/**
+ * The chosen day as midday UTC — the ONE correct way to turn a `<input
+ * type="date">` value into this endpoint's `cookedAt`.
+ *
+ * `new Date('2026-03-05').toISOString()` is midnight UTC, and
+ * `new Date(2026, 2, 5).toISOString()` is midnight LOCAL expressed in UTC —
+ * which is 2026-03-04T23:00Z for anyone east of Greenwich. Both hand the server
+ * a date the user did not pick, in the direction that files last night's dinner
+ * under the day before. Midday has twelve hours of clearance either way, so it
+ * reads back on the chosen day for every offset from UTC-12 to UTC+11.
+ *
+ * Not for UTC+12 and east of it, where a locally-formatted render lands on the
+ * following day — see ADR-0003 for why no stored hour fixes that (inhabited
+ * offsets span 25 hours) and what actually would.
+ *
+ * Takes the `YYYY-MM-DD` string a date input produces, not a Date, because a
+ * Date has already committed to a timezone and this function's whole job is to
+ * not do that.
+ */
+export function middayUtc(isoDay: string): string {
+  const [year, month, day] = isoDay.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toISOString()
+}
+
+/**
  * Logs a cook. Pass `mealPlanEntryId` when the gesture happened on a plan
  * surface — that link is what a later slice reads to decide which planned
  * meals are done, and it cannot be recovered afterwards.
  *
  * This also bumps the per-recipe cooked count server-side, so callers must NOT
  * additionally fire markCooked() from api/social.ts — that would count twice.
+ *
+ * `past` (KAN-6) records a cook that already happened. A backdated one does NOT
+ * reorder Cooked: the server widens the dish's cooked range rather than stamping
+ * it, so the dish keeps its place unless this cook really is its most recent.
  */
-export function logCook(recipeId: string, mealPlanEntryId?: string | null): Promise<CookLogEntry> {
+export function logCook(
+  recipeId: string,
+  mealPlanEntryId?: string | null,
+  past?: PastCookFields,
+): Promise<CookLogEntry> {
   return apiFetch<CookLogEntry>('/cook-log', {
     method: 'POST',
-    body: { recipeId, mealPlanEntryId: mealPlanEntryId ?? null },
+    body: {
+      recipeId,
+      mealPlanEntryId: mealPlanEntryId ?? null,
+      // Spread, so a cook logged from cook mode or a plan slot sends the exact
+      // body it sent before KAN-6. The server reads an omitted field and an
+      // explicit null identically, but the surfaces that log a cook the ordinary
+      // way have no business carrying "and no, this did not happen in the past"
+      // on every request — nor their tests asserting it.
+      ...(past?.cookedAt ? { cookedAt: past.cookedAt } : {}),
+      ...(past?.note ? { note: past.note } : {}),
+    },
   })
 }
 

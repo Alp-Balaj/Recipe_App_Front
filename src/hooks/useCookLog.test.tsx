@@ -42,7 +42,7 @@ describe('useCookLogMutations', () => {
     result.current.log.mutate({ recipeId: 'r1', mealPlanEntryId: 'e1' })
     await waitFor(() => expect(result.current.log.isSuccess).toBe(true))
 
-    expect(log).toHaveBeenCalledWith('r1', 'e1')
+    expect(log).toHaveBeenCalledWith('r1', 'e1', undefined)
     // Assert the KEY, not merely that an invalidation happened.
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.shopping.all })
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.mealPlans.all })
@@ -120,7 +120,7 @@ describe('useCookLogMutations', () => {
       result.current.log.mutate({ recipeId: 'r1', mealPlanEntryId: 'e1' })
       await waitFor(() => expect(result.current.log.isSuccess).toBe(true))
 
-      expect(log).toHaveBeenCalledWith('r1', 'e1')
+      expect(log).toHaveBeenCalledWith('r1', 'e1', undefined)
       expect(result.current.log.isPaused).toBe(false)
     })
 
