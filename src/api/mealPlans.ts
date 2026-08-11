@@ -61,7 +61,20 @@ export interface MealPlanEntry {
   id: string
   dayOfWeek: DayName
   mealType: MealTypeName
-  recipe: MealPlanEntryRecipeSummary
+  /**
+   * NULL means the slot is UNAVAILABLE (KAN-1): the recipe was deleted by its author,
+   * or is no longer shared with you. Those are one state on purpose and the wire cannot
+   * tell them apart — an author's visibility decision is not a stranger's business.
+   *
+   * The entry itself always survives, because it is the caller's own record: they planned
+   * a meal in that slot and the plan still says so. Only the author's content — title,
+   * photo, cook time, calories — is withheld. Render the slot as unavailable rather than
+   * skipping it, or a planned meal disappears from someone's week with no explanation.
+   *
+   * There is no id to fall back on, deliberately: an id alone would confirm which recipe
+   * the slot holds. So an unavailable slot offers Remove and nothing that needs the recipe.
+   */
+  recipe: MealPlanEntryRecipeSummary | null
   /**
    * When this planned meal was cooked, or null. Read from the cook log server-side —
    * nothing is stored on the entry, so un-cooking simply returns it to null.
@@ -102,13 +115,17 @@ export interface MealPlanSummary {
   weekStartDate: string
   createdAt: string
   /**
-   * Both counters are computed server-side over entries whose recipe still
-   * exists, so they agree with GET /meal-plans/{id} — which drops entries whose
-   * recipe was soft-deleted. `entryCount` can therefore be lower than the number
-   * of slots the user filled, and that is correct: the missing dish is gone.
+   * Every slot the week holds, INCLUDING those whose recipe is unavailable — the same
+   * set GET /meal-plans/{id} renders, so "3 meals" never describes a week showing four.
+   * The two counters diverged in KAN-1 and now answer different questions; see below.
    */
   entryCount: number
-  /** Prep + cook summed across the week's entries, per entry (a dish planned twice costs twice). */
+  /**
+   * Prep + cook summed across the week's entries, per entry (a dish planned twice costs
+   * twice) — but only over recipes the caller can still read. Cook time is the author's
+   * content, so an unavailable meal is counted in `entryCount` and contributes nothing
+   * here. A week can therefore honestly read "3 meals · 40 min".
+   */
   totalMinutes: number
 }
 
@@ -173,7 +190,32 @@ export async function getMealPlanForWeek(weekStart: string, signal?: AbortSignal
   return page.items[0] ?? null
 }
 
-/** GET /meal-plans/{id} — the full week view. Entries with soft-deleted recipes are omitted server-side. */
+/**
+ * A plan entry known to carry a recipe. Not a wire shape of its own — it is
+ * `MealPlanEntry` with the KAN-1 null ruled out, for the paths where it cannot occur.
+ */
+export type PlannedMealPlanEntry = MealPlanEntry & { recipe: NonNullable<MealPlanEntry['recipe']> }
+
+/**
+ * Narrows an entry to one that still carries its recipe. A plain `entry.recipe &&` check
+ * does not narrow the ENTRY (TypeScript will not carry a property test to the object), so
+ * anything passing a whole entry on to something that needs the recipe — swap, move,
+ * the hero — goes through this rather than an assertion.
+ *
+ * `!= null` rather than a truthiness test, so a body written before KAN-1 shipped (no
+ * `recipe` key at all) reads as unavailable rather than crashing on it.
+ */
+export function isPlanned(entry: MealPlanEntry): entry is PlannedMealPlanEntry {
+  return entry.recipe != null
+}
+
+/**
+ * GET /meal-plans/{id} — the full week view.
+ *
+ * Every entry the plan holds comes back, including those whose recipe the caller can no
+ * longer read: those arrive with `recipe: null` (KAN-1). They used to be omitted server-side,
+ * which silently removed a planned meal from the week.
+ */
 export function getMealPlan(id: string, signal?: AbortSignal): Promise<MealPlan> {
   return apiFetch<MealPlan>(`/meal-plans/${id}`, { signal })
 }
@@ -183,12 +225,18 @@ export function createMealPlan(weekStartDate: string): Promise<MealPlan> {
   return apiFetch<MealPlan>('/meal-plans', { method: 'POST', body: { weekStartDate } })
 }
 
-/** POST /meal-plans/{id}/entries → 201. Throws ApiConflictError (409) if the slot is occupied. */
+/**
+ * POST /meal-plans/{id}/entries → 201. Throws ApiConflictError (409) if the slot is occupied.
+ *
+ * The returned entry always carries its recipe: the server checks visibility on the way IN
+ * (a write that CREATES a relationship requires it — ADR-0001), so a slot cannot be created
+ * around a recipe the caller could not read a moment ago.
+ */
 export function addMealPlanEntry(
   planId: string,
   entry: { dayOfWeek: DayName; mealType: MealTypeName; recipeId: string },
-): Promise<MealPlanEntry> {
-  return apiFetch<MealPlanEntry>(`/meal-plans/${planId}/entries`, { method: 'POST', body: entry })
+): Promise<PlannedMealPlanEntry> {
+  return apiFetch<PlannedMealPlanEntry>(`/meal-plans/${planId}/entries`, { method: 'POST', body: entry })
 }
 
 /** DELETE /meal-plans/{id}/entries/{entryId} → 204. */

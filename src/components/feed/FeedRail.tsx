@@ -27,7 +27,7 @@ import { useFeedActivity } from '@/hooks/useFeedActivity'
 import { useFollowList } from '@/hooks/useFollowList'
 import { useCurrentWeekPlan, useMealPlanDetail } from '@/hooks/useMealPlan'
 import { useSavedRecipes } from '@/hooks/useSavedRecipes'
-import { DAY_ORDER, weekStartOf, type MealPlanEntry } from '@/api/mealPlans'
+import { DAY_ORDER, weekStartOf, type PlannedMealPlanEntry } from '@/api/mealPlans'
 import type { FeedActivityKind, FeedItemResponse, FeedScope, UserSummaryResponse } from '@/api/social'
 import type { RecipeResponse } from '@/api/types'
 import { resolveImageUrl } from '@/lib/images'
@@ -141,12 +141,17 @@ function OnYourPlan({ items, tab, onOpenRecipe }: FeedRailProps) {
   // A recipe planned twice in a week is two entries; the rail wants dishes, so
   // the first (earliest day) entry per recipe wins.
   const rows = useMemo(() => {
-    const byRecipe = new Map<string, MealPlanEntry>()
+    const byRecipe = new Map<string, PlannedMealPlanEntry>()
     const entries = [...(plan?.entries ?? [])].sort(
       (a, b) => DAY_ORDER.indexOf(a.dayOfWeek) - DAY_ORDER.indexOf(b.dayOfWeek),
     )
     for (const entry of entries) {
-      if (!byRecipe.has(entry.recipe.id)) byRecipe.set(entry.recipe.id, entry)
+      // Unavailable meals (KAN-1) are dropped from this rail outright, unlike on the plan
+      // surfaces where the slot must still be visible and removable. This rail exists to
+      // send you INTO a recipe — it has no title, no thumbnail and nowhere to navigate for
+      // one you can no longer open, so an entry here would be a dead row.
+      if (!entry.recipe) continue
+      if (!byRecipe.has(entry.recipe.id)) byRecipe.set(entry.recipe.id, entry as PlannedMealPlanEntry)
     }
 
     const feedById = new Map(items.map((i) => [i.recipe.id, i]))
@@ -229,7 +234,10 @@ function SavedNotCooked({ items, onOpenRecipe }: FeedRailProps) {
   const { data: saved } = useSavedRecipes()
 
   const shelf = useMemo(() => {
-    const plannedIds = new Set((plan?.entries ?? []).map((e) => e.recipe.id))
+    // Unavailable entries name no recipe, so they exclude nothing from the shelf.
+    const plannedIds = new Set(
+      (plan?.entries ?? []).map((e) => e.recipe?.id).filter((id) => id !== undefined),
+    )
     // The feed envelope is the only place that knows whether the caller cooked
     // something — the saved list is plain RecipeResponses. A recipe outside the
     // loaded feed is simply not excluded, which errs toward showing it.

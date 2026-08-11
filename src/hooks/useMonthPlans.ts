@@ -116,7 +116,10 @@ export function useMonthPlans(weekStarts: string[]) {
         entryCount: summary?.entryCount ?? 0,
         totalMinutes: summary?.totalMinutes ?? 0,
         entries,
-        distinctDishes: new Set(entries.map((entry) => entry.recipe.id)).size,
+        // Unavailable slots (KAN-1) name no dish, so they are not one of the distinct ones.
+        distinctDishes: new Set(
+          entries.map((entry) => entry.recipe?.id).filter((id) => id !== undefined),
+        ).size,
       })
     }
 

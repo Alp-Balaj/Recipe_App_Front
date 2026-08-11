@@ -19,7 +19,14 @@ export interface PlannedWeek {
   entries: MealPlanEntry[]
 }
 
-/** "2026-08-05" → the recipe ids planned that day, across all three meals. */
+/**
+ * "2026-08-05" → the recipe ids planned that day, across all three meals.
+ *
+ * An UNAVAILABLE entry (KAN-1: `recipe === null`) contributes no id, because it has
+ * none to contribute — the whole point of the null is that the slot no longer names
+ * a recipe. It therefore cannot mark a repeat, which under-claims rather than
+ * inventing, the same direction the week's own repeat detection errs in.
+ */
 export function dishesByDate(
   weeks: Date[][],
   byWeek: Map<string, PlannedWeek>,
@@ -34,7 +41,8 @@ export function dishesByDate(
       const day = dayNameOf(date)
       const ids = summary.entries
         .filter((entry) => entry.dayOfWeek === day)
-        .map((entry) => entry.recipe.id)
+        .map((entry) => entry.recipe?.id)
+        .filter((id): id is string => id !== undefined)
       if (ids.length > 0) out.set(formatPlanDate(date), new Set(ids))
     }
   }
@@ -113,6 +121,11 @@ export function dayLoads(weeks: Date[][], byWeek: Map<string, PlannedWeek>): Map
       let calories = 0
       let counted = 0
       for (const entry of entries) {
+        // An unavailable slot adds no minutes and no calories — those are the author's
+        // figures and we are no longer shown them. It stays in `planned` below, which is
+        // the same split the server makes between EntryCount and TotalMinutes: the day
+        // still HOLDS the meal, it just cannot say how long it takes.
+        if (!entry.recipe) continue
         minutes += entry.recipe.totalTimeMinutes
         const kcal = entry.recipe.caloriesPerServing
         if (kcal != null) {

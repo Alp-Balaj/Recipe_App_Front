@@ -49,6 +49,17 @@ export function useMealPlanMutations(planId: string) {
 
   const moveEntry = useMutation({
     mutationFn: async ({ entry, toDay, toMeal }: { entry: MealPlanEntry; toDay: DayName; toMeal: MealTypeName }) => {
+      // Refused BEFORE the remove, and the order is the whole point. A move is a
+      // remove-then-re-add, and an unavailable entry (KAN-1) has no recipe id to re-add
+      // with — the add would 404 even if we invented one, since POST
+      // /meal-plans/{id}/entries requires visibility. Guarding after the remove would
+      // delete the slot and then fail to restore it, destroying the record this ticket
+      // exists to preserve. The UI does not offer the gesture on an unavailable slot;
+      // this is the backstop for a drag that races the recipe going private.
+      if (!entry.recipe) {
+        throw new Error('That meal is no longer available, so it cannot be moved.')
+      }
+
       await removeMealPlanEntry(planId, entry.id)
       try {
         return await addMealPlanEntry(planId, {

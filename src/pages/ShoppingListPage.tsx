@@ -40,6 +40,7 @@ import { sameWeek, useShoppingMutations, useShoppingWeek } from '@/hooks/useShop
 import AllBought from '@/components/shopping/AllBought'
 import CarryoverBanner from '@/components/shopping/CarryoverBanner'
 import EmptyWeekExplainer from '@/components/shopping/EmptyWeekExplainer'
+import UnavailableRecipesNotice from '@/components/shopping/UnavailableRecipesNotice'
 import ManualAddForm from '@/components/shopping/ManualAddForm'
 import SectionHeading from '@/components/shopping/SectionHeading'
 import { ProgressBar, ScopePills, SegmentedToggle } from '@/components/shopping/ShoppingControls'
@@ -136,6 +137,12 @@ export default function ShoppingListPage() {
 
   const weeks = useMemo(() => data?.weeks ?? [], [data])
   const total = weeks.reduce((sum, week) => sum + week.totalCount, 0)
+  // Summed across every week on screen, not read off weeks[0]: under scope=All the page
+  // renders several, and a withdrawn recipe planned in the second one is just as missing.
+  const unavailableRecipeCount = weeks.reduce(
+    (sum, week) => sum + (week.diagnostics?.unavailableRecipeCount ?? 0),
+    0,
+  )
 
   // The other-weeks probe (trust rework, Task 8): once the viewed week is
   // confirmed empty, ask scope 'All' whether some OTHER week still owes
@@ -539,6 +546,11 @@ export default function ShoppingListPage() {
           <span>You're offline — your ticks will sync when you're back.</span>
         </div>
       )}
+
+      {/* KAN-1: in the BANNERS, not in the empty state — a shortened list needs the
+          explanation more than an empty one does, and it used to be the only case that
+          never got it. Renders nothing at zero. */}
+      <UnavailableRecipesNotice count={unavailableRecipeCount} />
     </>
   )
 

@@ -18,13 +18,18 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import type { CSSProperties } from 'react'
-import type { MealPlanEntry } from '@/api/mealPlans'
+import type { PlannedMealPlanEntry } from '@/api/mealPlans'
 import type { RecipeResponse } from '@/api/types'
 import { resolveImageUrl } from '@/lib/images'
 import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 
 interface Props {
-  entry: MealPlanEntry
+  /**
+   * Always carries a recipe: `nextUp` skips unavailable meals, and this hero has
+   * nothing to render without one (KAN-1). Stated in the type so the invariant is
+   * checked rather than remembered.
+   */
+  entry: PlannedMealPlanEntry
   /** "TONIGHT" / "TOMORROW" / "THURSDAY". */
   whenLabel: string
   /** Full detail, once loaded — the meta line needs servings and ingredients. */
@@ -83,7 +88,7 @@ export default function NextUpHero({ entry, whenLabel, recipe, onStartCooking, o
  * than defaulted while that is in flight — "0 ingredients" is a claim, and a
  * wrong one.
  */
-function metaLine(entry: MealPlanEntry, recipe?: RecipeResponse): string {
+function metaLine(entry: Props['entry'], recipe?: RecipeResponse): string {
   const parts: string[] = [formatMinutes(entry.recipe.totalTimeMinutes)]
 
   if (recipe) {

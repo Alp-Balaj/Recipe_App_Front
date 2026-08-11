@@ -24,11 +24,24 @@ import { mealTokens } from './MealCard'
 
 export interface IngredientGroup {
   meal: MealTypeName
-  /** The planned recipe's title, or null when nothing is planned for this meal. */
+  /**
+   * The planned recipe's title, or null when nothing is planned for this meal.
+   *
+   * A meal whose recipe is WITHHELD (see `withheld`) is planned and has no title, so it
+   * carries a placeholder rather than null — null here means "this slot is free", and
+   * `planned` below counts on that.
+   */
   title: string | null
   ingredients: RecipeIngredient[]
   /** Planned, but its detail didn't load — say so rather than showing nothing. */
   unavailable?: boolean
+  /**
+   * KAN-1: planned, but the recipe was removed or is no longer shared with the caller, so
+   * its ingredients are not ours to show. Deliberately distinct from `unavailable`, which
+   * means a fetch that failed and will succeed on a retry — this one never will, and
+   * telling the user to try again would be a lie.
+   */
+  withheld?: boolean
 }
 
 interface Props {
@@ -62,6 +75,11 @@ function findOverlap(groups: IngredientGroup[]): Map<string, string> {
 
 export default function DayIngredients({ groups, isLoading = false }: Props) {
   const planned = groups.filter((g) => g.title !== null)
+  // The footer counts the dishes it actually LISTED, so a withheld meal (KAN-1) is not one
+  // of them — "2 items across 3 dishes" would have the reader hunting for a third. It still
+  // counts as `planned` above, which is what keeps "Nothing planned yet" off a day whose
+  // only meal is withheld.
+  const listedDishes = planned.filter((g) => !g.withheld).length
   const overlap = findOverlap(groups)
   const totalItems = groups.reduce((sum, g) => sum + g.ingredients.length, 0)
 
@@ -97,7 +115,13 @@ export default function DayIngredients({ groups, isLoading = false }: Props) {
               <span style={rule} />
             </div>
 
-            {group.title !== null && group.unavailable && (
+            {group.withheld && (
+              <div style={quietLine}>
+                This meal&rsquo;s recipe is no longer available, so its ingredients aren&rsquo;t here.
+              </div>
+            )}
+
+            {group.title !== null && !group.withheld && group.unavailable && (
               <div style={quietLine}>Couldn't load this recipe's ingredients.</div>
             )}
 
@@ -130,9 +154,11 @@ export default function DayIngredients({ groups, isLoading = false }: Props) {
           ? 'Loading ingredients…'
           : planned.length === 0
             ? 'Nothing planned yet — pick a meal above and this fills in.'
-            : `${totalItems} ${totalItems === 1 ? 'item' : 'items'} across ${planned.length} ${
-                planned.length === 1 ? 'dish' : 'dishes'
-              }`}
+            : listedDishes === 0
+              ? 'Nothing to list for this day.'
+              : `${totalItems} ${totalItems === 1 ? 'item' : 'items'} across ${listedDishes} ${
+                  listedDishes === 1 ? 'dish' : 'dishes'
+                }`}
       </div>
     </section>
   )

@@ -167,7 +167,11 @@ function MealChip({
   return (
     <button
       type="button"
-      aria-label={`${entry.recipe.title}, ${dayName} ${meal.toLowerCase()}`}
+      aria-label={
+        entry.recipe
+          ? `${entry.recipe.title}, ${dayName} ${meal.toLowerCase()}`
+          : `An unavailable meal, ${dayName} ${meal.toLowerCase()}`
+      }
       // expanded, not pressed: the chip opens a panel rather than toggling a
       // state of its own, and aria-controls only points at the panel while it
       // exists — a dangling idref is worse than none.
@@ -188,7 +192,11 @@ function MealChip({
       <span style={mealMark} aria-hidden="true">
         {meal[0]}
       </span>
-      <span style={chipTitle}>{entry.recipe.title}</span>
+      {/* KAN-1: an unavailable meal keeps its slot and its meal colour — it is still
+          a planned meal — but names no dish, because there is no longer one to name. */}
+      <span style={{ ...chipTitle, ...(entry.recipe ? {} : { opacity: 0.7 }) }}>
+        {entry.recipe ? entry.recipe.title : 'Unavailable'}
+      </span>
     </button>
   )
 }

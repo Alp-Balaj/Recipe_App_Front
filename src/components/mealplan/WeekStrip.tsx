@@ -64,20 +64,22 @@ export default function WeekStrip({ days, todayKey, repeats }: Props) {
 
             {day.entries.map((entry) => {
               const { tint, ink } = mealTokens(entry.mealType)
-              const repeated = repeats.has(`${day.key}|${entry.recipe.id}`)
+              // Unavailable meals (KAN-1) carry no id, so they are never repeats.
+              const repeated = entry.recipe ? repeats.has(`${day.key}|${entry.recipe.id}`) : false
 
               return (
                 <span
                   key={entry.id}
-                  title={`${entry.mealType}: ${entry.recipe.title}`}
+                  title={`${entry.mealType}: ${entry.recipe ? entry.recipe.title : 'unavailable'}`}
                   style={{
                     ...chip,
                     background: tint,
                     color: ink,
                     ...(repeated ? { borderLeft: '3px solid var(--clay)' } : null),
+                    ...(entry.recipe ? {} : { opacity: 0.5 }),
                   }}
                 >
-                  {entry.recipe.title}
+                  {entry.recipe ? entry.recipe.title : 'Unavailable'}
                 </span>
               )
             })}
