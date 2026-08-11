@@ -102,6 +102,8 @@ export function dinnerRepeats(entries: MealPlanEntry[]): { title: string; count:
   const groups = new Map<string, { title: string; count: number; latestDayIndex: number }>()
   for (const entry of entries) {
     if (entry.mealType !== 'Dinner') continue
+    // An unavailable slot names no dish, so it cannot be one of the repeats (KAN-1).
+    if (!entry.recipe) continue
     const dayIndex = DAY_ORDER.indexOf(entry.dayOfWeek)
     const existing = groups.get(entry.recipe.id)
     if (existing) {

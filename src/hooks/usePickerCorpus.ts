@@ -110,6 +110,10 @@ async function fetchHistory(signal?: AbortSignal): Promise<PlannedBefore[]> {
   for (const entry of plans) {
     if (!entry) continue
     for (const item of entry.plan.entries) {
+      // An unavailable slot (KAN-1) offers nothing to plan again: it has no id to
+      // re-add, no title to show, and re-adding it would 404 anyway — POST
+      // /meal-plans/{id}/entries requires visibility.
+      if (!item.recipe) continue
       // Plans arrive newest first, so the first sighting is the most recent.
       if (seen.has(item.recipe.id)) continue
       seen.set(item.recipe.id, {

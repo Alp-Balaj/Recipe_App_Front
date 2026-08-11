@@ -26,7 +26,7 @@ import { useMutation, useQueryClient, type InfiniteData, type QueryClient } from
 import { queryKeys } from '@/api/queryKeys'
 import {
   addComment,
-  clearCooked,
+  clearRating,
   deleteComment,
   followUser,
   likeComment,
@@ -71,7 +71,8 @@ export interface CommentLikeVars {
 
 /**
  * Rating is a SET, not a toggle: `rating` is the star the user picked, or null
- * to retract (which clears the cook count too — the backend drops the row).
+ * to retract. Null takes back the rating ONLY — the cooks and their notes stay
+ * (KAN-12); see setRating.
  */
 export interface RateVars {
   recipeId: string
@@ -372,9 +373,20 @@ export function useSocialMutations() {
 
   // ── open-loops slice 1: rating + cooked ──────────────────────────────────
 
+  /**
+   * One mutation for both directions of the star control, because setting and
+   * retracting are the same gesture from the user's side and one write path is
+   * what keeps every surface's rating in agreement.
+   *
+   * `rating: null` is a retract, and it goes to the rating-only clear (KAN-12).
+   * It used to go to clearCooked — "I have never cooked this" — so tapping your
+   * own star back off hard-deleted every cook of that recipe and every note on
+   * one, across every plan slot, with no warning. Cooking is not an opinion
+   * about the dish and does not leave with one.
+   */
   const setRating = useMutation({
     mutationFn: ({ recipeId, rating }: RateVars) =>
-      rating === null ? clearCooked(recipeId) : rateRecipe(recipeId, rating),
+      rating === null ? clearRating(recipeId) : rateRecipe(recipeId, rating),
     onMutate: async ({ recipeId, rating }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.feed.lists() })
       await settleEnvelopeEntry(queryClient, recipeId)
@@ -391,13 +403,14 @@ export function useSocialMutations() {
           item.myRating ?? null,
           rating,
         )
+        // cookedByMe is deliberately NOT touched here, in either direction: a
+        // retract leaves the cooks standing, and whether the caller has any is
+        // something only the server's reply knows (onSuccess below).
         return {
           ...item,
           myRating: rating,
           averageRating: next.average,
           ratingCount: next.count,
-          // Retracting a rating drops the whole row, cook count included.
-          cookedByMe: rating === null ? false : item.cookedByMe,
         }
       })
 
@@ -413,21 +426,45 @@ export function useSocialMutations() {
           myRating: rating,
           averageRating: next.average,
           ratingCount: next.count,
-          cookedByMe: rating === null ? false : env.cookedByMe,
         }
       })
 
       return { snapshot }
     },
-    // KAN-4: Cooked shows this rating on its row, and the retraction branch
-    // (rating === null → clearCooked) deletes the dish outright.
+    // KAN-4: Cooked shows this rating on its row, so a rating change makes that
+    // list stale.
     //
-    // RESET, not invalidate — see the note in useCookLog.ts. Removing a row
-    // shifts every later page by one, and invalidate would refetch each page
-    // from the cursor it was originally fetched with, silently dropping the
-    // dish that slid across the boundary.
+    // Invalidate, NOT the reset the cook paths use — and the difference is
+    // KAN-12's doing. When this branch still called clearCooked, retracting
+    // DELETED the dish, which shifts every later page by one and needs the reset
+    // (see the note in useCookLog.ts). Now that a retract takes back the rating
+    // and leaves the cooks standing, no dish is added, removed or reordered:
+    // LastCookedAt is untouched, and a rating-only row is filtered out of Cooked
+    // by TimesCooked > 0 whether it exists or not. Only a field on a visible row
+    // changes, so every stored cursor still points where it did.
     onSettled: () => {
-      void queryClient.resetQueries({ queryKey: queryKeys.cooked.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.cooked.all })
+    },
+    // The one thing a retract cannot decide locally. Rating without cooking
+    // creates the row that makes cookedByMe true, so retracting sometimes does
+    // clear the flag and sometimes must not. The server SAYS which (KAN-12) —
+    // do not go back to inferring it from timesCooked: the count is 0 both when
+    // the row went away and when a drifted row was kept because cook-log rows
+    // survive behind it, and useSocialEnvelope's merge prefers a patch over the
+    // wire, so a wrong false here would outlive the cache entry rather than
+    // heal on the next read.
+    //
+    // Only consulted on a retract: rating something does not make the caller its
+    // cook as far as this surface is concerned, so the flag is left alone there
+    // (unchanged behaviour — see the ticket on the row rating creates).
+    onSuccess: (row: CookedRecipeResponse, { recipeId, rating }) => {
+      if (rating !== null) return
+      patchFeedCaches(queryClient, recipeId, (item) =>
+        item.cookedByMe === row.cookedByMe ? item : { ...item, cookedByMe: row.cookedByMe },
+      )
+      patchEnvelopeCache(queryClient, recipeId, (env) =>
+        env.cookedByMe === row.cookedByMe ? env : { ...env, cookedByMe: row.cookedByMe },
+      )
     },
     onError: (_err, _vars, context) => {
       if (context) restoreCaches(queryClient, context.snapshot)

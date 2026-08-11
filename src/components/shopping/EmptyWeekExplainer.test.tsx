@@ -50,7 +50,7 @@ it('hands back a hidden item’s own purchase tick when it was already bought', 
   expect(onRestore).toHaveBeenCalledWith('onion', true)
 })
 
-it('names silent meals and unavailable recipes', () => {
+it('names silent meals', () => {
   render(
     <EmptyWeekExplainer
       {...base}
@@ -63,7 +63,38 @@ it('names silent meals and unavailable recipes', () => {
   )
   expect(screen.getByText(/Bare toast/)).toBeInTheDocument()
   expect(screen.getByText(/no ingredient list/i)).toBeInTheDocument()
-  expect(screen.getByText(/no longer available/i)).toBeInTheDocument()
+})
+
+// KAN-1: the unavailable-recipe copy left this component for UnavailableRecipesNotice,
+// which the page renders in its banners whether or not the list is empty. Rendering it
+// here too would print the same sentence twice on an empty week.
+it('leaves the unavailable-recipe copy to the page-level notice', () => {
+  render(
+    <EmptyWeekExplainer
+      {...base}
+      diagnostics={{ hiddenItems: [], mealsWithoutIngredients: [], unavailableRecipeCount: 2 }}
+    />,
+  )
+  expect(screen.queryByText(/no longer available/i)).not.toBeInTheDocument()
+  // But it is still a REASON, so the week must not fall through to "plan some meals" —
+  // which would contradict the notice sitting directly above it.
+  expect(screen.queryByText(/plan some meals/i)).not.toBeInTheDocument()
+  // And it must not render an EMPTY div either. The page hides its add-item form under
+  // `total === 0`, so with every other branch silent the screen would be a banner and a
+  // blank — no heading, no next step. Suppressing the two strings above is not enough.
+  expect(screen.getByText(/nothing else to buy/i)).toBeInTheDocument()
+})
+
+// The "next step" copy must not point at the manual add form: ShoppingListPage hides that
+// under `total === 0`, which is exactly the state this component renders in.
+it('does not point at an add form the page has hidden', () => {
+  render(
+    <EmptyWeekExplainer
+      {...base}
+      diagnostics={{ hiddenItems: [], mealsWithoutIngredients: [], unavailableRecipeCount: 1 }}
+    />,
+  )
+  expect(screen.getByText(/nothing else to buy/i).textContent).not.toMatch(/above/i)
 })
 
 it('points at another week holding items', async () => {

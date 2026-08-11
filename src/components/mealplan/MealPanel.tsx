@@ -68,6 +68,62 @@ export default function MealPanel({
   // drops it and the reader lands in Discover.
   const backdrop = useBackdropPath()
 
+  // UNAVAILABLE (KAN-1). Its own return rather than a null check per field: this panel is
+  // built entirely out of the author's content — photo, title, time, calories, the whole
+  // ingredient list — so with the recipe withheld there is nothing left of it to render.
+  //
+  // Remove and Close are the two actions that still mean something, and Remove is the one
+  // that has to be here: the panel is a place the slot's owner can reach it from. Copy says
+  // "unavailable" and names no cause (ADR-0001, and MealCard's own branch).
+  if (!entry.recipe) {
+    return (
+      <section
+        id={id}
+        style={card}
+        aria-label={`An unavailable meal, planned for ${entry.mealType.toLowerCase()}`}
+      >
+        <div style={header}>
+          <span style={{ ...mealLabel, color: ink }}>
+            {entry.mealType} · {entry.dayOfWeek}
+          </span>
+          <button type="button" aria-label="Close" onClick={onClose} style={closeButton}>
+            ×
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+          <span style={{ ...photo, background: 'var(--tagbg)' }} />
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <h3 style={title}>Recipe unavailable</h3>
+            <span style={{ color: 'var(--muted)', fontSize: 13, lineHeight: 1.45 }}>
+              This meal is still part of your week, but you can no longer open its recipe.
+            </span>
+          </div>
+        </div>
+
+        <div style={actions}>
+          <Link to={planDayPath(date)} style={actionButton}>
+            Go to this day
+          </Link>
+          <button
+            type="button"
+            style={{ ...actionButton, cursor: 'pointer' }}
+            disabled={isRemoving}
+            onClick={onRemove}
+          >
+            {isRemoving ? 'Removing…' : 'Remove'}
+          </button>
+        </div>
+
+        {removeFailed && (
+          <p role="status" style={failure}>
+            Couldn&rsquo;t remove that meal. Try again.
+          </p>
+        )}
+      </section>
+    )
+  }
+
   // totalTimeMinutes rides on the entry itself, so time is known before the
   // detail lands; calories do too. Difficulty and ingredients do not.
   const minutes = recipe?.totalTimeMinutes ?? entry.recipe.totalTimeMinutes

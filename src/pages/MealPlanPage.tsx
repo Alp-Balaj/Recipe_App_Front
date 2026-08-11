@@ -34,7 +34,13 @@ import { useSocialEnvelope } from '@/hooks/useSocialEnvelope'
 import { useSocialMutations } from '@/hooks/useSocialMutations'
 import { useCookHistory, useCookLogMutations, useLatestCook } from '@/hooks/useCookLog'
 import { usePantryReadiness } from '@/hooks/usePantryReadiness'
-import { addMealPlanEntry, weekStartOf, type MealPlanEntry, type MealTypeName } from '@/api/mealPlans'
+import {
+  addMealPlanEntry,
+  weekStartOf,
+  type MealPlanEntry,
+  type MealTypeName,
+  type PlannedMealPlanEntry,
+} from '@/api/mealPlans'
 import {
   addDays,
   formatMonthParam,
@@ -125,6 +131,19 @@ function PlanFrontDoor() {
 
   const next = useMemo(() => nextUp(days, today, cookedEntryIds), [days, today, cookedEntryIds])
 
+  // `nextUp` skips meals whose recipe is unavailable (KAN-1) — the hero is built entirely
+  // out of one and its primary action is "start cooking". But the fallback beneath it says
+  // "Nothing planned yet", which is false and visibly contradicted by the coverage strip
+  // ("1 / 21 planned") and the week strip's own chip a few rows down. So when the reason
+  // there is no hero is that everything left is unavailable, the empty state says THAT.
+  const nextIsWithheld = useMemo(() => {
+    if (next) return false
+    const todayKey = formatPlanDate(today)
+    return days.some(
+      (day) => day.key >= todayKey && day.entries.some((e) => !e.recipe && !cookedEntryIds.has(e.id)),
+    )
+  }, [next, days, today, cookedEntryIds])
+
   // The hero's meta line needs servings and ingredient count, which the entry's
   // recipe summary does not carry. One request, only when there is a hero.
   const nextRecipe = useRecipe(next?.entry.recipe.id)
@@ -142,7 +161,10 @@ function PlanFrontDoor() {
   )
 
   const readiness = usePantryReadiness()
-  const [swapping, setSwapping] = useState<MealPlanEntry | null>(null)
+  // Only ever an AVAILABLE entry: the sole setter is the hero's Swap, and `nextUp`
+  // never picks an unavailable meal (KAN-1). Stating it in the type is what lets the
+  // restore branch in swapEntry below keep the original's recipe id.
+  const [swapping, setSwapping] = useState<PlannedMealPlanEntry | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
   return (
@@ -220,6 +242,11 @@ function PlanFrontDoor() {
               />
             ) : weekPending ? (
               <div style={heroPlaceholder} aria-busy="true" />
+            ) : nextIsWithheld ? (
+              <StateBlock
+                title="Your next meal isn't available"
+                body="It's still on your plan, but you can no longer open its recipe. Open the day to remove it, or plan something else."
+              />
             ) : (
               <StateBlock
                 title="Nothing planned yet"
@@ -326,7 +353,7 @@ function PlanFrontDoor() {
  */
 async function swapEntry(
   planId: string,
-  entry: MealPlanEntry,
+  entry: PlannedMealPlanEntry,
   recipeId: string,
   refetch: () => unknown,
 ) {

@@ -178,15 +178,20 @@ function DesktopCell({
             style={{
               ...chip,
               ...chipTint(meal),
-              ...(repeats?.has(`${dateKey}|${entry.recipe.id}`) ? chipRepeat : {}),
+              // An unavailable meal (KAN-1) can never be a repeat: it has no id to match
+              // against yesterday's, and dimming it is the only thing the chip can say.
+              ...(entry.recipe && repeats?.has(`${dateKey}|${entry.recipe.id}`) ? chipRepeat : {}),
+              ...(entry.recipe ? {} : { opacity: 0.5 }),
             }}
             title={
-              repeats?.has(`${dateKey}|${entry.recipe.id}`)
-                ? `${entry.recipe.title} — also the day before`
-                : undefined
+              !entry.recipe
+                ? 'Recipe unavailable'
+                : repeats?.has(`${dateKey}|${entry.recipe.id}`)
+                  ? `${entry.recipe.title} — also the day before`
+                  : undefined
             }
           >
-            {entry.recipe.title}
+            {entry.recipe ? entry.recipe.title : 'Unavailable'}
           </span>
         ) : meal === nextOpen ? (
           <span key={meal} style={{ ...chip, ...chipHollow }}>
@@ -250,7 +255,7 @@ function MobileCell({
           const entry = entryAt(summary, date, meal)
           // The chip's clay edge has no room to exist at 38px, so the repeat
           // mark becomes the dot's own colour — same signal, same meaning.
-          const repeated = entry ? repeats?.has(`${dateKey}|${entry.recipe.id}`) : false
+          const repeated = entry?.recipe ? repeats?.has(`${dateKey}|${entry.recipe.id}`) : false
           return (
             <span
               key={meal}

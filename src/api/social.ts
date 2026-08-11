@@ -167,6 +167,16 @@ export interface CookedRecipeResponse {
   timesCooked: number
   rating?: number | null
   lastCookedAt?: string | null
+  /**
+   * Whether the caller still HAS a cooked/rated row — the same derivation the
+   * envelope and every feed item use, so a cache patched from this reply cannot
+   * disagree with the next read of them (KAN-12).
+   *
+   * Not derivable from `timesCooked`, in either direction: rating a dish you
+   * never cooked creates a row at 0, and a retract keeps a row whose count has
+   * drifted to 0 while its cook-log rows survive.
+   */
+  cookedByMe: boolean
 }
 
 /** POST /recipes/{id}/cooked → 200. Increments; never creates a second row. */
@@ -186,9 +196,31 @@ export function rateRecipe(recipeId: string, rating: number): Promise<CookedReci
   })
 }
 
-/** DELETE /recipes/{id}/cooked → 200 (idempotent). Drops cooks AND rating. */
+/**
+ * DELETE /recipes/{id}/cooked → 200 (idempotent). "I have never cooked this",
+ * and priced accordingly: it hard-deletes the caller's rating, their lifetime
+ * cook count, AND every logged cook of this recipe — including plan-linked ones
+ * and the notes written on them, which are the user's own writing.
+ *
+ * No surface calls this today. Any that does has to confirm first and name what
+ * would be lost, the way the day page's un-cook toggle does (KAN-8). Retracting
+ * a rating is NOT this gesture — that is clearRating below (KAN-12).
+ */
 export function clearCooked(recipeId: string): Promise<CookedRecipeResponse> {
   return apiFetch<CookedRecipeResponse>(`/recipes/${recipeId}/cooked`, { method: 'DELETE' })
+}
+
+/**
+ * DELETE /recipes/{id}/rating → 200 (idempotent). Takes back the rating and
+ * nothing else: the cooks, their notes and the count all stay, because rating
+ * and cooking are separate claims (KAN-12).
+ *
+ * The reply is the row that is LEFT, not a zeroed one — `timesCooked` is how
+ * the caller learns whether anything remains, which is what the cookedByMe
+ * patch in useSocialMutations reads.
+ */
+export function clearRating(recipeId: string): Promise<CookedRecipeResponse> {
+  return apiFetch<CookedRecipeResponse>(`/recipes/${recipeId}/rating`, { method: 'DELETE' })
 }
 
 /** Backend RatingRequestValidator: InclusiveBetween(1, 5). */

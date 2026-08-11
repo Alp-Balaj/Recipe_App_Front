@@ -59,7 +59,7 @@ export default function DayTotals({ slots, isLoading }: Props) {
   const missing = withCalories.length < planned.length
   const missingTitles = planned
     .filter((slot) => slot.recipe && slot.recipe.caloriesPerServing == null)
-    .map((slot) => slot.entry?.recipe.title ?? '')
+    .map((slot) => slot.entry?.recipe?.title ?? '')
     .filter(Boolean)
 
   // Proportional widths would misread the day whenever a figure is missing —

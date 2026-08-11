@@ -419,8 +419,14 @@ export default function RecipeDetailPage() {
 
 /**
  * Read the room's rating, set your own. Tapping the star you already gave
- * retracts it (the backend drops the row), which is the only undo there is —
- * so the label says so rather than leaving people stuck at a mis-tap.
+ * retracts it, which is the only undo there is — so the label says so rather
+ * than leaving people stuck at a mis-tap.
+ *
+ * Retracting takes back the RATING and nothing else (KAN-12). It used to drop
+ * the caller's whole cooked/rated row, which took every cook of the dish and
+ * every note written on one with it — silently, from a control that reads like
+ * a toggle. If this ever needs a gesture that wide again it needs a dialog,
+ * not a star.
  *
  * `average`/`count` null means "not known on this surface", which renders the
  * same as "nobody has rated": no number. That collision is deliberate and is

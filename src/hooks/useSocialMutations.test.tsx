@@ -77,12 +77,12 @@ const ACTIVITY: FeedActivityListResponse = {
 type FeedCache = { pages: { items: FeedItemResponse[] }[]; pageParams: unknown[] }
 
 /** A client holding both feed-subtree shapes: a paged list AND the activity strip. */
-function setup() {
+function setup(item: Partial<FeedItemResponse> = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   client.setQueryData(queryKeys.feed.list('forYou'), {
-    pages: [{ items: [makeItem('r1')], nextCursor: null, source: 'forYou' }],
+    pages: [{ items: [makeItem('r1', item)], nextCursor: null, source: 'forYou' }],
     pageParams: [undefined],
   })
   client.setQueryData(queryKeys.feed.activity('forYou'), ACTIVITY)
@@ -146,5 +146,106 @@ describe('useSocialMutations with the /feed/activity entry cached', () => {
     await waitFor(() => expect(result.current.toggleLike.isError).toBe(true))
     expect(feedItem().likedByMe).toBe(false)
     expect(feedItem().likeCount).toBe(5)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// KAN-12: taking a rating back is a claim about the RATING.
+//
+// It used to be routed to DELETE /recipes/{id}/cooked — "I have never cooked
+// this" — which hard-deletes every cook of that recipe and every note written
+// on one, across every plan slot, silently. Tapping the star you already gave
+// is not that sentence.
+// ─────────────────────────────────────────────────────────────────────────
+describe('retracting a rating', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  const RATED_AND_COOKED = { cookedByMe: true, myRating: 4, ratingCount: 1, averageRating: 4 }
+
+  it('goes to the rating endpoint and never to the one that clears the cooks', async () => {
+    const clearRating = vi
+      .spyOn(api, 'clearRating')
+      .mockResolvedValue({ recipeId: 'r1', timesCooked: 4, rating: null, cookedByMe: true })
+    const clearCooked = vi.spyOn(api, 'clearCooked')
+    const { wrapper, feedItem } = setup(RATED_AND_COOKED)
+
+    const { result } = renderHook(() => useSocialMutations(), { wrapper })
+    await result.current.setRating.mutateAsync({ recipeId: 'r1', rating: null })
+
+    expect(clearRating).toHaveBeenCalledWith('r1')
+    expect(clearCooked).not.toHaveBeenCalled()
+    // The rating is what left. The last rating going means the average is
+    // unknown again rather than zero, which the existing recompute already does.
+    expect(feedItem().myRating).toBeNull()
+    expect(feedItem().averageRating).toBeNull()
+    expect(feedItem().ratingCount).toBe(0)
+  })
+
+  it('leaves "you cooked this" standing — the cooks survived the retract', async () => {
+    vi.spyOn(api, 'clearRating').mockResolvedValue({ recipeId: 'r1', timesCooked: 4, rating: null, cookedByMe: true })
+    const { client, wrapper, feedItem } = setup(RATED_AND_COOKED)
+    client.setQueryData(queryKeys.social.envelope('r1'), {
+      likeCount: 0,
+      commentCount: 0,
+      likedByMe: false,
+      savedByMe: false,
+      averageRating: 4,
+      ratingCount: 1,
+      cookedByMe: true,
+      myRating: 4,
+    })
+
+    const { result } = renderHook(() => useSocialMutations(), { wrapper })
+    await result.current.setRating.mutateAsync({ recipeId: 'r1', rating: null })
+
+    // Both caches, because they are read by different surfaces and a flag that
+    // is right on one and wrong on the other is the same bug half the time.
+    expect(feedItem().cookedByMe).toBe(true)
+    expect(
+      (client.getQueryData(queryKeys.social.envelope('r1')) as { cookedByMe: boolean }).cookedByMe,
+    ).toBe(true)
+  })
+
+  it('drops the flag when the server says the row is gone', async () => {
+    // Rating without cooking is allowed, and the row it creates is what makes
+    // cookedByMe true for someone who never cooked. Retracting removes that row,
+    // and the server's own flag is how the client learns it did.
+    vi.spyOn(api, 'clearRating').mockResolvedValue({ recipeId: 'r1', timesCooked: 0, rating: null, cookedByMe: false })
+    const { wrapper, feedItem } = setup({ cookedByMe: true, myRating: 4, ratingCount: 1, averageRating: 4 })
+
+    const { result } = renderHook(() => useSocialMutations(), { wrapper })
+    await result.current.setRating.mutateAsync({ recipeId: 'r1', rating: null })
+
+    expect(feedItem().cookedByMe).toBe(false)
+  })
+
+  it('keeps the flag when the count is 0 but the row survived', async () => {
+    // The drift branch: TimesCooked has fallen to 0 with cook-log rows still
+    // behind it, so the server keeps the row and says so. Deriving the flag from
+    // timesCooked here tells the user they have never cooked a dish their own
+    // cook log still lists — and useSocialEnvelope prefers the patch over the
+    // wire, so that answer would stick rather than heal on the next read.
+    vi.spyOn(api, 'clearRating').mockResolvedValue({ recipeId: 'r1', timesCooked: 0, rating: null, cookedByMe: true })
+    const { wrapper, feedItem } = setup({ cookedByMe: true, myRating: 4, ratingCount: 1, averageRating: 4 })
+
+    const { result } = renderHook(() => useSocialMutations(), { wrapper })
+    await result.current.setRating.mutateAsync({ recipeId: 'r1', rating: null })
+
+    expect(feedItem().cookedByMe).toBe(true)
+  })
+
+  it('rolls back when the retract fails', async () => {
+    vi.spyOn(api, 'clearRating').mockRejectedValue(new Error('boom'))
+    const { wrapper, feedItem } = setup(RATED_AND_COOKED)
+
+    const { result } = renderHook(() => useSocialMutations(), { wrapper })
+    result.current.setRating.mutate({ recipeId: 'r1', rating: null })
+
+    await waitFor(() => expect(result.current.setRating.isError).toBe(true))
+    // myRating alone: onMutate no longer touches cookedByMe and onSuccess does not
+    // run on an error, so asserting the flag here would pass with restoreCaches
+    // deleted entirely.
+    expect(feedItem().myRating).toBe(4)
+    expect(feedItem().averageRating).toBe(4)
   })
 })

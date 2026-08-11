@@ -258,7 +258,11 @@ export default function MealPlanWeekPage() {
         <>
           {body}
           {selected && selectedDay && planId && (
-            <Modal onClose={closePanel} label={selected.recipe.title} variant="bottom">
+            <Modal
+              onClose={closePanel}
+              label={selected.recipe ? selected.recipe.title : 'An unavailable meal'}
+              variant="bottom"
+            >
               <MealPanelDock
                 planId={planId}
                 entry={selected}
@@ -370,14 +374,16 @@ function MealPanelDock({
   onClose: () => void
 }) {
   const { removeEntry } = useMealPlanMutations(planId)
-  const { byId, isLoading, isError } = useDayRecipes([entry.recipe.id])
+  // No id to fetch details for when the meal is unavailable (KAN-1), and asking would
+  // 404 — MealPanel renders its own unavailable state from the null instead.
+  const { byId, isLoading, isError } = useDayRecipes(entry.recipe ? [entry.recipe.id] : [])
 
   return (
     <MealPanel
       entry={entry}
       date={date}
       id={PANEL_ID}
-      recipe={byId.get(entry.recipe.id)}
+      recipe={entry.recipe ? byId.get(entry.recipe.id) : undefined}
       isLoading={isLoading}
       isError={isError}
       isRemoving={removeEntry.isPending}

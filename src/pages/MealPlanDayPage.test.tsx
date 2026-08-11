@@ -227,6 +227,145 @@ describe('the day page', () => {
     expect(screen.getByTestId('day-slot-Dinner')).toHaveTextContent(/add dinner/i)
   })
 
+  // --- unavailable meals (KAN-1) -------------------------------------------------------
+
+  describe('a meal whose recipe is no longer available', () => {
+    /** Wednesday's lunch, after its author deleted the recipe or stopped sharing it. */
+    const planWithUnavailableLunch: MealPlan = {
+      ...plan,
+      entries: plan.entries.map((entry) =>
+        entry.id === 'entry-lunch' ? { ...entry, recipe: null } : entry,
+      ),
+    }
+
+    it('keeps the slot instead of quietly emptying it', async () => {
+      vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+      vi.spyOn(api, 'getMealPlan').mockResolvedValue(planWithUnavailableLunch)
+      stubRecipeDetails()
+
+      renderRoute('/plan/2026-07-29')
+
+      // Wait for the WEEK to land first. Every slot renders before the plan arrives, so
+      // asserting straight on Lunch would pass against the not-yet-loaded page — which is
+      // exactly the "Add lunch" state this test exists to rule out. Scoped to the breakfast
+      // slot because the dish name also appears in the ingredients section below.
+      await waitFor(() =>
+        expect(within(screen.getByTestId('day-slot-Breakfast')).getByText('Shakshuka')).toBeInTheDocument(),
+      )
+      const lunch = screen.getByTestId('day-slot-Lunch')
+
+      // NOT the empty-slot state: the user planned a meal here and the plan still says so.
+      expect(lunch).toHaveTextContent(/unavailable/i)
+      expect(lunch).not.toHaveTextContent(/add lunch/i)
+      // And the withheld title is nowhere on the page.
+      expect(screen.queryByText('Charred corn salad')).not.toBeInTheDocument()
+    })
+
+    it('offers only Remove — every other action needs the recipe', async () => {
+      vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+      vi.spyOn(api, 'getMealPlan').mockResolvedValue(planWithUnavailableLunch)
+      stubRecipeDetails()
+
+      renderRoute('/plan/2026-07-29')
+
+      // Wait for the WEEK to land first. Every slot renders before the plan arrives, so
+      // asserting straight on Lunch would pass against the not-yet-loaded page — which is
+      // exactly the "Add lunch" state this test exists to rule out. Scoped to the breakfast
+      // slot because the dish name also appears in the ingredients section below.
+      await waitFor(() =>
+        expect(within(screen.getByTestId('day-slot-Breakfast')).getByText('Shakshuka')).toBeInTheDocument(),
+      )
+      const lunch = screen.getByTestId('day-slot-Lunch')
+      const within_ = within(lunch)
+
+      // Removing your own record must always work (ADR-0001) — a slot its owner can
+      // neither open nor clear is exactly the orphan that rule exists to prevent.
+      expect(within_.getByRole('button', { name: /remove the unavailable lunch/i })).toBeEnabled()
+
+      // Recipe / Swap / Repeat / "I cooked this" all need an id and would 404 on press.
+      expect(within_.queryByRole('link', { name: /recipe/i })).not.toBeInTheDocument()
+      expect(within_.queryByRole('button', { name: /swap/i })).not.toBeInTheDocument()
+      expect(within_.queryByRole('button', { name: /repeat/i })).not.toBeInTheDocument()
+      expect(within_.queryByRole('button', { name: /cooked/i })).not.toBeInTheDocument()
+    })
+
+    // ADR-0001 splits writes by DIRECTION: creating a relationship to the recipe needs
+    // visibility, destroying your own row does not. Un-cooking is the second kind — it posts
+    // only the entry id, and the server gates it on ownership (KAN-3). This card is the app's
+    // only un-cook surface, so dropping the button here would strand the cook forever, with
+    // the single remaining action (×) deleting the plan entry instead of undoing the cook.
+    it('still lets you take back a cook you logged before it became unavailable', async () => {
+      const cookedPlan: MealPlan = {
+        ...planWithUnavailableLunch,
+        entries: planWithUnavailableLunch.entries.map((entry) =>
+          entry.id === 'entry-lunch'
+            ? { ...entry, cookedAt: '2026-07-29T18:00:00.000Z', cookNoteCount: 0 }
+            : entry,
+        ),
+      }
+      vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+      vi.spyOn(api, 'getMealPlan').mockResolvedValue(cookedPlan)
+      stubRecipeDetails()
+
+      renderRoute('/plan/2026-07-29')
+
+      await waitFor(() =>
+        expect(within(screen.getByTestId('day-slot-Breakfast')).getByText('Shakshuka')).toBeInTheDocument(),
+      )
+      const lunch = within(screen.getByTestId('day-slot-Lunch'))
+
+      const undo = lunch.getByRole('button', { name: /undo cooked for the unavailable lunch/i })
+      expect(undo).toBeEnabled()
+      // And it is the UNDO, not the remove — pressing it must not delete the plan entry.
+      expect(lunch.getByRole('button', { name: /remove the unavailable lunch/i })).toBeEnabled()
+    })
+
+    // The ingredients section reads `title === null` as "this slot is free", so returning
+    // null for a withheld meal printed "not chosen yet" directly beneath a card saying
+    // "Recipe unavailable — still planned", and a day whose only meal was withheld fell
+    // through to "Nothing planned yet". That is the disappearing-planned-meal failure this
+    // ticket exists to stop, one section lower down the same page.
+    it('does not report the withheld meal as an unchosen slot', async () => {
+      vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+      vi.spyOn(api, 'getMealPlan').mockResolvedValue(planWithUnavailableLunch)
+      stubRecipeDetails()
+
+      renderRoute('/plan/2026-07-29')
+
+      await waitFor(() =>
+        expect(within(screen.getByTestId('day-slot-Breakfast')).getByText('Shakshuka')).toBeInTheDocument(),
+      )
+
+      // Dinner really is unchosen; Lunch is not, and only one of them may say so.
+      expect(screen.getAllByText(/not chosen yet/i)).toHaveLength(1)
+      expect(screen.getByText(/its ingredients aren’t here/i)).toBeInTheDocument()
+      expect(screen.queryByText(/nothing planned yet/i)).not.toBeInTheDocument()
+    })
+
+    // "Unavailable" is ONE state (ADR-0001, KAN-2). Naming which cause applied would
+    // report an author's private visibility decision to a stranger, and for a recipe
+    // merely made private "deleted" is also simply false.
+    it('never says why', async () => {
+      vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+      vi.spyOn(api, 'getMealPlan').mockResolvedValue(planWithUnavailableLunch)
+      stubRecipeDetails()
+
+      renderRoute('/plan/2026-07-29')
+
+      // Wait for the WEEK to land first. Every slot renders before the plan arrives, so
+      // asserting straight on Lunch would pass against the not-yet-loaded page — which is
+      // exactly the "Add lunch" state this test exists to rule out. Scoped to the breakfast
+      // slot because the dish name also appears in the ingredients section below.
+      await waitFor(() =>
+        expect(within(screen.getByTestId('day-slot-Breakfast')).getByText('Shakshuka')).toBeInTheDocument(),
+      )
+      const copy = (screen.getByTestId('day-slot-Lunch').textContent ?? '').toLowerCase()
+      for (const forbidden of ['delet', 'privat', 'hidden', 'unshared', 'author']) {
+        expect(copy).not.toContain(forbidden)
+      }
+    })
+  })
+
   it("lists each dish's ingredients under its own heading", async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
     vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
