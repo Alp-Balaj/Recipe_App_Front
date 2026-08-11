@@ -92,14 +92,24 @@ export function useCookLogMutations() {
   /**
    * Sets or clears a note. Increments nothing — see api/cookLog.updateCookNote.
    *
-   * Only the cook-log caches are touched: no counter moved, so the social
-   * caches have learned nothing and invalidating them would be a refetch for
-   * no reason.
+   * The social caches are still deliberately left alone: no counter moved, so
+   * the feed and the shopping list have learned nothing and invalidating them
+   * would be a refetch for no reason.
+   *
+   * The PLAN cache is the exception, and it was not one until KAN-8 (this used
+   * to invalidate the cook log alone). GET /meal-plans now reports
+   * `cookNoteCount` per entry, and the day page's un-cook toggle reads it to
+   * decide whether to confirm before deleting the slot's cooks. Writing a note
+   * therefore changes what that read says. Production staleTime is 30s
+   * (main.tsx), so leaving it out means "write a note, go back to the day,
+   * un-tick" is answered from a cached count of 0 — no dialog, note gone: the
+   * exact silent destruction the confirmation exists to prevent.
    */
   const saveNote = useMutation({
     mutationFn: (vars: { id: string; note: string | null }) => updateCookNote(vars.id, vars.note),
     onSuccess: (updated: CookLogEntry) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.cookLog.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mealPlans.all })
       return updated
     },
   })

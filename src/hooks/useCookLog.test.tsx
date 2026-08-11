@@ -66,6 +66,37 @@ describe('useCookLogMutations', () => {
   })
 
   /**
+   * KAN-8. Writing a note used to touch only the cook-log caches, on the reasoning
+   * that no counter had moved. That stopped being true the moment the planned-meal
+   * read began reporting `cookNoteCount`: a note now changes what GET /meal-plans
+   * says about the slot, and the day page's un-cook toggle reads exactly that field
+   * to decide whether to ask before deleting.
+   *
+   * Production staleTime is 30s (src/main.tsx), so without this invalidation the
+   * sequence "write a note, go back to the day, un-tick" is served a cached count of
+   * 0 — no dialog, note gone. Which is the failure this ticket exists to remove, so
+   * the guard has to survive the cache, not just the happy path.
+   */
+  it('a saved note invalidates the plan read that decides whether un-cooking asks', async () => {
+    const save = vi.spyOn(api, 'updateCookNote').mockResolvedValue({ ...entry, note: 'More harissa' })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries')
+
+    const { result } = renderHook(() => useCookLogMutations(), { wrapper: clientWrapper(client) })
+
+    result.current.saveNote.mutate({ id: 'c1', note: 'More harissa' })
+    await waitFor(() => expect(result.current.saveNote.isSuccess).toBe(true))
+
+    expect(save).toHaveBeenCalledWith('c1', 'More harissa')
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.cookLog.all })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.mealPlans.all })
+    // Still NOT the social caches: annotating a cook moves no counter they read,
+    // so the original reasoning holds for everything except the plan.
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.feed.all })
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.shopping.all })
+  })
+
+  /**
    * `networkMode: 'always'` (see useSocialMutations.ts's note on `logCooked`
    * for the full incident): a mutation fired while react-query believes the
    * browser is offline is normally PAUSED, not sent, on the promise that it

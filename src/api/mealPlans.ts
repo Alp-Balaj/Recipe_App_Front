@@ -67,6 +67,27 @@ export interface MealPlanEntry {
    * nothing is stored on the entry, so un-cooking simply returns it to null.
    */
   cookedAt?: string | null
+  /**
+   * How many of this slot's cooks carry a note — which is also how many notes
+   * un-cooking would delete, since a note belongs to exactly one cook (KAN-8).
+   *
+   * The day page's un-cook toggle reads this to decide whether the gesture needs
+   * confirming: 0 means there is nothing to lose and the toggle stays one tap.
+   *
+   * Optional only in the same sense `cookedAt` above is — the server sends it on
+   * every entry (it is a non-nullable int), so absent means a plan body written
+   * before KAN-8 shipped. Those fall back to the un-guarded toggle, which is the
+   * behaviour they already had; the guard cannot be stricter than the data.
+   *
+   * That optionality FAILS OPEN, and knowingly: an entry built without this field
+   * disables the confirmation and TypeScript will not say a word. Anything that
+   * constructs a MealPlanEntry locally — an optimistic cache patch of the kind
+   * useSocialMutations already does elsewhere — must carry the real count through,
+   * or it silently re-opens the note deletion this field exists to prevent.
+   * Required is the safer shape and was left for a session that can rewrite the
+   * ~54 fixtures across nine test files without colliding with concurrent work.
+   */
+  cookNoteCount?: number
 }
 
 export interface MealPlan {

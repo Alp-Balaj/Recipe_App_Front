@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/api/queryKeys'
 import { renderRoute } from '@/test/utils'
 import * as api from '@/api/mealPlans'
 import * as planNutrition from '@/api/planNutrition'
@@ -799,6 +801,21 @@ describe('the cook toggle on an already-cooked entry', () => {
     ],
   }
 
+  // KAN-8: the same slot, but somebody wrote a note against one of its cooks.
+  const notedPastPlan: MealPlan = {
+    ...plan,
+    entries: [
+      {
+        id: 'entry-1',
+        dayOfWeek: 'Monday',
+        mealType: 'Dinner',
+        recipe: { id: 'recipe-shakshuka', title: 'Shakshuka', imageUrl: null, totalTimeMinutes: 30 },
+        cookedAt: '2026-07-27T18:00:00.000Z',
+        cookNoteCount: 1,
+      },
+    ],
+  }
+
   it('shows a cooked meal as settled and un-cooks it on tap', async () => {
     vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
     vi.spyOn(api, 'getMealPlan').mockResolvedValue(cookedPastPlan)
@@ -839,5 +856,149 @@ describe('the cook toggle on an already-cooked entry', () => {
 
     await userEvent.click(undoButton)
     await waitFor(() => expect(uncookCalls).toEqual(['entry-1']))
+  })
+
+  // ── KAN-8: un-cooking never silently destroys a note ─────────────────────
+  // Un-ticking deletes every cook against the slot, notes included. The toggle
+  // stays a one-tap reversible gesture when there is nothing to lose, and asks
+  // exactly once there is — a dialog on every un-tick would wreck the gesture.
+
+  it('asks before un-cooking a slot whose cooks carry a note, and names what would go', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(notedPastPlan)
+    const uncookCalls: string[] = []
+    stubWithUncook(uncookCalls)
+
+    renderRoute('/plan/2026-07-27')
+
+    await userEvent.click(await screen.findByRole('button', { name: /undo cooked for/i }))
+
+    // The dialog names the note as the thing at stake, and the dish it belongs
+    // to — "are you sure?" over a gesture that reads as un-ticking a checkbox
+    // tells the user nothing about what they are about to lose. getAllByText
+    // because the copy legitimately says "note" more than once (the sentence and
+    // the button); this asserts the subject, not the wording.
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getAllByText(/note/i).length).toBeGreaterThan(0)
+    expect(within(dialog).getAllByText(/shakshuka/i).length).toBeGreaterThan(0)
+
+    // …and nothing has been deleted while it is open. This is the assertion the
+    // whole ticket is about: asking after the fact is not asking.
+    expect(uncookCalls).toEqual([])
+  })
+
+  it('leaves the cooks and their notes alone when the confirmation is cancelled', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(notedPastPlan)
+    const uncookCalls: string[] = []
+    stubWithUncook(uncookCalls)
+
+    renderRoute('/plan/2026-07-27')
+
+    await userEvent.click(await screen.findByRole('button', { name: /undo cooked for/i }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: /keep/i }))
+
+    // Dismissed, no delete, and the meal still reads as cooked — cancelling is
+    // not a slower yes.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(uncookCalls).toEqual([])
+    expect(screen.getByRole('button', { name: /undo cooked for/i })).toBeInTheDocument()
+  })
+
+  it('un-cooks once the confirmation is accepted', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue(notedPastPlan)
+    const uncookCalls: string[] = []
+    stubWithUncook(uncookCalls)
+
+    renderRoute('/plan/2026-07-27')
+
+    await userEvent.click(await screen.findByRole('button', { name: /undo cooked for/i }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: /delete/i }))
+
+    await waitFor(() => expect(uncookCalls).toEqual(['entry-1']))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  /**
+   * Invalidating the plan cache when a note is saved marks the query stale; it
+   * does not make the rendered count true. React Query serves the cached entries
+   * immediately and refetches in the background, so there is a window — after
+   * writing a note in /plan's card, tapping straight through to the day — where
+   * the page is showing cookNoteCount 0 while the real answer is on its way.
+   * Tapping "✓ Cooked" in that window would delete the note with no dialog,
+   * which is the ticket's failure with a smaller window rather than a fixed one.
+   *
+   * So the toggle must decide on data it knows is settled: while a refetch is in
+   * flight it waits for the answer instead of trusting what it has.
+   *
+   * The second read is held OPEN deliberately. Letting it resolve on its own
+   * makes the test pass against the un-guarded page too — the refetch simply
+   * lands before userEvent finishes its microtasks, and the assertion then
+   * proves nothing. Holding it open is what puts the click genuinely inside the
+   * window: the page has a stale 0 rendered, the true answer is still in the
+   * air, and only a toggle that waits can get this right.
+   */
+  it('waits for an in-flight plan refetch before deciding, instead of trusting a cached count', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    let releaseFresh: (plan: MealPlan) => void = () => {}
+    const freshRead = new Promise<MealPlan>((resolve) => {
+      releaseFresh = resolve
+    })
+    const getPlan = vi
+      .spyOn(api, 'getMealPlan')
+      .mockResolvedValueOnce(cookedPastPlan) // stale: no note recorded yet
+      .mockReturnValue(freshRead) // fresh: the note the user just wrote, still in flight
+    const uncookCalls: string[] = []
+    stubWithUncook(uncookCalls)
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    renderRoute('/plan/2026-07-27', { client })
+
+    const undo = await screen.findByRole('button', { name: /undo cooked for/i })
+    await waitFor(() => expect(getPlan).toHaveBeenCalledTimes(1))
+
+    // The note lands while the day is on screen — the same invalidation
+    // useCookLog.saveNote fires, which puts a refetch in flight under the
+    // already-rendered (stale) count.
+    void client.invalidateQueries({ queryKey: queryKeys.mealPlans.all })
+    await waitFor(() => expect(getPlan).toHaveBeenCalledTimes(2))
+
+    await userEvent.click(undo)
+
+    // Nothing has gone out while the answer is unknown. This is the assertion
+    // the un-guarded page fails: it would have read the cached 0 and deleted.
+    expect(uncookCalls).toEqual([])
+
+    releaseFresh(notedPastPlan)
+
+    // Asked, not deleted: the toggle decided on the refetched answer.
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(uncookCalls).toEqual([])
+  })
+
+  // The other half of the rule, and the one a confirmation dialog is most likely
+  // to break by accident: a cooked slot nobody annotated must stay ONE TAP. The
+  // existing "un-cooks it on tap" test above proves the DELETE still fires on
+  // cookedPastPlan (cookNoteCount absent); this pins that no dialog appears on
+  // the way — otherwise a stray dialog would satisfy that test too, since its
+  // click would be answered by nothing and the DELETE never sent.
+  it('does not ask when the slot has no notes to lose', async () => {
+    vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
+    vi.spyOn(api, 'getMealPlan').mockResolvedValue({
+      ...cookedPastPlan,
+      entries: [{ ...cookedPastPlan.entries[0], cookNoteCount: 0 }],
+    })
+    const uncookCalls: string[] = []
+    stubWithUncook(uncookCalls)
+
+    renderRoute('/plan/2026-07-27')
+
+    await userEvent.click(await screen.findByRole('button', { name: /undo cooked for/i }))
+
+    await waitFor(() => expect(uncookCalls).toEqual(['entry-1']))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

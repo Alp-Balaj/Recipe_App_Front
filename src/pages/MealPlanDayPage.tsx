@@ -54,6 +54,7 @@ import DayTotals, { type DaySlot } from '@/components/mealplan/DayTotals'
 import DayNutritionRibbon from '@/components/mealplan/DayNutritionRibbon'
 import PickerContent from '@/components/mealplan/PickerContent'
 import RecipePickerModal from '@/components/mealplan/RecipePickerModal'
+import UncookConfirm from '@/components/mealplan/UncookConfirm'
 
 /** How long the Undo strip stays after a placement. */
 const UNDO_MS = 6000
@@ -110,6 +111,12 @@ function DayView({ date }: { date: Date }) {
   const [pickerMeal, setPickerMeal] = useState<MealTypeName | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [placed, setPlaced] = useState<Placed | null>(null)
+  /**
+   * The un-cook waiting on an answer (KAN-8) — set only when the slot's cooks
+   * carry a note. Null is the normal state, including while un-cooking a slot
+   * with nothing to lose: that path never comes through here.
+   */
+  const [uncookAsk, setUncookAsk] = useState<{ entryId: string; title: string; noteCount: number } | null>(null)
 
   // Same corpus the picker itself reads (PickerContent's own usePickerCorpus
   // call), same query keys — so this shares its cache rather than costing a
@@ -223,6 +230,62 @@ function DayView({ date }: { date: Date }) {
   // per-recipe count server-side, so firing useSocialMutations().logCooked as well would
   // count the cook twice (see api/cookLog.logCook).
   const { log: logCooked, unlog } = useCookLogMutations()
+
+  /**
+   * The un-cook itself, once it is going to happen. Split out from the toggle
+   * because two callers reach it — the plain one-tap gesture, and the
+   * confirmation's accept (KAN-8) — and only the toggle decides between them.
+   */
+  const uncook = (entryId: string) => {
+    setMessage(null)
+    unlog.mutate(
+      { mealPlanEntryId: entryId },
+      { onError: () => setMessage("Couldn't undo that. Try again.") },
+    )
+  }
+
+  /**
+   * The toggle (KAN-8): ask first when there is writing to lose, otherwise go.
+   *
+   * It decides on a count it knows is SETTLED, which is the whole difficulty.
+   * `saveNote` invalidating the plan only marks this query stale — React Query
+   * keeps serving the cached entries and refetches underneath, so between
+   * writing a note on /plan and tapping through to the day there is a window
+   * where the rendered `cookNoteCount` is 0 and the true answer is still in
+   * flight. Deciding from the render in that window deletes the note with no
+   * dialog: the ticket's own failure, in a smaller window rather than fixed.
+   *
+   * So when the read is in flight or overdue, this waits for it. That costs a
+   * round trip only when the data is actually in doubt — a freshly loaded day
+   * still un-cooks on one tap with no extra request.
+   *
+   * If the refetch fails we fall back to the entry we already had. A network
+   * error is not grounds to make the toggle unusable, and the DELETE behind it
+   * would fail on the same connection anyway.
+   */
+  const toggleUncook = async (entry: MealPlanEntry) => {
+    setMessage(null)
+
+    let settled = entry
+    if (detail.isFetching || detail.isStale) {
+      const fresh = await detail.refetch()
+      const refreshed = fresh.data?.entries.find((candidate) => candidate.id === entry.id)
+      // Gone from the plan while we asked — removed on another surface. There is
+      // no slot left to un-cook, and inventing one would 404.
+      if (fresh.isSuccess && !refreshed) return
+      if (refreshed) settled = refreshed
+    }
+
+    // Absent means a plan body written before KAN-8 shipped — the server sends
+    // the count on every entry now. Those fall back to the un-guarded toggle,
+    // which is the behaviour they already had.
+    const noteCount = settled.cookNoteCount ?? 0
+    if (noteCount > 0) {
+      setUncookAsk({ entryId: entry.id, title: entry.recipe.title, noteCount })
+      return
+    }
+    uncook(entry.id)
+  }
 
   // Swap is DELETE-then-POST because slots are exclusive and POST is
   // pure-create (meal-planning-v1-semantics #4). If the POST fails we put the
@@ -468,17 +531,12 @@ function DayView({ date }: { date: Date }) {
                       : undefined
                   }
                   cookedAt={entry?.cookedAt ?? null}
-                  onUncook={
-                    entry?.cookedAt
-                      ? () => {
-                          setMessage(null)
-                          unlog.mutate(
-                            { mealPlanEntryId: entry.id },
-                            { onError: () => setMessage("Couldn't undo that. Try again.") },
-                          )
-                        }
-                      : undefined
-                  }
+                  // KAN-8. Un-cooking deletes every cook logged against this slot,
+                  // and a note belongs to a cook — so this tick can destroy writing.
+                  // toggleUncook asks only when there IS writing to lose; with
+                  // nothing at stake it stays the one-tap reversible gesture it has
+                  // always been.
+                  onUncook={entry?.cookedAt ? () => void toggleUncook(entry) : undefined}
                   // Only for days that have happened. Offering "I cooked this"
                   // against next Thursday's dinner would be asking the user to
                   // lie. The UNDO above is deliberately outside this gate.
@@ -504,6 +562,22 @@ function DayView({ date }: { date: Date }) {
 
           <DayIngredients groups={groups} isLoading={detailsLoading} />
         </div>
+      )}
+
+      {/*
+        Inside `body`, so the one dialog serves both the desktop split and the
+        mobile layout — the same reason the day's cards are composed here once.
+      */}
+      {uncookAsk && (
+        <UncookConfirm
+          dishTitle={uncookAsk.title}
+          noteCount={uncookAsk.noteCount}
+          onCancel={() => setUncookAsk(null)}
+          onConfirm={() => {
+            setUncookAsk(null)
+            uncook(uncookAsk.entryId)
+          }}
+        />
       )}
     </>
   )
