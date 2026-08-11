@@ -11,7 +11,13 @@
 // renderings of two numbers, and they must not be able to disagree.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { MEAL_ORDER, type DayName, type MealPlanEntry, type MealTypeName } from '@/api/mealPlans'
+import {
+  MEAL_ORDER,
+  type DayName,
+  type MealPlanEntry,
+  type MealTypeName,
+  type PlannedMealPlanEntry,
+} from '@/api/mealPlans'
 import { addDays, dayNameOf, formatPlanDate, planDayPath, shortDayOf } from './planDates'
 
 /** Three meals a day, seven days — the denominator the whole page counts against. */
@@ -52,7 +58,8 @@ export function weekDays(weekStart: Date, entries: MealPlanEntry[]): WeekDay[] {
       dayName,
       entries: ordered,
       openSlots: MEAL_ORDER.filter((meal) => !forDay.some((entry) => entry.mealType === meal)),
-      minutes: ordered.reduce((sum, entry) => sum + entry.recipe.totalTimeMinutes, 0),
+      // Unavailable slots (KAN-1) contribute nothing: cook time is the author's content.
+      minutes: ordered.reduce((sum, entry) => sum + (entry.recipe?.totalTimeMinutes ?? 0), 0),
     }
   })
 }
@@ -77,7 +84,11 @@ export function weekCoverage(days: WeekDay[]): WeekCoverage {
 }
 
 export interface NextUp {
-  entry: MealPlanEntry
+  /**
+   * Guaranteed to carry a recipe — the type says so because the hero is built
+   * entirely out of one (KAN-1). See the skip in `nextUp` below.
+   */
+  entry: PlannedMealPlanEntry
   date: Date
   /** "TONIGHT" / "TOMORROW" / "THURSDAY" — the hero eyebrow's second half. */
   whenLabel: string
@@ -96,6 +107,13 @@ export interface NextUp {
  * simply means every planned meal is still a candidate — the hero then shows
  * something you have already made, which is wrong but not broken, so callers
  * should pass the recent cook log rather than skipping it.
+ *
+ * An UNAVAILABLE meal (KAN-1) is skipped rather than surfaced. The hero's entire
+ * job is "here is the next thing to cook, start cooking it" — a slot whose recipe
+ * the caller cannot open has no title, no photo and no steps, so there is nothing
+ * to lead the page with and nothing the primary action could do. The slot is not
+ * hidden: it still renders as unavailable on the week strip and the day page,
+ * which is where it can be removed.
  */
 export function nextUp(days: WeekDay[], today: Date, cookedEntryIds: ReadonlySet<string>): NextUp | null {
   const todayKey = formatPlanDate(today)
@@ -106,9 +124,10 @@ export function nextUp(days: WeekDay[], today: Date, cookedEntryIds: ReadonlySet
 
     for (const entry of day.entries) {
       if (cookedEntryIds.has(entry.id)) continue
+      if (!entry.recipe) continue
 
       return {
-        entry,
+        entry: entry as NextUp['entry'],
         date: day.date,
         whenLabel:
           day.key === todayKey
@@ -142,9 +161,13 @@ export function repeatsWithinWeek(days: WeekDay[]): Set<string> {
   const out = new Set<string>()
 
   for (let i = 1; i < days.length; i++) {
-    const before = new Set(days[i - 1].entries.map((entry) => entry.recipe.id))
+    // Unavailable slots carry no id, so they can neither BE a repeat nor mark one.
+    const before = new Set(
+      days[i - 1].entries.map((entry) => entry.recipe?.id).filter((id) => id !== undefined),
+    )
     for (const entry of days[i].entries) {
-      if (before.has(entry.recipe.id)) out.add(`${days[i].key}|${entry.recipe.id}`)
+      const id = entry.recipe?.id
+      if (id !== undefined && before.has(id)) out.add(`${days[i].key}|${id}`)
     }
   }
 

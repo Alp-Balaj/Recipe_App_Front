@@ -28,8 +28,10 @@ import {
   removeMealPlanEntry,
   weekStartOf,
   MEAL_ORDER,
+  isPlanned,
   type MealPlanEntry,
   type MealTypeName,
+  type PlannedMealPlanEntry,
 } from '@/api/mealPlans'
 import { useCurrentWeekPlan, useEnsureWeekPlan, useMealPlanDetail } from '@/hooks/useMealPlan'
 import { useDayRecipes } from '@/hooks/useDayRecipes'
@@ -130,13 +132,20 @@ function DayView({ date }: { date: Date }) {
     () => weekEntries.filter((entry) => entry.dayOfWeek === day),
     [weekEntries, day],
   )
-  const recipeIds = useMemo(() => entries.map((entry) => entry.recipe.id), [entries])
+  // Unavailable slots (KAN-1) have no id to fetch details for, and asking for one would
+  // 404 — GET /recipes/{id} composes the same visibility rule the plan read now does.
+  const recipeIds = useMemo(
+    () => entries.map((entry) => entry.recipe?.id).filter((id) => id !== undefined),
+    [entries],
+  )
   const { byId, isLoading: detailsLoading, isError: detailsFailed } = useDayRecipes(recipeIds)
 
   /** recipeId → the days it already sits on this week ("Tue", "Tue, Thu"). */
   const plannedDays = useMemo(() => {
     const map = new Map<string, string>()
     for (const entry of weekEntries) {
+      // An unavailable meal names no recipe, so it cannot mark one as already planned.
+      if (!entry.recipe) continue
       const label = shortDayLabel(entry.dayOfWeek)
       const seen = map.get(entry.recipe.id)
       if (!seen) map.set(entry.recipe.id, label)
@@ -281,7 +290,10 @@ function DayView({ date }: { date: Date }) {
     // which is the behaviour they already had.
     const noteCount = settled.cookNoteCount ?? 0
     if (noteCount > 0) {
-      setUncookAsk({ entryId: entry.id, title: entry.recipe.title, noteCount })
+      // An unavailable slot offers no cook toggle, so the fallback is unreachable
+      // defence rather than a real case — but the dialog names what would be lost and
+      // must not print "undefined" if one ever gets here.
+      setUncookAsk({ entryId: entry.id, title: entry.recipe?.title ?? 'that meal', noteCount })
       return
     }
     uncook(entry.id)
@@ -292,7 +304,9 @@ function DayView({ date }: { date: Date }) {
   // original back — losing the meal you already had would be the worst
   // possible reading of "swap". Same care useMealPlanMutations takes on moves.
   const swapInDay = useMutation({
-    mutationFn: async (vars: { planId: string; entry: MealPlanEntry; recipeId: string }) => {
+    // `entry` is a PlannedMealPlanEntry: swap is never offered on an unavailable slot,
+    // and the restore branch below needs the original's recipe id to put it back.
+    mutationFn: async (vars: { planId: string; entry: PlannedMealPlanEntry; recipeId: string }) => {
       await removeMealPlanEntry(vars.planId, vars.entry.id)
       try {
         return await addMealPlanEntry(vars.planId, {
@@ -357,12 +371,19 @@ function DayView({ date }: { date: Date }) {
 
   const daySlots: DaySlot[] = MEAL_ORDER.map((meal) => {
     const entry = entryFor(meal)
-    return { meal, entry, recipe: entry ? byId.get(entry.recipe.id) : undefined }
+    return { meal, entry, recipe: entry?.recipe ? byId.get(entry.recipe.id) : undefined }
   })
 
   const groups: IngredientGroup[] = MEAL_ORDER.map((meal) => {
     const entry = entryFor(meal)
     if (!entry) return { meal, title: null, ingredients: [] }
+    // An unavailable meal (KAN-1) contributes no ingredients, but it is NOT an unplanned
+    // slot and must not read as one: `title: null` is this section's "free slot" marker, so
+    // returning it printed "Lunch — not chosen yet" directly under a card saying "Recipe
+    // unavailable — still planned", and a day whose only meal was unavailable fell through
+    // to the "Nothing planned yet" footer. That is precisely the planned-meal-disappears
+    // failure this ticket exists to stop, reintroduced one section lower.
+    if (!entry.recipe) return { meal, title: 'unavailable', ingredients: [], withheld: true }
     const recipe = byId.get(entry.recipe.id)
     return {
       meal,
@@ -382,7 +403,17 @@ function DayView({ date }: { date: Date }) {
     if (!meal) return
 
     const occupied = entryFor(meal)
-    if (occupied && planId) {
+    // A swap is a remove-then-add whose failure path restores the ORIGINAL, and an
+    // unavailable meal cannot be restored — POST /meal-plans/{id}/entries requires
+    // visibility. So a failed swap here would destroy the slot outright. The UI does not
+    // offer Swap on an unavailable card; this catches the race where the recipe went
+    // private between render and tap, and asks for the honest gesture instead.
+    if (occupied && !isPlanned(occupied)) {
+      setPickerMeal(null)
+      setMessage('That meal is no longer available. Remove it first, then add something new.')
+      return
+    }
+    if (occupied && isPlanned(occupied) && planId) {
       // Replacing, not filling — so this doesn't advance. You came here to
       // change one thing.
       setPickerMeal(null)
@@ -492,7 +523,7 @@ function DayView({ date }: { date: Date }) {
                   key={meal}
                   meal={meal}
                   entry={entry}
-                  recipe={entry ? byId.get(entry.recipe.id) : undefined}
+                  recipe={entry?.recipe ? byId.get(entry.recipe.id) : undefined}
                   detailLoading={detailsLoading}
                   isPast={past}
                   onAdd={
@@ -523,10 +554,13 @@ function DayView({ date }: { date: Date }) {
                   // A past day is a record of what you ate, so it doesn't offer
                   // to repeat itself — same rule the empty slots already follow.
                   onRepeatTomorrow={
-                    entry && !past
+                    // Not offered for an unavailable meal: there is no recipe id to repeat
+                    // with, and POST /meal-plans/{id}/entries would 404 on one anyway.
+                    entry?.recipe && !past
                       ? () => {
                           setMessage(null)
-                          repeatTomorrow.mutate({ meal, recipeId: entry.recipe.id })
+                          const recipeId = entry.recipe!.id
+                          repeatTomorrow.mutate({ meal, recipeId })
                         }
                       : undefined
                   }
@@ -541,12 +575,15 @@ function DayView({ date }: { date: Date }) {
                   // against next Thursday's dinner would be asking the user to
                   // lie. The UNDO above is deliberately outside this gate.
                   onCooked={
-                    entry && !entry.cookedAt && (past || isToday(date))
+                    // Same gate: logging a cook CREATES a relationship to the recipe, which
+                    // ADR-0001 says requires visibility — the server would refuse it.
+                    entry?.recipe && !entry.cookedAt && (past || isToday(date))
                       ? () => {
                           setMessage(null)
-                          const title = entry.recipe.title
+                          const planned = entry.recipe!
+                          const title = planned.title
                           logCooked.mutate(
-                            { recipeId: entry.recipe.id, mealPlanEntryId: entry.id },
+                            { recipeId: planned.id, mealPlanEntryId: entry.id },
                             {
                               onSuccess: () => setMessage(`Logged ${title}.`),
                               onError: () => setMessage("Couldn't log that. Try again."),

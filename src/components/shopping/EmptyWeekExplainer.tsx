@@ -93,10 +93,27 @@ export default function EmptyWeekExplainer(props: EmptyWeekExplainerProps): JSX.
         </div>
       ))}
 
-      {unavailableCount > 0 && (
+      {/* The unavailable-recipe card itself is NOT rendered here any more (KAN-1) — it moved
+          to UnavailableRecipesNotice, which the page shows in its banners whenever the count
+          is non-zero, including beside a populated list this component never sees.
+          `unavailableCount` still counts toward `hasReasons` above so the week does not fall
+          through to "Plan some meals", which would contradict the notice above it.
+
+          But it cannot leave NOTHING behind either. When an unavailable recipe is the only
+          reason the week is empty, every other branch here renders null and the page — which
+          also hides its add-item form under `total === 0` — becomes a blank screen with a
+          banner and no next step. So this says what is left and what to do about it, without
+          repeating the banner's sentence.
+
+          It does NOT point at the manual add form: ShoppingListPage hides that under
+          `total === 0` too (lines 724 and 814), so naming it here would promise a control
+          that is not on screen. (The StateBlock fallback above already says "add something of
+          your own above" in that same state — a pre-existing copy bug, left alone rather than
+          quietly widened.) */}
+      {unavailableCount > 0 && hiddenItems.length === 0 && silentMeals.length === 0 && (
         <div style={card}>
-          {unavailableCount} planned meal{unavailableCount === 1 ? "'s" : "s'"} recipe is no longer
-          available.
+          Nothing else to buy for this week — plan another meal and its ingredients will show
+          up here.
         </div>
       )}
 

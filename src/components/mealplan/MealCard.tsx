@@ -119,6 +119,72 @@ export default function MealCard({
     )
   }
 
+  // An UNAVAILABLE slot (KAN-1): the entry survives — the user planned this meal and the
+  // plan still says so — but its recipe was removed or is no longer shared with them, so
+  // every field the card renders from is gone. It is deliberately NOT the empty-slot branch
+  // above: an empty slot invites you to add something, and this one is already taken.
+  //
+  // Copy says "unavailable" and stops there, the same rule the cook log follows (KAN-2,
+  // ADR-0001): "unavailable" is ONE user-visible state, and naming which of the two causes
+  // applied would report an author's private visibility decision to a stranger.
+  //
+  // Two actions survive, and both for the same reason — ADR-0001 splits WRITES BY
+  // DIRECTION: one that creates a relationship to the recipe needs visibility, one that
+  // destroys the caller's own row does not.
+  //
+  //   Remove   — clears the slot. A slot its owner can neither open nor clear is exactly
+  //              the orphan that rule exists to prevent.
+  //   ✓ Cooked — the UNDO. Un-cooking is `unlog({ mealPlanEntryId })`: it needs no recipe
+  //              id, and UncookEntryAsync gates on ownership, never on visibility (KAN-3).
+  //              This card is the app's ONLY un-cook surface, so withholding it here is
+  //              not a cosmetic loss — it strands the cook permanently, and the one button
+  //              left would delete the plan entry instead of undoing the cook.
+  //
+  // Everything else needs a recipe id — Recipe, Swap, Repeat, and "I cooked this" itself
+  // (logging a cook CREATES a relationship, so the server refuses it) — and would 404 on
+  // press, so none of those is offered.
+  if (!entry.recipe) {
+    return (
+      <div
+        data-testid={`day-slot-${meal}`}
+        style={{ ...filledCard, background: tint, opacity: isPast ? 0.55 : 0.75 }}
+      >
+        <span style={{ ...band, background: ink }} />
+        <span style={{ ...photo, background: 'var(--tagbg)' }} />
+        <span style={info}>
+          <span style={{ ...slotLabel, color: ink }}>{meal}</span>
+          <span style={name}>Recipe unavailable</span>
+          <span style={metaLine}>
+            {cookedAt ? 'You cooked this — you can no longer open it' : 'Still planned — you can no longer open it'}
+          </span>
+        </span>
+        <span style={actions}>
+          {cookedAt && (
+            <button
+              type="button"
+              aria-label={`Undo cooked for the unavailable ${meal.toLowerCase()}`}
+              style={{ ...actionButton, ...cookedButton, cursor: onUncook ? 'pointer' : 'default' }}
+              disabled={!onUncook}
+              onClick={onUncook}
+            >
+              ✓ Cooked
+            </button>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              aria-label={`Remove the unavailable ${meal.toLowerCase()}`}
+              style={{ ...actionButton, cursor: 'pointer' }}
+              onClick={onRemove}
+            >
+              ×
+            </button>
+          )}
+        </span>
+      </div>
+    )
+  }
+
   const meta = recipe
     ? [
         formatMinutes(recipe.totalTimeMinutes),
