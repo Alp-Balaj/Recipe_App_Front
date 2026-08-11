@@ -13,14 +13,23 @@
 //
 // The list, its states and its "Show older dishes" control live in
 // CookedDishList, which the Profile tab renders too.
+//
+// "Add a cook" (KAN-6) lives HERE and not in CookedDishList, even though the
+// Profile tab renders that list too. Cooked is the page you open to look after
+// your record; the Profile tab is a summary of it. Putting a write control on
+// both would be two entry points to maintain for one gesture, and the summary is
+// not where anyone goes to do bookkeeping.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import AddCookPanel from '@/components/cooked/AddCookPanel'
 import CookedDishList from '@/components/cooked/CookedDishList'
 
 export default function CookedPage() {
   const navigate = useNavigate()
+  const [adding, setAdding] = useState(false)
+  const [added, setAdded] = useState<string | null>(null)
 
   return (
     <div className="scroll" style={page}>
@@ -29,14 +38,36 @@ export default function CookedPage() {
           <Link to="/plan" style={back}>
             ‹ Plan
           </Link>
-          <h1 style={title}>Cooked</h1>
+          <div style={titleRow}>
+            <h1 style={title}>Cooked</h1>
+            <button type="button" style={addButton} onClick={() => setAdding(true)}>
+              Add a cook
+            </button>
+          </div>
           <div style={subtitle}>
             Everything you have made, most recently cooked first. Ratings and notes are yours alone.
           </div>
         </header>
 
+        {/* A backdated cook usually lands somewhere down the list rather than at
+            the top — that is the feature working, and it is also why it needs
+            saying out loud. Without this the user records a two-year-old cook,
+            sees an unchanged first screen, and concludes nothing happened. */}
+        {added && (
+          <div role="status" style={confirmation}>
+            Added a cook of <strong>{added}</strong>.
+          </div>
+        )}
+
         <CookedDishList onBrowse={() => navigate('/discover')} />
       </div>
+
+      {adding && (
+        <AddCookPanel
+          onClose={() => setAdding(false)}
+          onAdded={(dishTitle) => setAdded(dishTitle)}
+        />
+      )}
     </div>
   )
 }
@@ -60,6 +91,36 @@ const back: CSSProperties = {
   fontWeight: 700,
   color: 'var(--accent)',
   textDecoration: 'none',
+}
+
+const titleRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+}
+
+const addButton: CSSProperties = {
+  flexShrink: 0,
+  cursor: 'pointer',
+  border: '1px solid var(--border)',
+  borderRadius: 999,
+  padding: '7px 14px',
+  fontFamily: 'inherit',
+  fontSize: 12.5,
+  fontWeight: 700,
+  background: 'var(--surface)',
+  color: 'var(--accent)',
+}
+
+const confirmation: CSSProperties = {
+  marginBottom: 14,
+  borderRadius: 12,
+  border: '1px solid var(--border)',
+  background: 'var(--surface2)',
+  padding: '10px 12px',
+  fontSize: 13,
+  color: 'var(--text)',
 }
 
 const title: CSSProperties = {
