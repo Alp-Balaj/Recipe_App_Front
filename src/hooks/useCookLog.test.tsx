@@ -3,12 +3,11 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { queryKeys } from '@/api/queryKeys'
-import { AuthContext, type AuthContextValue } from '@/auth/AuthContext'
 import { useCookLogMutations } from './useCookLog'
 import { useSocialEnvelope, type SocialEnvelope } from './useSocialEnvelope'
 import * as api from '@/api/cookLog'
 import type { CookLogEntry, UncookResponse } from '@/api/cookLog'
-import type { FeedItemResponse, UserSummaryResponse } from '@/api/social'
+import type { FeedItemResponse } from '@/api/social'
 
 function clientWrapper(client: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
