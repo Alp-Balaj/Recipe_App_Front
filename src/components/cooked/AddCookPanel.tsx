@@ -16,16 +16,9 @@
 // apart from which lens it opens on. Its "All" segment reaches every recipe the
 // user can SEE, not just their saved ones, which the ticket calls out
 // specifically: a saved-only corpus fails the exact case this feature exists for.
-//
-// One known limit, and it is the picker's rather than this panel's: PickerContent
-// filters the pages it has already loaded instead of asking the server. GET
-// /recipes DOES take `?search=` (Postgres websearch_to_tsquery) and BrowsePage
-// has used it since open-loops slice 2 — the picker simply predates that and was
-// never moved over. So a dish deep in a large public corpus needs "Show more"
-// before it can be typed for. That is exactly the "silently lossy" failure
-// BrowsePage's own comment describes, and it is tracked separately rather than
-// fixed here, because making search behave the same across the picker's personal
-// segments (which are bounded in-memory corpora) is a design question of its own.
+// Since KAN-17, All also SEARCHES the server rather than only the pages already
+// loaded, so a dish deep in a large public corpus is found by typing it rather
+// than by pressing "Show more" until it turns up.
 //
 // The second step is CookWhenForm, which KAN-7 moved out of this file so the
 // recipe page's "track this cook" prompt could reach the same date field rather

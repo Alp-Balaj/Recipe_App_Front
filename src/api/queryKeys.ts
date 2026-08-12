@@ -177,10 +177,17 @@ export const queryKeys = {
   // meal-plan redesign — SANCTIONED ADDITIVE EDIT to this frozen module, same
   // rationale as the blocks above. Nothing already here changed.
   //
-  // The picker needs WHOLE bounded lists rather than one page, so it can search
-  // them in memory (GET /recipes has no text-search parameter). These keys are
-  // deliberately distinct from saved.list() / recipes.mine(), which are the
-  // page-at-a-time infinite queries the profile and my-recipes surfaces use.
+  // The picker needs WHOLE bounded lists for its three PERSONAL segments (again /
+  // saved / mine), so they can be searched in memory: bounded, rankable by the
+  // caller's own history, no debounce. That is a different tradeoff from a
+  // "GET /recipes has no search" one — the server has taken ?search= since
+  // open-loops slice 2 — it is that the picker's own personal corpora are worth
+  // prefetching whole and everyone's public recipes are not. KAN-17 moved the
+  // picker's All segment onto that server search; it reuses recipes.list()
+  // above (keyed by the search term, same as BrowsePage) rather than adding a
+  // key here. These keys are deliberately distinct from saved.list() /
+  // recipes.mine(), which are the page-at-a-time infinite queries the profile
+  // and my-recipes surfaces use.
   picker: {
     /** Everything the recipe picker prefetches. */
     all: ['picker'] as const,

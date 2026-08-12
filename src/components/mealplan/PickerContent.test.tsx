@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterAll } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderRoute } from '@/test/utils'
 import * as api from '@/api/mealPlans'
@@ -41,6 +41,12 @@ function makeRecipe(over: Partial<RecipeResponse> & Pick<RecipeResponse, 'id' | 
 const harissa = makeRecipe({ id: 'r-harissa', title: 'Green harissa chicken', totalTimeMinutes: 45 })
 const orzo = makeRecipe({ id: 'r-orzo', title: 'Lemon orzo', totalTimeMinutes: 25 })
 const ramen = makeRecipe({ id: 'r-ramen', title: 'Quick ramen', totalTimeMinutes: 30, createdByUserId: USER_ID })
+/**
+ * Deliberately NOT in the unsearched `/recipes` page below — a public recipe
+ * the All segment has not paged to, the way page four of a large catalogue
+ * would not be loaded yet. Findable only by reaching the server.
+ */
+const menemen = makeRecipe({ id: 'r-menemen', title: 'Menemen' })
 
 const summary: MealPlanSummary = {
   id: PLAN_ID,
@@ -65,6 +71,8 @@ const plan: MealPlan = {
   ],
 }
 
+let apiFetch: ReturnType<typeof vi.spyOn>
+
 function stubEverything() {
   vi.spyOn(api, 'getMealPlanForWeek').mockResolvedValue(summary)
   vi.spyOn(api, 'getMealPlan').mockResolvedValue(plan)
@@ -72,9 +80,19 @@ function stubEverything() {
   vi.spyOn(api, 'getMealPlans').mockResolvedValue({ items: [summary], nextCursor: null })
   vi.spyOn(social, 'getSavedRecipes').mockResolvedValue({ items: [orzo], nextCursor: null })
 
-  vi.spyOn(client, 'apiFetch').mockImplementation(((path: string) => {
+  apiFetch = vi.spyOn(client, 'apiFetch').mockImplementation(((
+    path: string,
+    options?: { query?: Record<string, unknown> },
+  ) => {
     if (path === '/recipes') {
-      return Promise.resolve({ items: [harissa, orzo, ramen], nextCursor: null })
+      // A stand-in for the server's ?search= — menemen only turns up once a
+      // search term reaches this mock, exactly like `websearch_to_tsquery`
+      // would only be asked to run once the request actually carries one.
+      const search = typeof options?.query?.search === 'string' ? options.query.search.toLowerCase() : ''
+      const items = search
+        ? [harissa, orzo, ramen, menemen].filter((r) => r.title.toLowerCase().includes(search))
+        : [harissa, orzo, ramen]
+      return Promise.resolve({ items, nextCursor: null })
     }
     // Must precede the /recipes/{id} branch below — "mine" is a list route, not
     // an id. The server scopes it to the caller, so this returns only ramen
@@ -84,7 +102,7 @@ function stubEverything() {
     }
     if (path.startsWith('/recipes/')) {
       const id = path.slice('/recipes/'.length)
-      return Promise.resolve([harissa, orzo, ramen].find((r) => r.id === id))
+      return Promise.resolve([harissa, orzo, ramen, menemen].find((r) => r.id === id))
     }
     return Promise.resolve(undefined)
   }) as unknown as typeof client.apiFetch)
@@ -291,5 +309,91 @@ describe('the recipe picker', () => {
 
     await waitFor(() => expect(created).toHaveBeenCalledWith(WEEK_START))
     await waitFor(() => expect(added).toHaveBeenCalledWith(PLAN_ID, expect.objectContaining({ recipeId: 'r-orzo' })))
+  })
+})
+
+// ── KAN-17: the All segment searches the server ────────────────────────────
+// These run on REAL timers, like BrowsePage.test.tsx's own search block —
+// waitFor/findBy poll on the very timers fake ones would need faked, and the
+// 300ms debounce comfortably fits waitFor's default 1000ms budget. Typing goes
+// through fireEvent rather than user-event so keystrokes land with no await
+// between them, inside one debounce window.
+describe('the recipe picker — All segment search', () => {
+  beforeEach(resetPerTest)
+
+  it('finds a recipe it has not paged to', async () => {
+    stubEverything()
+    const user = await openPicker()
+
+    await user.click(screen.getByRole('tab', { name: /^all$/i }))
+    await screen.findByRole('button', { name: 'Green harissa chicken' })
+    expect(screen.queryByRole('button', { name: 'Menemen' })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /search your recipes/i }), {
+      target: { value: 'menemen' },
+    })
+
+    expect(await screen.findByRole('button', { name: 'Menemen' })).toBeInTheDocument()
+  })
+
+  it('debounces — typing does not fire a request per keystroke', async () => {
+    stubEverything()
+    const user = await openPicker()
+    await user.click(screen.getByRole('tab', { name: /^all$/i }))
+    await screen.findByRole('button', { name: 'Green harissa chicken' })
+
+    const requestsFor = (search: string) => {
+      const calls = apiFetch.mock.calls as [string, { query?: Record<string, unknown> }?][]
+      return calls.filter(([path, options]) => path === '/recipes' && options?.query?.search === search).length
+    }
+
+    const input = screen.getByRole('searchbox', { name: /search your recipes/i })
+    // Five keystrokes with no await between them — all inside one debounce window.
+    for (const value of ['m', 'me', 'men', 'mene', 'menem']) {
+      fireEvent.change(input, { target: { value } })
+    }
+
+    await waitFor(() => expect(requestsFor('menem')).toBe(1))
+    // Settle well past the window and confirm no straggler requests for the
+    // intermediate values followed.
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(requestsFor('m')).toBe(0)
+    expect(requestsFor('me')).toBe(0)
+    expect(requestsFor('men')).toBe(0)
+    expect(requestsFor('mene')).toBe(0)
+    expect(requestsFor('menem')).toBe(1)
+  })
+
+  it('keys the search into the query, so a stale response cannot land on a newer one', async () => {
+    stubEverything()
+    const user = await openPicker()
+    await user.click(screen.getByRole('tab', { name: /^all$/i }))
+    await screen.findByRole('button', { name: 'Green harissa chicken' })
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /search your recipes/i }), {
+      target: { value: 'menemen' },
+    })
+
+    // The menemen-only result, not the unsearched list still sitting behind it.
+    await screen.findByRole('button', { name: 'Menemen' })
+    expect(screen.queryByRole('button', { name: 'Green harissa chicken' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Lemon orzo' })).not.toBeInTheDocument()
+  })
+
+  it('clearing the search returns to the unfiltered All segment', async () => {
+    stubEverything()
+    const user = await openPicker()
+    await user.click(screen.getByRole('tab', { name: /^all$/i }))
+    await screen.findByRole('button', { name: 'Green harissa chicken' })
+
+    const input = screen.getByRole('searchbox', { name: /search your recipes/i })
+    fireEvent.change(input, { target: { value: 'menemen' } })
+    await screen.findByRole('button', { name: 'Menemen' })
+
+    fireEvent.change(input, { target: { value: '' } })
+
+    expect(await screen.findByRole('button', { name: 'Green harissa chicken' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Lemon orzo' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Menemen' })).not.toBeInTheDocument()
   })
 })
