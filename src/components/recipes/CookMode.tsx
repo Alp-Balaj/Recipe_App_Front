@@ -1220,6 +1220,15 @@ function AssistantSheet({
  * D18 point 3: a failed write holds this panel open with a Retry. Losing a
  * cook somebody just logged, silently, because a radio was off is the one
  * failure this surface must not have.
+ *
+ * KAN-7 made the ORDER of those two writes load-bearing: the server now refuses
+ * a rating with no cook behind it, so a star tapped before the cook has landed
+ * comes back a 409 and rolls off again with nothing to explain it. The stars
+ * therefore wait for `logged`. This is a very short wait in the ordinary case —
+ * the request is already in flight when the panel appears — and on a failure it
+ * is the Retry beside them that clears it, which is the same answer D18 already
+ * gave for the cook itself. Nothing here needs to know about the 409: the rating
+ * simply cannot be sent before the thing it depends on exists.
  */
 function FinishPanel({
   title,
@@ -1275,6 +1284,9 @@ function FinishPanel({
           return (
             <button
               key={star}
+              // Until the cook has landed there is nothing for a rating to
+              // belong to — see this panel's header comment.
+              disabled={!logged}
               onClick={() => {
                 if (!requireAuth()) return
                 onRate(myRating === star ? null : star)
@@ -1287,7 +1299,8 @@ function FinishPanel({
                 padding: '2px 4px',
                 fontSize: 38,
                 lineHeight: 1,
-                cursor: 'pointer',
+                cursor: logged ? 'pointer' : 'default',
+                opacity: logged ? 1 : 0.5,
                 color: filled ? 'var(--accent)' : 'var(--muted)',
               }}
             >

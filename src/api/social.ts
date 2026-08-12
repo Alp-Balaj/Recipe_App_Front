@@ -31,7 +31,7 @@
 // All list endpoints: ?cursor&limit (default 20, cap 50, <=0 → 400).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { apiFetch } from './client'
+import { ApiError, apiFetch } from './client'
 import type { Cuisine, DietaryRestriction, RecipeListResponse, RecipeResponse, Visibility } from './types'
 
 /** UserSummaryResponse — the compact author block on feed items + follow lists. */
@@ -185,15 +185,37 @@ export function markCooked(recipeId: string): Promise<CookedRecipeResponse> {
 }
 
 /**
- * PUT /recipes/{id}/rating → 200. Rating must be 1-5 (400 otherwise). Creates
- * the row if the caller never logged a cook — you can rate something you made
- * before this existed.
+ * PUT /recipes/{id}/rating → 200 | 400 (rating outside 1-5) | 409 (KAN-7: the
+ * caller has no cook of their own for this recipe) | 404.
+ *
+ * It used to create the caller's row when they had never cooked the recipe,
+ * at `timesCooked: 0` — which is how a dish nobody made ended up in a
+ * collection of dishes they made. It now writes nothing and refuses; see
+ * `needsACookFirst` for what a client does about that.
  */
 export function rateRecipe(recipeId: string, rating: number): Promise<CookedRecipeResponse> {
   return apiFetch<CookedRecipeResponse>(`/recipes/${recipeId}/rating`, {
     method: 'PUT',
     body: { rating },
   })
+}
+
+/**
+ * "This rating needs a cook behind it first" — the one 409 PUT /rating can
+ * answer (KAN-7), and the signal to offer recording the cook rather than to
+ * report a failure.
+ *
+ * Matched on the STATUS, not the sentence: the server's copy is a server
+ * decision and this must not break the day it is reworded. The status is
+ * unambiguous because the endpoint has exactly one conflict — see the backend's
+ * ADR-0004, which records that a second one would have to arrive with a reason
+ * on the wire.
+ *
+ * Nothing was written when this is true, so the retry after the cook lands is a
+ * first rating, not a re-rate.
+ */
+export function needsACookFirst(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409
 }
 
 /**
