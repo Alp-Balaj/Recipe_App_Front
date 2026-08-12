@@ -20,7 +20,9 @@ import {
   updateCookNote,
   type CookLogEntry,
   type PastCookFields,
+  type UncookResponse,
 } from '@/api/cookLog'
+import { applyCookedState } from './useSocialMutations'
 
 /** The newest cook + the lifetime total — everything /plan's §3 card renders. */
 export function useLatestCook() {
@@ -89,6 +91,35 @@ export function useCookLogMutations() {
   }
 
   /**
+   * KAN-18 — the un-log half of the invalidation above, and it cannot BE an
+   * invalidation.
+   *
+   * Since KAN-13 "you cooked this" means `timesCooked > 0`, so removing the last
+   * cook flips it. The feed cards heal on their own (the list above refetches
+   * them); the per-recipe social envelope does not, and cannot: it is seeded once
+   * with `staleTime: Infinity`, and its queryFn's first act is to read its own
+   * cached entry back and return it unchanged when the entry is fully known. So
+   * adding `queryKeys.social.envelopes` to `invalidate` marks the entry stale,
+   * re-runs the function, and changes nothing — the shape of fix that looks right
+   * and is a no-op. The entry has to be WRITTEN.
+   *
+   * Written from the server's answer, through the same `applyCookedState` the
+   * rating retract uses, rather than re-derived here from the cook count: the
+   * derivation belongs to the server and the SPA prefers a patch over a later
+   * read, so a locally-derived flag would overwrite the correct value and outlive
+   * the fetch that should have healed it (KAN-12, ADR-0005, ADR-0006).
+   *
+   * An empty `recipes` means nothing was written — the idempotent entry-scoped
+   * repeat — so there is deliberately nothing to patch.
+   */
+  const applyUncooked = (result: UncookResponse) => {
+    for (const row of result.recipes) {
+      applyCookedState(queryClient, row)
+    }
+    invalidate()
+  }
+
+  /**
    * Records a cook. Pass the plan entry id when the gesture happened on a plan
    * surface — it cannot be recovered later.
    *
@@ -129,7 +160,11 @@ export function useCookLogMutations() {
   const unlog = useMutation({
     networkMode: 'always',
     mutationFn: (vars: { mealPlanEntryId: string }) => uncookEntry(vars.mealPlanEntryId),
-    onSuccess: invalidate,
+    // KAN-18 reached this gesture too, and it had been wrong here for longer: the
+    // day page's tick is the OLDER of the two un-logs, and it started leaving the
+    // recipe page stale the moment KAN-13 redefined the flag — independently of
+    // KAN-14's row-scoped sibling below.
+    onSuccess: applyUncooked,
   })
 
   /**
@@ -151,7 +186,7 @@ export function useCookLogMutations() {
   const unlogOne = useMutation({
     networkMode: 'always',
     mutationFn: (vars: { id: string }) => unlogCook(vars.id),
-    onSuccess: invalidate,
+    onSuccess: applyUncooked,
   })
 
   /**

@@ -143,6 +143,27 @@ function patchEnvelopeCache(
   )
 }
 
+/**
+ * Write the server's answer to "has the caller cooked this" into both shared
+ * caches. The ONE way that flag is ever set — read `row.cookedByMe`, never
+ * derive it from `row.timesCooked` (KAN-12/KAN-13, and the field's own comment
+ * in api/social.ts).
+ *
+ * Exported because the cook log writes it too (KAN-18): `useCookLogMutations`'
+ * two un-log gestures move the same flag, from a reply carrying the same shape,
+ * and a second copy of these two patches is how the two paths would start
+ * disagreeing. Skipping a missing envelope entry is deliberate and unchanged —
+ * no surface is holding a stale flag if no surface created one.
+ */
+export function applyCookedState(queryClient: QueryClient, row: CookedRecipeResponse): void {
+  patchFeedCaches(queryClient, row.recipeId, (item) =>
+    item.cookedByMe === row.cookedByMe ? item : { ...item, cookedByMe: row.cookedByMe },
+  )
+  patchEnvelopeCache(queryClient, row.recipeId, (env) =>
+    env.cookedByMe === row.cookedByMe ? env : { ...env, cookedByMe: row.cookedByMe },
+  )
+}
+
 /** commentCount ± delta across the feed pages + the envelope entry (null-safe). */
 function patchCommentCount(queryClient: QueryClient, recipeId: string, delta: number): void {
   patchFeedCaches(queryClient, recipeId, (item) => ({
@@ -458,14 +479,9 @@ export function useSocialMutations() {
     // Only consulted on a retract: rating something does not make the caller its
     // cook — since KAN-13 that is true of the server's own answer too, not just of
     // what this surface chooses to patch.
-    onSuccess: (row: CookedRecipeResponse, { recipeId, rating }) => {
+    onSuccess: (row: CookedRecipeResponse, { rating }) => {
       if (rating !== null) return
-      patchFeedCaches(queryClient, recipeId, (item) =>
-        item.cookedByMe === row.cookedByMe ? item : { ...item, cookedByMe: row.cookedByMe },
-      )
-      patchEnvelopeCache(queryClient, recipeId, (env) =>
-        env.cookedByMe === row.cookedByMe ? env : { ...env, cookedByMe: row.cookedByMe },
-      )
+      applyCookedState(queryClient, row)
     },
     onError: (_err, _vars, context) => {
       if (context) restoreCaches(queryClient, context.snapshot)

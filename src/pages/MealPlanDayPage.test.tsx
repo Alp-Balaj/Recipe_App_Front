@@ -907,7 +907,20 @@ describe('the cook toggle on an already-cooked entry', () => {
       }
       if (path.startsWith('/cook-log/entries/') && init?.method === 'DELETE') {
         uncookCalls.push(path.replace('/cook-log/entries/', ''))
-        return Promise.resolve(undefined)
+        // KAN-18: a 200 carrying the dish's state, not the 204 this used to be —
+        // the slot's only cook is going, so the recipe comes back un-cooked and
+        // the client has something to patch its social caches with.
+        return Promise.resolve({
+          recipes: [
+            {
+              recipeId: 'recipe-shakshuka',
+              timesCooked: 0,
+              rating: null,
+              lastCookedAt: null,
+              cookedByMe: false,
+            },
+          ],
+        })
       }
       const hit = [shakshuka, cornSalad].find((recipe) => path === `/recipes/${recipe.id}`)
       return Promise.resolve(hit ?? undefined)

@@ -3,7 +3,17 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderRoute } from '@/test/utils'
 import * as cookLogApi from '@/api/cookLog'
-import type { CookLogEntry } from '@/api/cookLog'
+import type { CookLogEntry, UncookResponse } from '@/api/cookLog'
+
+/**
+ * What DELETE /cook-log/{id} answers with since KAN-18: the dish's state after
+ * the un-log, which is what the flag on every other surface is patched from.
+ * These rows are the page's only cook of `r-pide`, so the dish comes back
+ * un-cooked.
+ */
+const uncooked: UncookResponse = {
+  recipes: [{ recipeId: 'r-pide', timesCooked: 0, rating: null, lastCookedAt: null, cookedByMe: false }],
+}
 
 function cook(overrides: Partial<CookLogEntry> = {}): CookLogEntry {
   return {
@@ -118,7 +128,7 @@ describe('/plan/cooks', () => {
         .spyOn(cookLogApi, 'getCookLog')
         .mockResolvedValueOnce({ items: [cook()], nextCursor: null })
         .mockResolvedValue({ items: [], nextCursor: null })
-      const unlogCook = vi.spyOn(cookLogApi, 'unlogCook').mockResolvedValue(undefined)
+      const unlogCook = vi.spyOn(cookLogApi, 'unlogCook').mockResolvedValue(uncooked)
 
       renderRoute('/plan/cooks')
 
@@ -137,7 +147,7 @@ describe('/plan/cooks', () => {
         items: [cook({ note: 'dough needs a longer rest' })],
         nextCursor: null,
       })
-      const unlogCook = vi.spyOn(cookLogApi, 'unlogCook').mockResolvedValue(undefined)
+      const unlogCook = vi.spyOn(cookLogApi, 'unlogCook').mockResolvedValue(uncooked)
 
       renderRoute('/plan/cooks')
 
@@ -162,7 +172,7 @@ describe('/plan/cooks', () => {
           nextCursor: null,
         })
         .mockResolvedValue({ items: [], nextCursor: null })
-      const unlogCook = vi.spyOn(cookLogApi, 'unlogCook').mockResolvedValue(undefined)
+      const unlogCook = vi.spyOn(cookLogApi, 'unlogCook').mockResolvedValue(uncooked)
 
       renderRoute('/plan/cooks')
 
@@ -177,7 +187,7 @@ describe('/plan/cooks', () => {
       vi.spyOn(cookLogApi, 'getCookLog')
         .mockResolvedValueOnce({ items: [cook({ recipeAvailable: false })], nextCursor: null })
         .mockResolvedValue({ items: [], nextCursor: null })
-      const unlogCook = vi.spyOn(cookLogApi, 'unlogCook').mockResolvedValue(undefined)
+      const unlogCook = vi.spyOn(cookLogApi, 'unlogCook').mockResolvedValue(uncooked)
 
       renderRoute('/plan/cooks')
 

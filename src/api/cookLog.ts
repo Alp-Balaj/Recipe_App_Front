@@ -7,21 +7,23 @@
 // CookedRecipe is a lifetime aggregate ("how many times, and how good") and
 // cannot say WHEN, or what you thought that particular time.
 //
-// Wire contract (backend feat/plan-cook-log, verified 2026-08-10):
+// Wire contract (backend feat/plan-cook-log, verified 2026-08-10; the two DELETEs
+// updated by KAN-18, 2026-08-12):
 //   POST   /cook-log                      → 201 CookLogResponse | 404 (recipe/entry not yours)
 //   GET    /cook-log                      → 200 CookLogListResponse   (?cursor&limit&recipeId)
 //   GET    /cook-log/latest               → 200 CookLogLatestResponse (never 404)
 //   PATCH  /cook-log/{id}                 → 200 CookLogResponse | 404
-//   DELETE /cook-log/{id}                 → 204 | 404 (not the caller's, or already gone)
-//   DELETE /cook-log/entries/{entryId}    → 204 | 404 (entry not on one of the caller's plans)
+//   DELETE /cook-log/{id}                 → 200 UncookResponse | 404 (not the caller's, or gone)
+//   DELETE /cook-log/entries/{entryId}    → 200 UncookResponse | 404 (entry not on your plans)
 //
-// cooked-per-plan-entry (backend Tasks 1–4, verified 2026-08-10): the DELETE above
+// cooked-per-plan-entry (backend Tasks 1–4, verified 2026-08-10): the entry DELETE
 // removes EVERY cook row the caller logged against that plan slot in one call and
 // steps TimesCooked down by the count deleted, floored at 0 — never negative. It is
-// idempotent: un-cooking a slot with no rows still answers 204.
+// idempotent: un-cooking a slot with no rows still succeeds (with an empty list).
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch } from './client'
+import type { CookedRecipeResponse } from './social'
 
 export interface CookLogEntry {
   id: string
@@ -143,14 +145,36 @@ export function logCook(
 }
 
 /**
+ * What both un-log gestures answer with (KAN-18): the caller's row for every
+ * recipe whose state the delete moved, in the SAME shape the cooked/rated
+ * endpoints use — so one cache patcher serves all of them.
+ *
+ * `recipes` is EMPTY when nothing was written (the idempotent entry-scoped
+ * repeat). That is not "no news": it is "no recipe changed", and a caller must
+ * not patch anything on the strength of it.
+ *
+ * Why this is on the wire at all, rather than the client working the flag out
+ * from a count it already has: since KAN-13 "cooked" means `timesCooked > 0`,
+ * which is the SERVER's rule and has already changed once, and
+ * `useSocialEnvelope`'s merge prefers a patch over a later read — so a
+ * locally-derived flag would overwrite the server's answer and outlive the fetch
+ * that should have healed it. Same argument as `CookedRecipeResponse.cookedByMe`,
+ * and the backend's ADR-0006.
+ */
+export interface UncookResponse {
+  recipes: CookedRecipeResponse[]
+}
+
+/**
  * Un-logs every cook the caller recorded against one plan slot, and steps the
  * per-recipe cooked count back down by that many.
  *
- * Idempotent — un-cooking a slot that was never cooked succeeds. A 404 means the
- * entry is not on one of your plans, which is a different thing entirely.
+ * Idempotent — un-cooking a slot that was never cooked succeeds, with an empty
+ * `recipes`. A 404 means the entry is not on one of your plans, which is a
+ * different thing entirely.
  */
-export function uncookEntry(mealPlanEntryId: string): Promise<void> {
-  return apiFetch<void>(`/cook-log/entries/${mealPlanEntryId}`, { method: 'DELETE' })
+export function uncookEntry(mealPlanEntryId: string): Promise<UncookResponse> {
+  return apiFetch<UncookResponse>(`/cook-log/entries/${mealPlanEntryId}`, { method: 'DELETE' })
 }
 
 /**
@@ -170,9 +194,12 @@ export function uncookEntry(mealPlanEntryId: string): Promise<void> {
  *
  * The note on the cook goes with it, which is why the surface offering this must
  * confirm first when there is one (KAN-8).
+ *
+ * The reply names exactly one recipe — this dish — and is the only way the caller
+ * learns that removing its LAST cook turned "you cooked this" off (KAN-18).
  */
-export function unlogCook(id: string): Promise<void> {
-  return apiFetch<void>(`/cook-log/${id}`, { method: 'DELETE' })
+export function unlogCook(id: string): Promise<UncookResponse> {
+  return apiFetch<UncookResponse>(`/cook-log/${id}`, { method: 'DELETE' })
 }
 
 /**
