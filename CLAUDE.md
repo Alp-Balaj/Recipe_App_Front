@@ -229,11 +229,34 @@ files (e.g. lane C's `src/api/chat.ts`) are fine. Lane B has one sanctioned
 exception: a small additive "+ new recipe" entry point in `Sidebar`/`BottomNav`/
 `navItems.ts` (a link to `/recipes/new`, nothing structural).
 
+## Testing policy — assume parallel sessions
+
+Other agent sessions are usually working in sibling checkouts of these repos at
+the same time. Anything that binds a port, launches a server, or drives a
+browser collides with them. Those are therefore **opt-in only**: run e2e / live
+/ browser verification ONLY when the user explicitly asks for it in this
+session — never as a default step, and never as part of definition of done. Do
+not ask whether to run it; the default is no.
+
+- Never start `npm run dev` (:5173) or the backend (:5109) on your own
+  initiative. `npm run build` is fine — it binds nothing.
+- Run only the test files you touched (`npx vitest run <files>`), not the full
+  `npm test` suite: the suite throws false failures whenever Docker is churning
+  (see the sibling backend repo), and you cannot see what other sessions are
+  running.
+- Vitest + MSW tests are in-process (jsdom, no port) — they never conflict and
+  are always safe.
+- Full suites and the browser pass happen in a single dedicated verification
+  session that the user starts for that purpose.
+
 ## Workflow
 
 Verify-then-commit: sessions leave the main tree uncommitted; an independent
 verification session (prompt saved in the vault `Tests/`) runs before anything
 is committed to `master`. Lane branches may commit before verification —
 `master` only receives verified work at merge time. Definition of done for
-every checkpoint: `npm run build` and `npm test` exit 0 + live verification
-against the running backend where real endpoints are touched.
+every checkpoint: `npm run build` exits 0 and the touched test files pass
+(`npx vitest run <files>`). The full `npm test` run and live verification
+against a running backend belong to the user-requested verification session
+only — see the testing policy above; an implementation session never launches
+the backend or the dev server.
