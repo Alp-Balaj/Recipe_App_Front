@@ -103,6 +103,13 @@ export function useCookLogMutations() {
    * re-runs the function, and changes nothing — the shape of fix that looks right
    * and is a no-op. The entry has to be WRITTEN.
    *
+   * What that stale flag actually breaks, today, is NOT a screen: nothing renders
+   * `envelope.cookedByMe` — RecipeDetailPage does not read it, and FeedRail's flag
+   * comes off feed items (checked 2026-08-12). It reaches `isFullyKnown()`, which
+   * decides whether the F1 fallback fetches at all, so a wrong-but-non-null flag
+   * suppresses the one request that could have corrected it and hands itself to
+   * the next surface that reads the entry. See ADR-0006's "What this is NOT".
+   *
    * Written from the server's answer, through the same `applyCookedState` the
    * rating retract uses, rather than re-derived here from the cook count: the
    * derivation belongs to the server and the SPA prefers a patch over a later
@@ -111,9 +118,18 @@ export function useCookLogMutations() {
    *
    * An empty `recipes` means nothing was written — the idempotent entry-scoped
    * repeat — so there is deliberately nothing to patch.
+   *
+   * `result?.recipes ?? []` because a deploy is not atomic: an SPA holding this
+   * code against an API still on the old 204 gets `undefined` from apiFetch
+   * (204/empty body → undefined), and an unguarded `result.recipes` throws INSIDE
+   * onSuccess. React Query counts that as a failed mutation, so a delete that
+   * really happened is reported to the user as "Couldn't undo that" — and the
+   * invalidation below never runs, leaving the deleted cook on screen. Patch
+   * nothing, invalidate anyway: that is exactly the pre-KAN-18 behaviour, which is
+   * the right thing to degrade to when talking to a pre-KAN-18 server.
    */
-  const applyUncooked = (result: UncookResponse) => {
-    for (const row of result.recipes) {
+  const applyUncooked = (result: UncookResponse | undefined) => {
+    for (const row of result?.recipes ?? []) {
       applyCookedState(queryClient, row)
     }
     invalidate()
@@ -146,7 +162,27 @@ export function useCookLogMutations() {
       mealPlanEntryId?: string | null
       past?: PastCookFields
     }) => logCook(vars.recipeId, vars.mealPlanEntryId, vars.past),
-    onSuccess: invalidate,
+    // The other half of KAN-18, and it only became reachable BECAUSE of KAN-18.
+    //
+    // Un-logging now writes `cookedByMe: false` into an envelope entry that never
+    // refetches, and useSocialEnvelope's merge is `latest.cookedByMe ?? wire...` —
+    // a written false beats the server. So "un-tick a slot, tick it again" left the
+    // entry stuck on false: this write is the one that has to take it back. Before
+    // un-log wrote anything, the entry stayed (wrongly) true and a re-cook made it
+    // accidentally right.
+    //
+    // `true` from the gesture rather than from a server field, which the sibling
+    // `useSocialMutations.logCooked` has always done: POST /cook-log answers with
+    // the LOG row and carries no aggregate. This is not the derivation ADR-0006
+    // forbids — that one reads a count the client is holding and re-applies a rule
+    // it does not own. "A cook was just accepted, so the caller has cooked this" is
+    // true under the current rule and under the two it replaced. The tidier fix is
+    // the aggregate on this reply too; recorded as a follow-up rather than smuggled
+    // into KAN-18.
+    onSuccess: (_row, vars) => {
+      applyCookedState(queryClient, { recipeId: vars.recipeId, cookedByMe: true })
+      invalidate()
+    },
   })
 
   /**

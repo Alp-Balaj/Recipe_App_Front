@@ -3,11 +3,12 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { queryKeys } from '@/api/queryKeys'
+import { AuthContext, type AuthContextValue } from '@/auth/AuthContext'
 import { useCookLogMutations } from './useCookLog'
 import { useSocialEnvelope, type SocialEnvelope } from './useSocialEnvelope'
 import * as api from '@/api/cookLog'
 import type { CookLogEntry, UncookResponse } from '@/api/cookLog'
-import type { FeedItemResponse } from '@/api/social'
+import type { FeedItemResponse, UserSummaryResponse } from '@/api/social'
 
 function clientWrapper(client: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
@@ -244,6 +245,24 @@ describe('useCookLogMutations', () => {
       // this is where a client deriving the flag from "a cook was removed" is wrong.
       expect(result.current.envelope.cookedByMe).toBe(true)
       expect(cachedFeedItem().cookedByMe).toBe(true)
+    })
+
+    it('cooking it again takes the flag back', async () => {
+      vi.spyOn(api, 'unlogCook').mockResolvedValue(uncooked)
+      vi.spyOn(api, 'logCook').mockResolvedValue(entry)
+      const { render } = cookedSetup()
+
+      const { result } = render()
+      result.current.mutations.unlogOne.mutate({ id: 'c1' })
+      await waitFor(() => expect(result.current.envelope.cookedByMe).toBe(false))
+
+      result.current.mutations.log.mutate({ recipeId: 'r1' })
+      await waitFor(() => expect(result.current.envelope.cookedByMe).toBe(true))
+
+      // The half that only became reachable because un-log now WRITES the entry.
+      // A false that nothing takes back is worse than the stale true it replaced:
+      // useSocialEnvelope's merge is `latest.cookedByMe ?? wire.cookedByMe`, so a
+      // written false outranks the server on every later read of this entry.
     })
 
     it('an un-log that removed nothing patches nothing', async () => {

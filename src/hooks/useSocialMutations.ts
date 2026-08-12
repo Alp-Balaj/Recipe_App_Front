@@ -144,18 +144,26 @@ function patchEnvelopeCache(
 }
 
 /**
- * Write the server's answer to "has the caller cooked this" into both shared
- * caches. The ONE way that flag is ever set — read `row.cookedByMe`, never
- * derive it from `row.timesCooked` (KAN-12/KAN-13, and the field's own comment
- * in api/social.ts).
+ * Write "has the caller cooked this" into both shared caches — the one patcher
+ * every writer of that flag goes through, so the feed pages and the per-recipe
+ * envelope cannot end up disagreeing about it.
  *
- * Exported because the cook log writes it too (KAN-18): `useCookLogMutations`'
- * two un-log gestures move the same flag, from a reply carrying the same shape,
- * and a second copy of these two patches is how the two paths would start
- * disagreeing. Skipping a missing envelope entry is deliberate and unchanged —
- * no surface is holding a stale flag if no surface created one.
+ * It does NOT decide the value; each caller says where its answer came from:
+ *  - the rating retract and both un-logs pass the server's `cookedByMe` field
+ *    verbatim, and must never derive it from `timesCooked` (KAN-12/KAN-13, and
+ *    the field's own comment in api/social.ts);
+ *  - the two cook paths pass `true` off the accepted write, because neither
+ *    POST answers with the aggregate — see `logCooked` below and
+ *    `useCookLogMutations.log`.
+ *
+ * Takes only the two fields it writes, so a caller with no aggregate in hand
+ * cannot pad the gap with invented counts. Skipping a missing envelope entry is
+ * deliberate: no surface is holding a stale flag if no surface created one.
  */
-export function applyCookedState(queryClient: QueryClient, row: CookedRecipeResponse): void {
+export function applyCookedState(
+  queryClient: QueryClient,
+  row: Pick<CookedRecipeResponse, 'recipeId' | 'cookedByMe'>,
+): void {
   patchFeedCaches(queryClient, row.recipeId, (item) =>
     item.cookedByMe === row.cookedByMe ? item : { ...item, cookedByMe: row.cookedByMe },
   )
@@ -512,12 +520,11 @@ export function useSocialMutations() {
     networkMode: 'always',
     mutationFn: ({ recipeId }: { recipeId: string }) => markCooked(recipeId),
     onSuccess: (_row: CookedRecipeResponse, { recipeId }) => {
-      patchFeedCaches(queryClient, recipeId, (item) =>
-        item.cookedByMe ? item : { ...item, cookedByMe: true },
-      )
-      patchEnvelopeCache(queryClient, recipeId, (env) =>
-        env.cookedByMe === true ? env : { ...env, cookedByMe: true },
-      )
+      // Through the shared patcher since KAN-18, where this used to hold its own
+      // copy of the same two patches. `true` off the accepted write rather than
+      // off `_row.cookedByMe`: that is what this gesture has always claimed, and
+      // it is the claim the un-log path now has to be able to take back.
+      applyCookedState(queryClient, { recipeId, cookedByMe: true })
       // KAN-4: this is the gesture that puts a dish INTO Cooked, or moves it
       // back to the top and bumps its count. Nothing in the caches above holds
       // a dish row, so there is nothing to patch. Reset rather than invalidate —
