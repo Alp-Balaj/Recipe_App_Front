@@ -136,7 +136,14 @@ function AppShellContent() {
     // column — 1048px before any padding, so in the readable column the rail
     // simply has nowhere to be and the page falls back to its phone layout on a
     // desktop screen.
-    panePath.startsWith('/shopping-list')
+    panePath.startsWith('/shopping-list') ||
+    // Cooked (KAN-9) needs it for the same reason: a 380px dish list beside the
+    // dish itself does not fit in a 720px column, and squeezed into one the
+    // dish pane ends up narrower than the phone screen it replaced. Between
+    // 1024 and Cooked's own 1180px breakpoint this only widens the pane the
+    // page is centred IN — the page keeps its own 720px canvas, so the reading
+    // width is unchanged and the content simply centres in a wider column.
+    panePath.startsWith('/cooked')
 
   // ── Auth gate (guest access, D9 amendment) ──────────────────────────────
   // A guest landing on an account-only route by direct URL gets Discover with

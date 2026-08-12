@@ -12,6 +12,9 @@
 // statistics, no streaks and no sort control (design D13) — that is a different
 // product, and this one is a record.
 //
+// Search (KAN-9) arrives as a prop, already debounced, and goes straight to the
+// server. The list never filters `dishes` itself — see the `q` prop.
+//
 // Two rules the copy must keep:
 //   - "Unavailable" is ONE state (design D14, ADR-0001). A recipe leaves reach
 //     either because its author removed it or because they stopped sharing it,
@@ -38,11 +41,25 @@ import { gradientFor } from '@/pages/recipeVisuals'
 interface Props {
   /** The empty state's call to action — where a user with no dishes should go. */
   onBrowse?: () => void
+  /**
+   * The search term, already debounced (KAN-9). Passed STRAIGHT to the server and
+   * never applied to `dishes` here: the collection is keyset-paged, so a filter
+   * over the pages in hand would report "no such dish" for anything the reader
+   * has not paged to yet.
+   */
+  q?: string
+  /**
+   * The dish the pane beside this list is showing (KAN-9, two-pane only). Marks
+   * the row so a reader scrolling the list can still see what they opened.
+   */
+  selectedId?: string | null
+  /** The empty-SEARCH state's way out. Absent means this list has no search box. */
+  onClearSearch?: () => void
 }
 
-export default function CookedDishList({ onBrowse }: Props) {
+export default function CookedDishList({ onBrowse, q = '', selectedId, onClearSearch }: Props) {
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useCookedDishes()
+    useCookedDishes(q)
 
   const dishes = (data?.pages ?? []).flatMap((page) => page.items)
 
@@ -92,6 +109,21 @@ export default function CookedDishList({ onBrowse }: Props) {
   if (isLoading || fillingFirstPage) {
     return <StateBlock title="Loading your dishes…" body="Fetching what you have cooked." />
   }
+  // Two different facts, and only one of them is about the reader's cooking
+  // (KAN-9). "Nothing cooked yet" is a claim about the COLLECTION, and telling
+  // it to someone with forty dishes and a typo is false — worse, its call to
+  // action sends them off to find a recipe when what they need is the box they
+  // just typed into. So the search miss gets its own state, its own words, and
+  // the one way out that fixes the actual problem.
+  if (dishes.length === 0 && q) {
+    return (
+      <StateBlock
+        title={`No dishes matching “${q}”`}
+        body="Search looks at the name a dish is listed under. Try a shorter word."
+        action={onClearSearch ? { label: 'Clear search', onClick: onClearSearch } : undefined}
+      />
+    )
+  }
   if (dishes.length === 0) {
     return (
       <StateBlock
@@ -105,7 +137,12 @@ export default function CookedDishList({ onBrowse }: Props) {
   return (
     <>
       {dishes.map((dish, index) => (
-        <DishRow key={dish.recipeId} dish={dish} last={index === dishes.length - 1} />
+        <DishRow
+          key={dish.recipeId}
+          dish={dish}
+          last={index === dishes.length - 1}
+          selected={dish.recipeId === selectedId}
+        />
       ))}
 
       {/* The failed-while-paging case: the rows above survive, and the retry
@@ -136,7 +173,15 @@ export default function CookedDishList({ onBrowse }: Props) {
   )
 }
 
-function DishRow({ dish, last }: { dish: CookedDish; last: boolean }) {
+function DishRow({
+  dish,
+  last,
+  selected,
+}: {
+  dish: CookedDish
+  last: boolean
+  selected: boolean
+}) {
   const image = dish.imageUrl
 
   const body = (
@@ -176,6 +221,13 @@ function DishRow({ dish, last }: { dish: CookedDish; last: boolean }) {
   const style: CSSProperties = {
     ...rowStyle,
     ...(last ? null : { borderBottom: '1px solid var(--hair)' }),
+    // Two-pane only, and never on a phone, where nothing is ever "selected":
+    // `selectedId` is only passed by the surface that renders a dish beside the
+    // list. Padded out into the pane's own gutter so the tint reads as a band
+    // across the row rather than a box drawn around the text.
+    ...(selected
+      ? { background: 'var(--chipbg)', margin: '0 -10px', padding: '12px 10px', borderRadius: 12 }
+      : null),
   }
 
   // The row opens the DISH page, not the recipe (KAN-5) — every time the user
@@ -187,8 +239,16 @@ function DishRow({ dish, last }: { dish: CookedDish; last: boolean }) {
   // make editable and they live nowhere else, so leaving the row inert would
   // strand the record it is a row of. Nothing about the destination needs the
   // recipe: the page is the caller's own log.
+  // On a wide window this same link becomes the two-pane selection (KAN-9) — it
+  // still changes the URL, so the pane is shareable and survives a refresh, and
+  // the layout above simply keeps the list mounted beside it instead of
+  // navigating away. One row, one destination, either shape.
   return (
-    <Link to={`/cooked/${dish.recipeId}`} style={{ ...style, textDecoration: 'none' }}>
+    <Link
+      to={`/cooked/${dish.recipeId}`}
+      aria-current={selected ? 'page' : undefined}
+      style={{ ...style, textDecoration: 'none' }}
+    >
       {body}
     </Link>
   )

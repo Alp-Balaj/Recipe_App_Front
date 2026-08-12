@@ -7,8 +7,8 @@
 // stream behind /plan/cooks — the two answer different questions and neither is
 // a filter of the other.
 //
-// Wire contract (backend KAN-4, KAN-5):
-//   GET /users/me/cooked-recipes            → 200 CookedDishListResponse (?cursor&limit)
+// Wire contract (backend KAN-4, KAN-5, KAN-9):
+//   GET /users/me/cooked-recipes            → 200 CookedDishListResponse (?cursor&limit&q)
 //                                           | 401 for a guest (the list is caller-scoped)
 //   GET /users/me/cooked-recipes/{recipeId} → 200 CookedDishDetailResponse
 //                                           | 404 for a dish the LIST would not show either
@@ -93,13 +93,20 @@ export interface CookedDishDetail {
  * render (a pre-August dish whose recipe is gone leaves nothing to name it), so
  * a page can legitimately come back shorter than `limit` and still have more
  * behind it.
+ *
+ * `q` is the search box (KAN-9), and it is a SERVER parameter on purpose. Never
+ * filter the pages already in hand instead: under keyset paging that silently
+ * misses every dish behind the cursor, so a search would answer "nothing" for a
+ * dish the user definitely cooked — the one failure a record cannot afford. It
+ * matches the title the row displays, and it composes with `cursor`: results
+ * page exactly like the unfiltered list, so send it with every page.
  */
 export function getCookedDishes(
-  params: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
+  params: { cursor?: string; limit?: number; q?: string; signal?: AbortSignal } = {},
 ): Promise<CookedDishListResponse> {
-  const { cursor, limit, signal } = params
+  const { cursor, limit, q, signal } = params
   return apiFetch<CookedDishListResponse>('/users/me/cooked-recipes', {
-    query: { cursor, limit },
+    query: { cursor, limit, q },
     signal,
   })
 }

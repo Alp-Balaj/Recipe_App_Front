@@ -130,12 +130,28 @@ export const routes: RouteObject[] = [
           // Profile tab and from a link on /plan. Not in navItems.ts either:
           // the bottom bar is full, and the nav restructure that would free a
           // slot for it is a separate piece of work.
-          { path: '/cooked', element: page(CookedPage) },
-          // KAN-5 — the dish page, on the same terms. Its own ROUTE rather than
-          // a panel over the list (design D9), so the phone back gesture returns
-          // to /cooked instead of closing the app. Declared after /cooked, which
-          // it cannot shadow: one segment versus two.
-          { path: '/cooked/:recipeId', element: page(CookedDishPage) },
+          //
+          // KAN-9 — REVIEWED EDIT, the same kind /admin's tab subtree landed as
+          // (2026-08-09): /cooked/:recipeId becomes a CHILD of /cooked rather
+          // than its sibling. No path is added, removed, renamed or reordered —
+          // both URLs are exactly the ones KAN-4 and KAN-5 registered, and both
+          // still render exactly the pages they did. Only the nesting changes.
+          //
+          // It is nesting and not composition because of what a wide window
+          // needs: the dish list and the selected dish side by side, with no
+          // navigation between them. As siblings, selecting a dish would swap
+          // one page component for another and REMOUNT the list — losing the
+          // reader's search and their place in it on every click — and the
+          // two-pane view would have to be built twice, once in each page.
+          // Nested, CookedPage is the surface, the list is mounted once, and
+          // the child renders either in the pane beside it (wide) or alone
+          // (phone, unchanged: still its own screen, still its own back
+          // gesture — see design D9).
+          {
+            path: '/cooked',
+            element: page(CookedPage),
+            children: [{ path: ':recipeId', element: page(CookedDishPage) }],
+          },
           { path: '/shopping-list', element: page(ShoppingListPage) },
           // Stream N (food scanner) — SANCTIONED ADDITIVE route registration,
           // same discipline as the additive routes above. Not in navItems.ts:
