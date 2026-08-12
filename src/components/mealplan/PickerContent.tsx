@@ -3,17 +3,28 @@
 // so the same thing can be docked beside the day page or dropped into a sheet.
 //
 // Built for the person who has ALREADY decided. The search field is the
-// primary control, focused on open, filtering the prefetched personal corpus
-// in memory (see usePickerCorpus for why in memory and not on the server).
-// Everything below it is what you see while you haven't typed yet, which is
-// why it leads with what you've cooked before rather than everyone's newest.
+// primary control, focused on open. What typing it does depends on the
+// segment, and that split is deliberate (KAN-17), not incidental:
+//
+//   Again / Saved / Mine — bounded personal corpora usePickerCorpus fetches
+//   WHOLE, filtered in memory as you type. Instant, no debounce, no round
+//   trip, rankable by your own cooking history.
+//
+//   All — everyone's visible recipes, which has no bound worth prefetching.
+//   Typing here debounces onto the server (?search=, the same tsvector search
+//   BrowsePage uses), so a dish you have not paged to is still found. See the
+//   `searchDebounce` state below.
+//
+// Everything below the search field, before you've typed, is what you see —
+// which is why it leads with what you've cooked before rather than
+// everyone's newest.
 //
 // Nothing is ever hidden, only marked: a dish already planned this week keeps
 // its place in the list wearing a chip. Silently filtering results is how a
 // picker earns "it doesn't have my recipe".
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { queryKeys } from '@/api/queryKeys'
 import { useAuth } from '@/auth/AuthContext'
@@ -31,6 +42,11 @@ import { formatMinutes, gradientFor } from '@/pages/recipeVisuals'
 import StateBlock from '@/components/ui/StateBlock'
 
 const BROWSE_PAGE = 20
+
+/** How long typing has to settle before the All segment's search reaches the
+ * server. Matches BrowsePage's SEARCH_DEBOUNCE_MS, the app's other type-ahead
+ * onto GET /recipes. */
+const SEARCH_DEBOUNCE_MS = 300
 
 interface Props {
   /** The question this picker answers, e.g. "What's for Wednesday dinner?". */
@@ -104,9 +120,24 @@ export default function PickerContent({
   const [chosen, setChosen] = useState<PickerSegment | null>(null)
   const [cursor, setCursor] = useState(0)
 
-  // Everyone's recipes share Discover's query key, so opening the picker
-  // usually paints this from cache rather than fetching.
-  const browse = useInfiniteRecipes({ queryKey: queryKeys.recipes.list(), pageSize: BROWSE_PAGE })
+  // Only the All segment's list goes to the server, so only it needs a
+  // debounced echo of `query` — Again/Saved/Mine filter the raw value in
+  // memory every keystroke, same as before.
+  const [searchDebounce, setSearchDebounce] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchDebounce(query), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [query])
+  const search = searchDebounce.trim() || undefined
+
+  // Unsearched, this shares Discover's query key, so opening the picker
+  // usually paints it from cache rather than fetching. A search term makes it
+  // a distinct cached read, exactly like BrowsePage's own filtered lists.
+  const browse = useInfiniteRecipes({
+    queryKey: queryKeys.recipes.list(search ? { search } : undefined),
+    pageSize: BROWSE_PAGE,
+    query: search ? { search } : undefined,
+  })
 
   // The default segment follows the corpus rather than an effect: lead with
   // what you've cooked, fall through to All for someone with no history yet.
@@ -138,14 +169,15 @@ export default function PickerContent({
   )
 
   const results = useMemo(() => {
-    const source = segment === 'all' ? browseRecipes : corpus.forSegment(segment)
-    // Personal segments carry richer facts (saved / planned), so when a recipe
-    // is in both, prefer the corpus copy.
-    const enriched =
-      segment === 'all'
-        ? source.map((recipe) => corpus.byId.get(recipe.id) ?? recipe)
-        : source
-    return enriched.filter((recipe) => matchesQuery(recipe, query))
+    if (segment === 'all') {
+      // The server already applied `search` (or there wasn't one) — filtering
+      // again here would be redundant, and wrong the moment a stale `query`
+      // keystroke hasn't reached `searchDebounce` yet. Personal segments carry
+      // richer facts (saved / planned), so when a recipe is in both, prefer
+      // the corpus copy.
+      return browseRecipes.map((recipe) => corpus.byId.get(recipe.id) ?? recipe)
+    }
+    return corpus.forSegment(segment).filter((recipe) => matchesQuery(recipe, query))
   }, [segment, browseRecipes, corpus, query])
 
   const activeIndex = Math.min(cursor, Math.max(results.length - 1, 0))

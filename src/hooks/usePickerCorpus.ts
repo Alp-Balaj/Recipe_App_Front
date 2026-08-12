@@ -1,17 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────
 // The recipe picker's corpus (meal-plan redesign, picker PR).
 //
-// Why this exists at all: GET /recipes takes cuisine / difficulty / tags and
-// nothing else — there is NO text search on the server (RecipeEndpoints.cs).
-// Discover works around that by filtering the pages it happens to have loaded,
-// which means typing a dish name only finds it if you already scrolled to it.
+// Why this exists: a picker can't live with the "type it, hope it's on the
+// page you've scrolled to" search Discover used to have, because the common
+// case is someone who already knows what they want. So the three PERSONAL
+// lists — saved, your own, recently planned — are fetched whole (each capped)
+// and searched in memory: instant, no debounce, no round trip, and rankable
+// by your own cooking history in a way a ?search= parameter could not be.
 //
-// A picker can't live with that, because the common case is someone who
-// already knows what they want. So the three PERSONAL lists — saved, your own,
-// recently planned — are fetched whole (each capped) and searched in memory:
-// instant, no debounce, no round trip, and rankable by your own cooking
-// history in a way a ?search= parameter could not be. Everyone's public
-// recipes stay paged, because that list has no bound worth prefetching.
+// GET /recipes DOES take a `?search=` parameter (open-loops slice 2,
+// websearch_to_tsquery server-side) — BrowsePage has used it since, and KAN-17
+// moved the picker's remaining segment, All, onto it too: everyone's public
+// recipes stay paged rather than prefetched, because that list has no bound
+// worth fetching whole, so it is searched the same way BrowsePage searches it
+// — debounced, server-side — rather than only over whatever page happened to
+// already be loaded. This file's three corpora are unaffected; nothing here
+// changed for KAN-17 beyond this comment.
 //
 // The own-recipes list used to be scanned out of the global list and filtered
 // by author, which was lossy past the scan cap: with 200 recipes scanned and

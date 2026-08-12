@@ -289,11 +289,19 @@ export interface CreateRecipeRequest {
  *
  * stream G: a cuisine or tag the backend does not recognise is now a 400 rather
  * than a 200 with an empty list, so these two must come from the unions.
+ *
+ * KAN-17: `search` was missing from this interface even though the backend has
+ * taken it since open-loops slice 2 (BrowseFilters.search, RecipeListQuery.Search
+ * server-side) — BrowsePage's filters object reached queryKeys.recipes.list()
+ * only because it arrived as a typed variable, which sidesteps excess-property
+ * checking. Declaring it here properly is what lets the picker pass a `search`
+ * filter as an object literal.
  */
 export interface RecipeListQuery {
   cuisine?: Cuisine
   difficulty?: Difficulty
   tags?: RecipeTag[]
+  search?: string
   cursor?: string
   limit?: number
 }
