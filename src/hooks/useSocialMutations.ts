@@ -445,18 +445,19 @@ export function useSocialMutations() {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.cooked.all })
     },
-    // The one thing a retract cannot decide locally. Rating without cooking
-    // creates the row that makes cookedByMe true, so retracting sometimes does
-    // clear the flag and sometimes must not. The server SAYS which (KAN-12) —
-    // do not go back to inferring it from timesCooked: the count is 0 both when
-    // the row went away and when a drifted row was kept because cook-log rows
-    // survive behind it, and useSocialEnvelope's merge prefers a patch over the
-    // wire, so a wrong false here would outlive the cache entry rather than
-    // heal on the next read.
+    // The one thing a retract cannot decide locally. Retracting sometimes clears
+    // the flag (a rating with no cook behind it) and sometimes must not (a rated
+    // dish the caller really cooked). The server SAYS which (KAN-12) — do not go
+    // back to inferring it from timesCooked. It would give the right answer today,
+    // which is the trap: the derivation belongs to the server and has already
+    // changed once (row existence -> cook count, KAN-13/ADR-0005), and
+    // useSocialEnvelope's merge prefers a patch over the wire, so a value derived
+    // from a stale local copy of the rule would outlive the cache entry rather
+    // than heal on the next read.
     //
     // Only consulted on a retract: rating something does not make the caller its
-    // cook as far as this surface is concerned, so the flag is left alone there
-    // (unchanged behaviour — see the ticket on the row rating creates).
+    // cook — since KAN-13 that is true of the server's own answer too, not just of
+    // what this surface chooses to patch.
     onSuccess: (row: CookedRecipeResponse, { recipeId, rating }) => {
       if (rating !== null) return
       patchFeedCaches(queryClient, recipeId, (item) =>

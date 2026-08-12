@@ -58,12 +58,17 @@ export interface FeedItemResponse {
   // myRating is null when the caller has not rated (or is a guest).
   averageRating?: number | null
   ratingCount: number
+  // "Has the caller COOKED this" — never "does the caller have a rating on it".
+  // The two came apart until KAN-13, when rating a dish you had never made turned
+  // this on; the server now derives it from the cook count alone (ADR-0005).
   cookedByMe: boolean
   myRating?: number | null
   // Feed redesign (2026-08-09). madeItCount is how many DISTINCT people logged a cook —
   // NOT the sum of their timesCooked, because "3 made this" is a claim about people.
   // recentMakers is the server-capped handful of them (newest cook first) that the
   // overlapping avatars beside the count render; it is [] when nobody has cooked it.
+  // Both count MAKERS only: someone who rated the recipe without cooking it is in
+  // neither, and used to be in both (KAN-13).
   madeItCount: number
   recentMakers: UserSummaryResponse[]
 }
@@ -168,13 +173,17 @@ export interface CookedRecipeResponse {
   rating?: number | null
   lastCookedAt?: string | null
   /**
-   * Whether the caller still HAS a cooked/rated row — the same derivation the
-   * envelope and every feed item use, so a cache patched from this reply cannot
-   * disagree with the next read of them (KAN-12).
+   * Whether the caller has COOKED this — the same derivation the envelope and
+   * every feed item use, so a cache patched from this reply cannot disagree with
+   * the next read of them (KAN-12).
    *
-   * Not derivable from `timesCooked`, in either direction: rating a dish you
-   * never cooked creates a row at 0, and a retract keeps a row whose count has
-   * drifted to 0 while its cook-log rows survive.
+   * Since KAN-13 that derivation is `timesCooked > 0` on every surface, so this
+   * field IS technically derivable from the one above it — do not derive it. The
+   * rule is the server's and has already changed once (it used to be row
+   * existence, which is why rating a dish you never made reported you as having
+   * made it), and a patch beats a later read in `useSocialEnvelope`'s merge, so a
+   * locally-derived value would overwrite the server's and outlive the fetch that
+   * should have corrected it. Read the field; let the rule live in one place.
    */
   cookedByMe: boolean
 }

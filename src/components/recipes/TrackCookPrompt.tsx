@@ -5,12 +5,15 @@
 // needs and does not have — a cook — and then finishes the gesture they made,
 // so a star tap is never a dead end.
 //
-// It opens on the SERVER's refusal rather than on anything the page believed.
-// The recipe page cannot answer "has this reader cooked this": the social
-// envelope's `cookedByMe` is row existence, not a cook count, and it is null on
-// any surface that was never seeded. Asking and being told is one round trip and
-// is never wrong; guessing is free and is wrong exactly when it matters, which
-// is the reasoning recorded in the backend's ADR-0004.
+// It opens on the SERVER's refusal rather than on anything the page believed,
+// and it stays that way. When this was written the page COULD NOT answer "has
+// this reader cooked this" — `cookedByMe` was row existence, a different
+// question. KAN-13 made it exactly the predicate the server rates on, so the
+// page could now often pre-empt the refusal; it deliberately does not. The flag
+// is still null on any surface that was never seeded, a cache patch can still be
+// in flight, and a prompt that opens on a guess is wrong exactly when it matters.
+// Asking and being told is one round trip and is never wrong — the reasoning
+// recorded in the backend's ADR-0004, unchanged by ADR-0005.
 //
 // Today is the primary action because it is the true answer nearly every time —
 // the star was tapped by someone who just ate the thing. "Pick a date" is the
