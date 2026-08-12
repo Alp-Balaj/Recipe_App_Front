@@ -96,7 +96,10 @@ export interface AdminEventListResponse {
 export interface AdminReportListItem {
   report: ReportResponse
   reporter: { id: string; username: string }
-  targetAuthor: { id: string; username: string; totalReportsAgainst: number }
+  // Null once the reported content's row is gone — removing a reported comment nulls the
+  // report's only target FK, so the server has no author left to name. The report itself
+  // survives on report.targetSummary, the snapshot taken when it was filed.
+  targetAuthor: { id: string; username: string; totalReportsAgainst: number } | null
 }
 
 export interface AdminReportListResponse {

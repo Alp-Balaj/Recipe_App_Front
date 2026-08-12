@@ -140,10 +140,20 @@ function ReportCard({
       )}
 
       {/* Task 18: triage context — who reported it, who they're reporting, and
-          how many reports that target author already has against them. */}
+          how many reports that target author already has against them. The target
+          author is absent once the reported row itself is gone (removing a comment
+          nulls the report's only target FK); the report stays triageable on its
+          snapshot above, so this just drops the half it can no longer state. */}
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-        Reported by {item.reporter.username} · against {item.targetAuthor.username} (
-        {item.targetAuthor.totalReportsAgainst} reports total)
+        Reported by {item.reporter.username}
+        {item.targetAuthor ? (
+          <>
+            {' · against '}
+            {item.targetAuthor.username} ({item.targetAuthor.totalReportsAgainst} reports total)
+          </>
+        ) : (
+          ' · target since removed'
+        )}
         {r.targetType === 'Recipe' && targetId && (
           <>
             {' · '}
