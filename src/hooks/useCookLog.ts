@@ -16,6 +16,7 @@ import {
   getLatestCook,
   logCook,
   uncookEntry,
+  unlogCook,
   updateCookNote,
   type CookLogEntry,
   type PastCookFields,
@@ -132,6 +133,28 @@ export function useCookLogMutations() {
   })
 
   /**
+   * Un-logs ONE cook — the row-scoped undo (KAN-14), for a cook that satisfied
+   * no plan slot and therefore has no entry id for `unlog` above to name.
+   *
+   * Same invalidation as the other two, including the Cooked RESET rather than an
+   * invalidate: removing a cook can take a dish off the list entirely, and every
+   * stored cursor after it shifts by one — the mirror of the argument logging a
+   * cook makes above.
+   *
+   * The server does NOT forgive a repeat (a deleted row is a 404, unlike an
+   * already-empty plan slot), so the surface must disable its control while this
+   * is pending rather than leaning on idempotence.
+   */
+  // `networkMode: 'always'` — see useSocialMutations.ts's note on `logCooked`.
+  // Same reasoning as its two neighbours: a paused-offline delete would leave the
+  // user believing a mis-tapped cook was taken back when nothing was sent.
+  const unlogOne = useMutation({
+    networkMode: 'always',
+    mutationFn: (vars: { id: string }) => unlogCook(vars.id),
+    onSuccess: invalidate,
+  })
+
+  /**
    * Sets or clears a note. Increments nothing — see api/cookLog.updateCookNote.
    *
    * The social caches are still deliberately left alone: no counter moved, so
@@ -166,5 +189,5 @@ export function useCookLogMutations() {
     },
   })
 
-  return { log, unlog, saveNote }
+  return { log, unlog, unlogOne, saveNote }
 }

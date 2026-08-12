@@ -12,6 +12,7 @@
 //   GET    /cook-log                      → 200 CookLogListResponse   (?cursor&limit&recipeId)
 //   GET    /cook-log/latest               → 200 CookLogLatestResponse (never 404)
 //   PATCH  /cook-log/{id}                 → 200 CookLogResponse | 404
+//   DELETE /cook-log/{id}                 → 204 | 404 (not the caller's, or already gone)
 //   DELETE /cook-log/entries/{entryId}    → 204 | 404 (entry not on one of the caller's plans)
 //
 // cooked-per-plan-entry (backend Tasks 1–4, verified 2026-08-10): the DELETE above
@@ -150,6 +151,28 @@ export function logCook(
  */
 export function uncookEntry(mealPlanEntryId: string): Promise<void> {
   return apiFetch<void>(`/cook-log/entries/${mealPlanEntryId}`, { method: 'DELETE' })
+}
+
+/**
+ * Un-logs ONE cook and steps the dish's cooked count back down by one (KAN-14).
+ *
+ * The row-scoped counterpart of `uncookEntry`. That one can only name a cook
+ * that satisfied a plan slot, so a cook logged from cook mode on an unplanned
+ * recipe had no undo: the only gesture wide enough to reach it was
+ * `clearCooked` — "I have never cooked this" — which erases every cook of the
+ * dish and every note on them, and no surface calls it any more (KAN-12).
+ *
+ * NOT idempotent, unlike `uncookEntry`, and the difference is the scope. An
+ * entry outlives its cooks, so "no cooks against this slot" is a state it can
+ * still be in; a row does not outlive its own deletion, so a second call is a
+ * 404. Callers must therefore not fire this twice for one gesture — disable the
+ * control while it is in flight rather than relying on a forgiving server.
+ *
+ * The note on the cook goes with it, which is why the surface offering this must
+ * confirm first when there is one (KAN-8).
+ */
+export function unlogCook(id: string): Promise<void> {
+  return apiFetch<void>(`/cook-log/${id}`, { method: 'DELETE' })
 }
 
 /**
