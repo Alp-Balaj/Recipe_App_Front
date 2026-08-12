@@ -7,9 +7,10 @@
 // only one of them, or sending them the wrong way round.
 //
 // The refusal is what opens the prompt — not anything the page believed about
-// `cookedByMe`, which is row existence rather than a cook count. So every test
-// below starts from a page that has no idea, exactly as a reader arriving from
-// a shared link does.
+// `cookedByMe`. That flag agrees with the server's rule since KAN-13, but it is
+// still null on a surface that was never seeded and still patchable in flight,
+// so the page is not entitled to pre-empt on it. Every test below starts from a
+// page that has no idea, exactly as a reader arriving from a shared link does.
 
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'

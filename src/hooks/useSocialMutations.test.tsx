@@ -206,10 +206,10 @@ describe('retracting a rating', () => {
     ).toBe(true)
   })
 
-  it('drops the flag when the server says the row is gone', async () => {
-    // Rating without cooking is allowed, and the row it creates is what makes
-    // cookedByMe true for someone who never cooked. Retracting removes that row,
-    // and the server's own flag is how the client learns it did.
+  it('drops the flag when the server says there is no cook behind it', async () => {
+    // A rating with no cook behind it (a row from before KAN-7, or a dish whose
+    // cooks were all taken back) reports cookedByMe false since KAN-13 — and
+    // retracting the rating is the call that tells the client so.
     vi.spyOn(api, 'clearRating').mockResolvedValue({ recipeId: 'r1', timesCooked: 0, rating: null, cookedByMe: false })
     const { wrapper, feedItem } = setup({ cookedByMe: true, myRating: 4, ratingCount: 1, averageRating: 4 })
 
@@ -219,12 +219,19 @@ describe('retracting a rating', () => {
     expect(feedItem().cookedByMe).toBe(false)
   })
 
-  it('keeps the flag when the count is 0 but the row survived', async () => {
-    // The drift branch: TimesCooked has fallen to 0 with cook-log rows still
-    // behind it, so the server keeps the row and says so. Deriving the flag from
-    // timesCooked here tells the user they have never cooked a dish their own
-    // cook log still lists — and useSocialEnvelope prefers the patch over the
-    // wire, so that answer would stick rather than heal on the next read.
+  it('takes the flag from the reply even when timesCooked would say otherwise', async () => {
+    // The pair this test forms with the one above is the point: same timesCooked
+    // (0), opposite answers, both honoured. That is only possible if the client
+    // READS the flag instead of deriving it — which is the contract, because the
+    // derivation is the server's and has already changed once (row existence ->
+    // cook count, KAN-13). useSocialEnvelope prefers a patch over the wire, so a
+    // client that derived locally would overwrite the server's answer with its own
+    // stale rule and the wrong value would stick rather than heal on the next read.
+    //
+    // This particular combination is one the CURRENT server would not send — since
+    // KAN-13 a 0 count means false. It is mocked deliberately: the test is about
+    // who owns the rule, and pinning it to today's rule is exactly what would let
+    // the next change to it slip through unnoticed.
     vi.spyOn(api, 'clearRating').mockResolvedValue({ recipeId: 'r1', timesCooked: 0, rating: null, cookedByMe: true })
     const { wrapper, feedItem } = setup({ cookedByMe: true, myRating: 4, ratingCount: 1, averageRating: 4 })
 
