@@ -256,3 +256,55 @@ describe('retracting a rating', () => {
     expect(feedItem().averageRating).toBe(4)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────
+// KAN-23: logging a cook makes you a MAKER, and the feed has to hear about it.
+//
+// madeItCount and recentMakers are computed on TimesCooked > 0 (ADR-0005), and
+// this gesture is the write that crosses that line — so every cached feed page
+// is one maker short until it refetches. `logCooked` is the Cook Mode finish for
+// a cook with no plan slot behind it; the plan-slot path is useCookLog's, and
+// that one has always invalidated.
+//
+// Bite-check: delete the `invalidateQueries({ queryKey: queryKeys.feed.all })`
+// from logCooked's onSuccess and both tests below fail on isInvalidated. Narrow
+// it to feed.lists() and the second one alone fails.
+//
+// The madeItCount expectation is the exception and is honestly labelled: it
+// rides along to state criterion 3 (no count derived on the client) and has no
+// bite of its own, because nothing patches that field in either direction.
+// ─────────────────────────────────────────────────────────────────────────
+describe('logging a cook that is not tied to a plan slot', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  const COOKED = { recipeId: 'r1', timesCooked: 1, rating: null, cookedByMe: true }
+
+  it('refreshes the feed instead of counting the new maker itself', async () => {
+    const markCooked = vi.spyOn(api, 'markCooked').mockResolvedValue(COOKED)
+    const { client, wrapper, feedItem } = setup({ madeItCount: 2, cookedByMe: false })
+
+    const { result } = renderHook(() => useSocialMutations(), { wrapper })
+    await result.current.logCooked.mutateAsync({ recipeId: 'r1' })
+
+    expect(markCooked).toHaveBeenCalledWith('r1')
+    expect(client.getQueryState(queryKeys.feed.list('forYou'))?.isInvalidated).toBe(true)
+    // The flag IS patched — it is the caller's own claim off an accepted write.
+    expect(feedItem().cookedByMe).toBe(true)
+    // The count is not. It stays the server's last word until the refetch brings
+    // the next one; a local +1 would have to guess whether the caller was already
+    // among the distinct makers it counts.
+    expect(feedItem().madeItCount).toBe(2)
+  })
+
+  it('marks the activity strip stale too — a cook is a row it can gain', async () => {
+    vi.spyOn(api, 'markCooked').mockResolvedValue(COOKED)
+    const { client, wrapper } = setup()
+
+    const { result } = renderHook(() => useSocialMutations(), { wrapper })
+    await result.current.logCooked.mutateAsync({ recipeId: 'r1' })
+
+    // Which is why this invalidates through `all` and not `lists()`: "cooking
+    // right now" is exactly the strip this gesture belongs in.
+    expect(client.getQueryState(queryKeys.feed.activity('forYou'))?.isInvalidated).toBe(true)
+  })
+})

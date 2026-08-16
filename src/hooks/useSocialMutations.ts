@@ -531,6 +531,26 @@ export function useSocialMutations() {
       // this is the gesture that MOVES a dish, which is exactly what the note in
       // useCookLog.ts is about.
       void queryClient.resetQueries({ queryKey: queryKeys.cooked.all })
+      // KAN-23: the same gesture also makes the caller a MAKER. madeItCount and
+      // recentMakers are computed on TimesCooked > 0 (CookedRecipePolicy,
+      // ADR-0005), and this is the write that crosses that threshold — so the
+      // count the feed is showing is now one short, with the caller missing from
+      // the avatar strip beside it.
+      //
+      // Refetch rather than patch, deliberately. madeItCount counts DISTINCT
+      // people, so a local +1 would first have to know whether the caller was
+      // already one of them; deriving that from cookedByMe re-implements a server
+      // rule on the client, which is the trap KAN-12/KAN-13 wrote up, and
+      // applyCookedState's own note is why it takes two fields and not the
+      // aggregate. There is no honest patch here, only a fetch.
+      //
+      // `feed.all`, matching useCookLog's invalidate: it is the invalidation
+      // prefix (see queryKeys.ts), and the activity strip under it is a log of
+      // who cooked what — a row this very gesture can add. Safe as an invalidate
+      // rather than the reset Cooked needs: the feed is ordered on the recipe's
+      // CreatedAt, which a cook does not touch, so no row moves and no stored
+      // cursor is left pointing past a shifted page.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.feed.all })
     },
   })
 
