@@ -28,6 +28,12 @@ import { lazy, Suspense, type ComponentType, type ReactElement } from 'react'
 export const LoginPage = lazy(() => import('./pages/LoginPage'))
 export const RegisterPage = lazy(() => import('./pages/RegisterPage'))
 export const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
+// KAN-19 — the three account-recovery screens. Beside the other auth pages
+// because that is where they render (outside AppShell), and lazy like every
+// other page: a visitor who never loses a password never downloads them.
+export const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'))
+export const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
+export const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
 export const ChatPage = lazy(() => import('./pages/ChatPage'))
 export const FeedPage = lazy(() => import('./pages/FeedPage'))
 export const BrowsePage = lazy(() => import('./pages/BrowsePage'))

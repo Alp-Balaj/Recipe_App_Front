@@ -14,6 +14,14 @@ export const queryKeys = {
   auth: {
     /** GET /auth/me — the current session. */
     me: () => ['auth', 'me'] as const,
+    // KAN-19 — SANCTIONED ADDITIVE EDIT to this frozen module, the same kind
+    // chat-ai v3 and social-feed cp05 landed: a NEW key in an existing
+    // namespace, nothing renamed or reshaped. It lives here rather than in the
+    // Security settings screen because this file is the one place keys may
+    // live — a key declared beside its consumer is a key no other consumer can
+    // invalidate.
+    /** GET /auth/email-verification — the caller's own address and its status. */
+    emailVerification: () => ['auth', 'emailVerification'] as const,
   },
 
   recipes: {

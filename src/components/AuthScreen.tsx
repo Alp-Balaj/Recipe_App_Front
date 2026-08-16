@@ -69,6 +69,48 @@ export default function AuthScreen({ title, subtitle, banner, children, footer }
   )
 }
 
+// KAN-19 — the recovery screens (verify-email, forgot-password, reset-password) needed the
+// same four scraps of styling as each other, and three copies of an accent link is three
+// places for the accent to drift. They live here, beside SubmitButton, because this file is
+// already the shared chrome for exactly these pages.
+
+/** Muted body copy inside an auth card. */
+export const authMuted = {
+  fontSize: 13.5,
+  color: 'var(--muted)',
+  lineHeight: 1.55,
+} as const
+
+/** An inline accent link — the footer idiom, reusable in the body. */
+export const authLink = {
+  fontWeight: 700,
+  color: 'var(--accent)',
+  textDecoration: 'none',
+} as const
+
+/** SubmitButton's look, for a real <button> that does not submit a form. */
+export const authButton = {
+  width: '100%',
+  padding: '12px 14px',
+  borderRadius: 13,
+  border: 'none',
+  background: 'var(--accent)',
+  color: 'var(--accent-ink)',
+  fontSize: 14.5,
+  fontWeight: 700,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+} as const
+
+/** The same look for a react-router <Link> that acts as the primary action. */
+export const authLinkButton = {
+  ...authButton,
+  display: 'block',
+  boxSizing: 'border-box',
+  textAlign: 'center',
+  textDecoration: 'none',
+} as const
+
 /** Full-width accent submit button in the app idiom. */
 export function SubmitButton({ children, disabled }: { children: ReactNode; disabled?: boolean }) {
   return (

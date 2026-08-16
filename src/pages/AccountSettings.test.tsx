@@ -4,12 +4,12 @@
 // reports matches:false, so these run against the mobile profile layout.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/msw/server'
-import { makeUserProfile } from '@/test/msw/handlers'
+import { makeEmailVerificationStatus, makeUserProfile } from '@/test/msw/handlers'
 import { makeAuthValue, renderRoute } from '@/test/utils'
 import type { UpdateProfileRequest } from '@/api/social'
 
@@ -137,5 +137,83 @@ describe('Edit profile — save flow', () => {
 
     expect(await screen.findByText(/at least 3 characters/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────
+// Settings → Security (KAN-19). The one settings screen showing SERVER truth
+// rather than device-local preferences: whether this account can be recovered
+// at all, and the way to make it so.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('Settings — Security', () => {
+  async function openSecurity() {
+    renderRoute('/profile')
+    await openSettings()
+    await userEvent.click(await screen.findByRole('button', { name: /Security/ }))
+  }
+
+  it('shows the address as unverified and offers to prove it', async () => {
+    server.use(
+      http.get('*/auth/email-verification', () =>
+        HttpResponse.json(makeEmailVerificationStatus({ email: 'alice@example.com' })),
+      ),
+    )
+
+    await openSecurity()
+
+    expect(await screen.findByText('alice@example.com')).toBeInTheDocument()
+    expect(screen.getByText('Not verified')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /send verification email/i })).toBeInTheDocument()
+  })
+
+  it('sends a verification email and confirms it went out', async () => {
+    const sent = vi.fn()
+    server.use(
+      http.get('*/auth/email-verification', () =>
+        HttpResponse.json(makeEmailVerificationStatus({ email: 'alice@example.com' })),
+      ),
+      http.post('*/auth/email-verification/request', () => {
+        sent()
+        return new HttpResponse(null, { status: 202 })
+      }),
+    )
+
+    await openSecurity()
+    await userEvent.click(await screen.findByRole('button', { name: /send verification email/i }))
+
+    expect(await screen.findByRole('button', { name: /sent — check your inbox/i })).toBeInTheDocument()
+    expect(sent).toHaveBeenCalledTimes(1)
+  })
+
+  // Nothing to prove and nothing to press — asking again would be a no-op the
+  // screen should not invite.
+  it('shows a verified address without a send button', async () => {
+    server.use(
+      http.get('*/auth/email-verification', () =>
+        HttpResponse.json(
+          makeEmailVerificationStatus({
+            email: 'alice@example.com',
+            verified: true,
+            verifiedAtUtc: '2026-08-01T09:00:00Z',
+          }),
+        ),
+      ),
+    )
+
+    await openSecurity()
+
+    expect(await screen.findByText('✓ Verified')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /send verification email/i })).not.toBeInTheDocument()
+  })
+
+  it('says so plainly when the status cannot be read', async () => {
+    server.use(
+      http.get('*/auth/email-verification', () => new HttpResponse(null, { status: 500 })),
+    )
+
+    await openSecurity()
+
+    expect(await screen.findByText(/could not check your email status/i)).toBeInTheDocument()
   })
 })

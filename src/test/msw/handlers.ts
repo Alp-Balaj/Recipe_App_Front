@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type { AuthResponse, LoginRequest, RecipeListResponse, RegisterRequest } from '@/api/types'
+import type { EmailVerificationStatus } from '@/api/account'
 import type {
   CommentListResponse,
   FeedActivityListResponse,
@@ -38,6 +39,18 @@ export function makeUserProfile(over: Partial<UserProfileResponse> = {}): UserPr
     defaultRecipeVisibility: 'Public',
     dietaryRestrictions: [],
     cuisinePreferences: [],
+    ...over,
+  }
+}
+
+/** An EmailVerificationStatus fixture (KAN-19); unverified unless told otherwise. */
+export function makeEmailVerificationStatus(
+  over: Partial<EmailVerificationStatus> = {},
+): EmailVerificationStatus {
+  return {
+    email: 'testuser@example.com',
+    verified: false,
+    verifiedAtUtc: null,
     ...over,
   }
 }
@@ -85,6 +98,29 @@ export const handlers = [
       role: 'User',
     })
   }),
+
+  // ── Account recovery (KAN-19) defaults ────────────────────────────────────
+  // Same rationale as the /recipes and /feed fallbacks below: a test that opens
+  // Settings → Security or lands on a recovery screen must not reach the real
+  // network. Recovery-specific tests override these with `server.use(...)`.
+  //
+  // Registered BEFORE `*/auth/me` would be irrelevant (different paths), but note
+  // that the two email-verification routes are distinct literal paths, so neither
+  // shadows the other.
+
+  http.get('*/auth/email-verification', () =>
+    HttpResponse.json(makeEmailVerificationStatus()),
+  ),
+
+  http.post('*/auth/email-verification/request', () => new HttpResponse(null, { status: 202 })),
+
+  http.post('*/auth/email-verification/confirm', () =>
+    HttpResponse.json({ status: 'Verified' }),
+  ),
+
+  http.post('*/auth/password-reset/request', () => new HttpResponse(null, { status: 202 })),
+
+  http.post('*/auth/password-reset/confirm', () => HttpResponse.json(makeAuthResponse('resetuser'))),
 
   // Default browse list: empty. Keeps any test that lands on /discover (the
   // BrowsePage, checkpoint 04) from hitting the real network; browse-specific

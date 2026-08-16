@@ -29,6 +29,7 @@ import {
   FeedPage,
   FollowListPage,
   FoodScanPage,
+  ForgotPasswordPage,
   LoginPage,
   MealPlanDayPage,
   // MealPlanMonthPage is no longer imported here: /plan points at MealPlanPage,
@@ -44,8 +45,10 @@ import {
   RecipeFormPage,
   RecipeImportPage,
   RegisterPage,
+  ResetPasswordPage,
   ShoppingListPage,
   UserProfilePage,
+  VerifyEmailPage,
 } from './routeChunks'
 
 /**
@@ -69,6 +72,18 @@ export const routes: RouteObject[] = [
       // the post-register wizard is not framed by a tab bar that invites
       // leaving it unanswered; the page guards its own authentication.
       { path: '/welcome', element: page(OnboardingPage) },
+      // KAN-19 (account recovery) — SANCTIONED ADDITIVE route registration,
+      // same discipline as /welcome above: three NEW paths pointing at three
+      // NEW pages, nothing existing changed or reordered. They sit OUTSIDE
+      // AppShell beside the other auth screens for the reason that decides
+      // the whole feature — every one of them must work for someone who is
+      // SIGNED OUT. A verification link is clicked from a mail client and a
+      // password reset is, by definition, reached without the access a
+      // session represents; inside the shell they would be gated by exactly
+      // the thing the user has lost.
+      { path: '/verify-email', element: page(VerifyEmailPage) },
+      { path: '/forgot-password', element: page(ForgotPasswordPage) },
+      { path: '/reset-password', element: page(ResetPasswordPage) },
       {
         element: <AppShell />,
         children: [

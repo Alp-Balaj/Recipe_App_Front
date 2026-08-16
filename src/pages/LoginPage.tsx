@@ -79,6 +79,17 @@ export default function LoginPage() {
         <SubmitButton disabled={isSubmitting}>
           {isSubmitting ? 'Signing in…' : 'Sign in'}
         </SubmitButton>
+        {/* KAN-19: recovery has to be discoverable at the moment it is needed, which is
+            here, on the screen where the password just failed — not buried in settings
+            the user cannot reach. */}
+        <div style={{ textAlign: 'center', marginTop: 14 }}>
+          <Link
+            to="/forgot-password"
+            style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}
+          >
+            Forgot your password?
+          </Link>
+        </div>
       </form>
     </AuthScreen>
   )

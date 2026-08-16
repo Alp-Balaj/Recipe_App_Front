@@ -55,6 +55,9 @@ const CATEGORY_FILTERS: { label: string; value?: AppEventCategory }[] = [
   { label: 'Account', value: 'Account' },
 ]
 
+// One arm per AppEventType member. `noImplicitReturns` is off, so a missing arm
+// returns undefined and the row renders blank rather than failing the build —
+// which is why the union in @/api/admin carries a note to update this too.
 function describeEvent(type: AppEventType): string {
   switch (type) {
     case 'AiCallFailed': return 'AI call failed'
@@ -64,6 +67,10 @@ function describeEvent(type: AppEventType): string {
     case 'ReportFiled': return 'filed a report'
     case 'UserRegistered': return 'registered'
     case 'UserLoginFailed': return 'failed to log in'
+    // KAN-19 (account recovery).
+    case 'EmailVerified': return 'verified their email'
+    case 'PasswordReset': return 'reset their password'
+    case 'MailSendFailed': return 'mail delivery failed'
   }
 }
 

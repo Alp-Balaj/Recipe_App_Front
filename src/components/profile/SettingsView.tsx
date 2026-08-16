@@ -13,9 +13,10 @@ import type { Mode } from '@/components/ThemeRoot'
 import EditProfileView from './settings/EditProfileView'
 import { HelpView, TermsView } from './settings/InfoView'
 import { NotificationsView, PrivacyView } from './settings/PrefsView'
+import SecurityView from './settings/SecurityView'
 import { NavRow, RowGroup, SectionLabel, SettingsScreen } from './settings/settingsUi'
 
-type SubView = 'menu' | 'edit-profile' | 'notifications' | 'privacy' | 'help' | 'terms'
+type SubView = 'menu' | 'edit-profile' | 'security' | 'notifications' | 'privacy' | 'help' | 'terms'
 
 interface Props {
   mode: Mode
@@ -39,6 +40,7 @@ export default function SettingsView({ mode, onSetMode, onLogout, onBack, profil
       </SettingsScreen>
     )
   }
+  if (sub === 'security') return <SecurityView onBack={toMenu} />
   if (sub === 'notifications') return <NotificationsView onBack={toMenu} />
   if (sub === 'privacy') return <PrivacyView onBack={toMenu} />
   if (sub === 'help') return <HelpView onBack={toMenu} />
@@ -83,6 +85,10 @@ export default function SettingsView({ mode, onSetMode, onLogout, onBack, profil
       <SectionLabel style={{ marginTop: 22 }}>Account</SectionLabel>
       <RowGroup>
         <NavRow icon="◍" label="Edit profile" onClick={() => setSub('edit-profile')} />
+        {/* KAN-19 — a new row and sub-view, not a new route: settings sub-navigation
+            is local state here. This is where a signed-in user finds out whether
+            their account can be recovered at all. */}
+        <NavRow icon="⛨" label="Security" onClick={() => setSub('security')} />
         <NavRow icon="◔" label="Notifications" onClick={() => setSub('notifications')} />
         <NavRow icon="⚿" label="Privacy & visibility" onClick={() => setSub('privacy')} last />
       </RowGroup>

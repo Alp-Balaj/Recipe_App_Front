@@ -73,9 +73,14 @@ export interface AdminUserUsageResponse {
 }
 
 export type AppEventCategory = 'Ai' | 'Content' | 'Account'
+// Mirrors RecipeApp.Domain.Enums.AppEventType member-for-member. A member added
+// there and not here renders as `undefined` in the events feed — describeEvent's
+// switch simply falls off the end — so the two move together. KAN-19 added the
+// last three; all fall into the Account category server-side.
 export type AppEventType =
   | 'AiCallFailed' | 'RecipeCreated' | 'RecipeDeleted' | 'CommentCreated'
   | 'ReportFiled' | 'UserRegistered' | 'UserLoginFailed'
+  | 'EmailVerified' | 'PasswordReset' | 'MailSendFailed'
 
 export interface AdminEventEntry {
   id: string

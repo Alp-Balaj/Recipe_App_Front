@@ -35,6 +35,15 @@ export interface AuthContextValue {
   /** Clears the session (localStorage + token + query cache). */
   logout: () => void
   /**
+   * Adopt a session this store did not fetch itself (KAN-19). Password reset
+   * answers with a full AuthResponse — the user must not have to type the
+   * password they chose two seconds ago — and that response arrives at the
+   * reset page rather than here, because the page is the thing holding the
+   * one-use link. Same write-through as `login`, so localStorage, the fetch
+   * wrapper's bearer and React state all agree.
+   */
+  adoptSession: (auth: AuthResponse) => void
+  /**
    * Patch the cached username after a self-edit (PUT /users/me). Keeps the header
    * and avatar seed in sync immediately; a later /auth/me boot is now DB-backed and
    * agrees. No-op when signed out.
@@ -98,6 +107,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [persist],
   )
 
+  const adoptSession = useCallback(
+    (auth: AuthResponse) => {
+      persist(auth)
+      setStatus('authenticated')
+    },
+    [persist],
+  )
+
   const logout = useCallback(() => {
     clearSession()
   }, [clearSession])
@@ -150,8 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [persist])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, login, register, logout, updateUsername }),
-    [user, status, login, register, logout, updateUsername],
+    () => ({ user, status, login, register, logout, updateUsername, adoptSession }),
+    [user, status, login, register, logout, updateUsername, adoptSession],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

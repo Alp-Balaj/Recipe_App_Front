@@ -29,6 +29,7 @@ export function makeAuthValue(overrides: Partial<AuthContextValue> = {}): AuthCo
     register: async () => {},
     logout: () => {},
     updateUsername: () => {},
+    adoptSession: () => {},
     ...overrides,
   }
 }

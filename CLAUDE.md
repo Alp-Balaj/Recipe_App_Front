@@ -117,15 +117,19 @@ on every navigation and reset `ThemeRoot`'s `mode` state, strobing dark mode
 back to light on every click.
 
 The table below is the whole of `src/router.tsx` as it stands, in file order.
-`src/routeChunks.test.ts` asserts the page count (**30**) on purpose, so an
+`src/routeChunks.test.ts` asserts the page count (**33**) on purpose, so an
 additive route bumps that number deliberately rather than by accident. (Nesting
-an existing route under another does not: KAN-9 left it at 30.)
+an existing route under another does not: KAN-9 left it at 30; KAN-19's three
+recovery screens took it to 33.)
 
 | Route | Page file | Filled by |
 |---|---|---|
 | /login | `LoginPage.tsx` | checkpoint 02 |
 | /register | `RegisterPage.tsx` | checkpoint 02 |
 | /welcome | `OnboardingPage.tsx` | stream K (onboarding) |
+| /verify-email | `VerifyEmailPage.tsx` | KAN-19 (the emailed verification link's landing page) |
+| /forgot-password | `ForgotPasswordPage.tsx` | KAN-19 (ask for a reset link) |
+| /reset-password | `ResetPasswordPage.tsx` | KAN-19 (spend a reset link, choose a new password) |
 | /feed | `FeedPage.tsx` | social-feed |
 | /users/:id | `UserProfilePage.tsx` | social-feed |
 | /users/:id/followers | `FollowListPage.tsx` | social-feed cp2 (one page, reads its kind off the pathname) |
@@ -202,8 +206,11 @@ edits). Lanes import them:
   detail(id)}`, `queryKeys.chat.messages()`, `queryKeys.auth.me()`.
 
 Auth: `@/auth/AuthContext` → `useAuth()` = `{ user: AuthResponse | null, status,
-login, register, logout }` (persisted to `localStorage`, boot-validated via
-`/auth/me`). Route protection is global in `AppShell.tsx`, so **a protected page
+login, register, logout, updateUsername, adoptSession }` (persisted to
+`localStorage`, boot-validated via `/auth/me`). `adoptSession` (KAN-19) takes a
+session this store did not fetch: password reset answers with a full
+`AuthResponse`, and it arrives at the reset page rather than here because that
+page is the thing holding the one-use link. Route protection is global in `AppShell.tsx`, so **a protected page
 renders only when authenticated** — in tests use `@/test/utils`
 `renderRoute(path)` (authenticated by default) or `renderApp(path)` (real
 provider + MSW), and add endpoint mocks with `server.use(...)` from
