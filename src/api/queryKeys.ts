@@ -22,6 +22,12 @@ export const queryKeys = {
     // invalidate.
     /** GET /auth/email-verification — the caller's own address and its status. */
     emailVerification: () => ['auth', 'emailVerification'] as const,
+
+    // KAN-20 — same sanctioned additive shape as the key above it: a NEW key in
+    // an existing namespace, nothing renamed or reshaped. (The RESHAPE this
+    // ticket carries is in `types.ts` and `client.ts`, not here.)
+    /** GET /auth/sessions — the caller's signed-in devices. */
+    sessions: () => ['auth', 'sessions'] as const,
   },
 
   recipes: {

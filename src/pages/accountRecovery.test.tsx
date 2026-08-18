@@ -114,7 +114,11 @@ describe('ResetPasswordPage', () => {
     expect(sent).toEqual({ token: 'good-token', newPassword: 'BrandNewPass9' })
     // The returned session was adopted — the user is not bounced to /login to
     // type the password they chose a second ago.
-    expect(localStorage.getItem('recipe_app_auth')).toContain('reset_alice')
+    // KAN-20: a reset answers with identity and sets the session cookies. What is
+    // observable from script is the marker, plus the fact that the app let the
+    // user through the guard without a second sign-in — which is the behaviour
+    // this test was written to protect.
+    expect(localStorage.getItem('recipe_app_session')).toBe('1')
   })
 
   it('offers a fresh link when the one used has expired', async () => {

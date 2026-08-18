@@ -32,7 +32,7 @@ interface Props {
 }
 
 export default function EditProfileView({ profile, onBack }: Props) {
-  const { user, updateUsername } = useAuth()
+  const { updateUsername } = useAuth()
   const update = useUpdateProfile()
 
   const [username, setUsername] = useState(profile.username)
@@ -80,7 +80,7 @@ export default function EditProfileView({ profile, onBack }: Props) {
     setUploadPending(true)
 
     try {
-      const { url } = await uploadImage(file, { token: user?.token ?? null, signal: controller.signal })
+      const { url } = await uploadImage(file, { signal: controller.signal })
       if (seq !== uploadRef.current.seq) return
       setImageUrl(url)
     } catch (err) {

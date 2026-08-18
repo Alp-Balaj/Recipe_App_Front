@@ -14,16 +14,20 @@
 //                     through resolveImageUrl (src/lib/images.ts)
 //     → 400 ValidationProblem keyed on `file` (type/size/magic-byte/no-file;
 //           allowlist jpeg|png|webp, 5 MB cap, magic bytes sniffed)
-//     → 401 (no/expired token) | 429 (own `images` rate lane, 20/min)
+//     → 401 (no/expired session) | 429 (own `images` rate lane, 20/min)
 //
-// The bearer comes in as a parameter (from useAuth().user.token) because the
-// wrapper's module-private token has no getter — exporting one would be a
-// frozen-module edit this checkpoint explicitly rules out. Same reason a 401
-// here can't invoke the wrapper's global session-clear handler: the caller
-// surfaces it legibly and the next apiFetch 401 clears the session.
+// KAN-20 (cookie sessions): the bearer parameter is gone. The session rides on
+// `httpOnly` cookies the browser attaches to a same-origin fetch by itself, so
+// there is nothing for a caller to pass and nothing here to attach.
+//
+// What this module DOES have to do itself is the refresh-and-retry the frozen
+// wrapper does for JSON calls: the access cookie expires every few minutes, and
+// an upload that 401s because of that must not surface to the user as a failed
+// upload. It calls the wrapper's exported `refreshSession()` so it joins the one
+// in-flight refresh rather than starting a competing rotation.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { ApiError, ApiUnauthorizedError, ApiValidationError } from './client'
+import { ApiError, ApiUnauthorizedError, ApiValidationError, refreshSession } from './client'
 import type { ValidationProblemResponse } from './types'
 
 /** The backend's content-type allowlist (cp04 ImageUploadRules). */
@@ -48,18 +52,19 @@ export interface ImageUploadResponse {
  */
 export async function uploadImage(
   file: File,
-  opts: { token?: string | null; signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal } = {},
 ): Promise<ImageUploadResponse> {
-  const { token, signal } = opts
+  const { signal } = opts
 
   const form = new FormData()
   form.append('file', file, file.name)
 
-  const headers: Record<string, string> = {}
-  if (token) headers['Authorization'] = `Bearer ${token}`
   // NOTE: no Content-Type header — the browser sets the multipart boundary.
+  const send = () =>
+    fetch('/api/images', { method: 'POST', body: form, signal, credentials: 'same-origin' })
 
-  const res = await fetch('/api/images', { method: 'POST', headers, body: form, signal })
+  let res = await send()
+  if (res.status === 401 && (await refreshSession())) res = await send()
 
   if (res.ok) return (await res.json()) as ImageUploadResponse
 

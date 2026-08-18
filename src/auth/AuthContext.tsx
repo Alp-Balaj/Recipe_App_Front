@@ -1,10 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Auth store — token + AuthResponse, persisted to localStorage.
+// Auth store — identity only.
 //
-// On boot with a persisted token, GET /auth/me validates it rather than
-// trusting stale localStorage; an invalid/expired token clears the store.
-// The wrapper (src/api/client.ts) also calls back here to clear the session
-// on any 401 that isn't a failed login.
+// KAN-20 (cookie sessions, ADR-0009) reshaped this. It used to hold a bearer
+// token and persist the whole session to `localStorage`; it now holds nothing
+// secret at all. The session is two `httpOnly` cookies the browser manages, and
+// GET /auth/me is the sole source of identity.
+//
+// THE ONE THING STILL IN localStorage is a marker — the string "1" — that says
+// "a session probably exists". It is not a credential and grants nothing. It is
+// there because `httpOnly` cookies are invisible to script, so without it boot
+// could not tell a returning user (ask the server) from a first-time visitor
+// (do not), and every guest landing on a public page would pay for a 401. A
+// stale marker costs exactly one /auth/me that comes back 401.
 // ─────────────────────────────────────────────────────────────────────────
 
 import {
@@ -18,118 +25,143 @@ import {
   type ReactNode,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { apiFetch, setAuthToken, setUnauthorizedHandler } from '@/api/client'
+import { apiFetch, setSessionActive, setUnauthorizedHandler } from '@/api/client'
 import type { AuthResponse, LoginRequest, MeResponse, RegisterRequest } from '@/api/types'
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 export interface AuthContextValue {
-  /** The current session, or null when signed out. */
-  user: AuthResponse | null
-  /** 'loading' only while the boot-time /auth/me validation is in flight. */
-  status: AuthStatus
-  /** POST /auth/login → persists the session. Throws ApiUnauthorizedError on bad credentials. */
-  login: (req: LoginRequest) => Promise<void>
-  /** POST /auth/register → returns a full AuthResponse and logs in with ONE call. Throws ApiConflictError when taken. */
-  register: (req: RegisterRequest) => Promise<void>
-  /** Clears the session (localStorage + token + query cache). */
-  logout: () => void
   /**
-   * Adopt a session this store did not fetch itself (KAN-19). Password reset
-   * answers with a full AuthResponse — the user must not have to type the
-   * password they chose two seconds ago — and that response arrives at the
-   * reset page rather than here, because the page is the thing holding the
-   * one-use link. Same write-through as `login`, so localStorage, the fetch
-   * wrapper's bearer and React state all agree.
+   * The current identity, or null when signed out. Server truth from
+   * /auth/me — never a token payload, and since KAN-20 never anything cached
+   * across a reload either.
+   */
+  user: MeResponse | null
+  /** 'loading' only while the boot-time /auth/me is in flight. */
+  status: AuthStatus
+  /** POST /auth/login → the server sets the session cookies. Throws ApiUnauthorizedError on bad credentials. */
+  login: (req: LoginRequest) => Promise<void>
+  /** POST /auth/register → signs in with ONE call. Throws ApiConflictError when taken. */
+  register: (req: RegisterRequest) => Promise<void>
+  /**
+   * POST /auth/logout → the server deletes the session row and clears the
+   * cookies. Since KAN-20 this is a real request, not a client-side token drop:
+   * dropping a token locally left the session alive on the server forever, which
+   * is precisely what "log out" is supposed to prevent.
+   *
+   * The local state is cleared whatever the request does. A user who pressed
+   * Log out on a flaky connection must not be left looking at a signed-in app.
+   */
+  logout: () => Promise<void>
+  /**
+   * Adopt a session this store did not open itself (KAN-19). Password reset
+   * answers with the caller's identity — and, since KAN-20, sets the session
+   * cookies on the same response — and that arrives at the reset page rather
+   * than here, because the page is the thing holding the one-use link.
    */
   adoptSession: (auth: AuthResponse) => void
   /**
    * Patch the cached username after a self-edit (PUT /users/me). Keeps the header
-   * and avatar seed in sync immediately; a later /auth/me boot is now DB-backed and
-   * agrees. No-op when signed out.
+   * and avatar seed in sync immediately; the next boot's /auth/me agrees.
+   * No-op when signed out.
    */
   updateUsername: (username: string) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
 
-const STORAGE_KEY = 'recipe_app_auth'
+/**
+ * Not the session. See the header: a hint that one exists, so boot knows whether
+ * to ask the server. The old key held the whole AuthResponse including a bearer
+ * token, so the name changed with the meaning — a leftover under the old key
+ * reads as "no session" and simply sends the user to /login once.
+ */
+const SESSION_MARKER_KEY = 'recipe_app_session'
 
-function loadPersisted(): AuthResponse | null {
+function hasSessionMarker(): boolean {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed.token === 'string' ? (parsed as AuthResponse) : null
+    return localStorage.getItem(SESSION_MARKER_KEY) === '1'
   } catch {
-    return null
+    return false
+  }
+}
+
+function writeSessionMarker(present: boolean): void {
+  try {
+    if (present) localStorage.setItem(SESSION_MARKER_KEY, '1')
+    else localStorage.removeItem(SESSION_MARKER_KEY)
+  } catch {
+    // Private-browsing modes can throw on write. The marker is an optimisation,
+    // so losing it costs one extra /auth/me and nothing else.
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
 
-  const [user, setUser] = useState<AuthResponse | null>(() => loadPersisted())
+  const [user, setUser] = useState<MeResponse | null>(null)
   const [status, setStatus] = useState<AuthStatus>(() =>
-    loadPersisted() ? 'loading' : 'unauthenticated',
+    hasSessionMarker() ? 'loading' : 'unauthenticated',
   )
 
-  // Write-through: keep localStorage, the wrapper's token, and React state in sync.
-  const persist = useCallback((auth: AuthResponse | null) => {
-    if (auth) localStorage.setItem(STORAGE_KEY, JSON.stringify(auth))
-    else localStorage.removeItem(STORAGE_KEY)
-    setAuthToken(auth?.token ?? null)
-    setUser(auth)
+  // Write-through: the marker, the wrapper's belief about the session, and React
+  // state always move together, so no two of them can disagree about whether
+  // somebody is signed in.
+  const adopt = useCallback((identity: MeResponse | null) => {
+    writeSessionMarker(identity !== null)
+    setSessionActive(identity !== null)
+    setUser(identity)
   }, [])
 
   const clearSession = useCallback(() => {
-    persist(null)
+    adopt(null)
     setStatus('unauthenticated')
     queryClient.clear()
-  }, [persist, queryClient])
+  }, [adopt, queryClient])
 
   const login = useCallback(
     async (req: LoginRequest) => {
+      // The body carries identity; the SESSION arrives as Set-Cookie headers on
+      // this same response and never passes through JavaScript.
       const auth = await apiFetch<AuthResponse>('/auth/login', { method: 'POST', body: req })
-      persist(auth)
+      adopt({ userId: auth.userId, username: auth.username, role: auth.role })
       setStatus('authenticated')
     },
-    [persist],
+    [adopt],
   )
 
   const register = useCallback(
     async (req: RegisterRequest) => {
-      // Register returns a full AuthResponse (token included) — one call logs in.
       const auth = await apiFetch<AuthResponse>('/auth/register', { method: 'POST', body: req })
-      persist(auth)
+      adopt({ userId: auth.userId, username: auth.username, role: auth.role })
       setStatus('authenticated')
     },
-    [persist],
+    [adopt],
   )
 
   const adoptSession = useCallback(
     (auth: AuthResponse) => {
-      persist(auth)
+      adopt({ userId: auth.userId, username: auth.username, role: auth.role })
       setStatus('authenticated')
     },
-    [persist],
+    [adopt],
   )
 
-  const logout = useCallback(() => {
-    clearSession()
+  const logout = useCallback(async () => {
+    try {
+      await apiFetch<void>('/auth/logout', { method: 'POST' })
+    } catch {
+      // Deliberately swallowed. The server may be unreachable; the user still
+      // asked to be signed out of this device, and the session's own expiry is
+      // the backstop for the row nobody managed to delete.
+    } finally {
+      clearSession()
+    }
   }, [clearSession])
 
-  const updateUsername = useCallback(
-    (username: string) => {
-      setUser((prev) => {
-        if (!prev || prev.username === username) return prev
-        const next = { ...prev, username }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-        return next
-      })
-    },
-    [],
-  )
+  const updateUsername = useCallback((username: string) => {
+    setUser((prev) => (prev && prev.username !== username ? { ...prev, username } : prev))
+  }, [])
 
   // Register the global 401 → clear-session handler for the fetch wrapper.
   useEffect(() => {
@@ -137,34 +169,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null)
   }, [clearSession])
 
-  // Boot: validate a persisted token exactly once via GET /auth/me.
+  // Boot: ask the server who we are, exactly once. The wrapper refreshes and
+  // retries underneath this if the access cookie aged out while the tab was
+  // closed — which is the common case for anyone returning after an hour.
   const validatedRef = useRef(false)
   useEffect(() => {
     if (validatedRef.current) return
     validatedRef.current = true
 
-    const persisted = loadPersisted()
-    if (!persisted) {
+    if (!hasSessionMarker()) {
       setStatus('unauthenticated')
       return
     }
 
-    setAuthToken(persisted.token)
+    // The wrapper's guest check keys off this, so it has to be true BEFORE the
+    // call: without it the boot 401 would be read as a guest's and never trigger
+    // the refresh that is the whole point of asking.
+    setSessionActive(true)
+
     apiFetch<MeResponse>('/auth/me')
       .then((me) => {
-        // Trust the server's identity over whatever was cached. stream D: role
-        // rides along — a promotion (or a pre-governor session with no cached
-        // role) corrects itself on the next boot, since /auth/me is DB-backed.
-        persist({ ...persisted, userId: me.userId, username: me.username, role: me.role })
+        adopt(me)
         setStatus('authenticated')
       })
       .catch(() => {
-        // 401 already cleared the store via the wrapper handler; other errors
-        // (network) also fall back to signed-out rather than a stale session.
-        persist(null)
+        // A 401 has already cleared the store through the wrapper handler; other
+        // failures (network) fall back to signed-out rather than to a session
+        // nothing has confirmed.
+        adopt(null)
         setStatus('unauthenticated')
       })
-  }, [persist])
+  }, [adopt])
 
   const value = useMemo<AuthContextValue>(
     () => ({ user, status, login, register, logout, updateUsername, adoptSession }),

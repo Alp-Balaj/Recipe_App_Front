@@ -36,7 +36,6 @@ import {
   temperatureUnitLabel,
   unitLabel,
 } from '@/api/vocabulary'
-import { useAuth } from '@/auth/AuthContext'
 import { resolveImageUrl } from '@/lib/images'
 import TextField from '@/components/ui/TextField'
 import { IngredientPicker } from '@/components/recipes/IngredientPicker'
@@ -567,7 +566,6 @@ export function RecipeForm({
   // RELATIVE url lands in the existing `imageUrl` field and previews through
   // resolveImageUrl. `seq` guards a replaced/removed upload from clobbering
   // the newer state; submit is blocked while an upload is pending.
-  const { user } = useAuth()
   const [uploadPending, setUploadPending] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [localPreview, setLocalPreview] = useState<string | null>(null)
@@ -611,10 +609,7 @@ export function RecipeForm({
     setUploadPending(true)
 
     try {
-      const { url } = await uploadImage(file, {
-        token: user?.token ?? null,
-        signal: controller.signal,
-      })
+      const { url } = await uploadImage(file, { signal: controller.signal })
       if (seq !== uploadRef.current.seq) return
       setValue('imageUrl', url, { shouldDirty: true })
     } catch (err) {

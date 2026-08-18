@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Settings → Security (KAN-19). Unlike its neighbours in this folder, this
-// screen shows SERVER truth rather than device-local preferences: whether the
-// account's email address has been verified, and a way to prove it if not.
+// Settings → Security (KAN-19, extended by KAN-20). Unlike its neighbours in
+// this folder, this screen shows SERVER truth rather than device-local
+// preferences: whether the account's email address has been verified and a way
+// to prove it if not, and — since KAN-20 — which devices are signed in and how
+// to sign them out.
 //
 // It is a sub-view of the existing settings navigation — which is local state,
 // not routing — so it needs no route of its own.
@@ -12,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getEmailVerificationStatus, requestEmailVerification } from '@/api/account'
 import { queryKeys } from '@/api/queryKeys'
 import { cardShell, SectionLabel, SettingsScreen } from './settingsUi'
+import ActiveDevices from './ActiveDevices'
 
 export default function SecurityView({ onBack }: { onBack: () => void }) {
   const queryClient = useQueryClient()
@@ -98,6 +101,10 @@ export default function SecurityView({ onBack }: { onBack: () => void }) {
           </>
         )}
       </div>
+
+      {/* KAN-20. Same screen, same reason it is here: server truth about the
+          account rather than a device-local preference. */}
+      <ActiveDevices />
     </SettingsScreen>
   )
 }

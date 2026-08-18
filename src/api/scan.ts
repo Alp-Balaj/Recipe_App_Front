@@ -26,7 +26,7 @@
 // addManualItem) — the scan itself persists nothing (backend decision D19).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { ApiError, ApiUnauthorizedError, ApiValidationError } from './client'
+import { ApiError, ApiUnauthorizedError, ApiValidationError, refreshSession } from './client'
 import type { AiBudget, ValidationProblemResponse } from './types'
 
 export { IMPORT_PHOTO_ACCEPT as SCAN_PHOTO_ACCEPT, IMPORT_PHOTO_MAX_BYTES as SCAN_PHOTO_MAX_BYTES } from './import'
@@ -78,14 +78,14 @@ export interface ReceiptScanResponse {
 
 export function scanPantry(
   file: File,
-  opts: { token?: string | null; signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal } = {},
 ): Promise<PantryScanResponse> {
   return send<PantryScanResponse>('/api/scan/pantry', file, opts)
 }
 
 export function scanReceipt(
   file: File,
-  opts: { token?: string | null; signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal } = {},
 ): Promise<ReceiptScanResponse> {
   return send<ReceiptScanResponse>('/api/scan/receipt', file, opts)
 }
@@ -93,16 +93,21 @@ export function scanReceipt(
 async function send<T>(
   path: string,
   file: File,
-  opts: { token?: string | null; signal?: AbortSignal },
+  opts: { signal?: AbortSignal },
 ): Promise<T> {
   const form = new FormData()
   form.append('file', file, file.name)
 
-  const headers: Record<string, string> = {}
-  if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`
-
   // No Content-Type header — the browser sets the multipart boundary.
-  const res = await fetch(path, { method: 'POST', headers, body: form, signal: opts.signal })
+  //
+  // KAN-20: no Authorization header either — the session is a cookie now — and a
+  // 401 gets one shared refresh-and-retry, so a scan started in a tab that has
+  // been idle does not surface as "the scan failed". See api/images.ts.
+  const send = () =>
+    fetch(path, { method: 'POST', body: form, signal: opts.signal, credentials: 'same-origin' })
+
+  let res = await send()
+  if (res.status === 401 && (await refreshSession())) res = await send()
 
   if (res.ok) return (await res.json()) as T
 

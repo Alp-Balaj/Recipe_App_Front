@@ -83,14 +83,14 @@ describe('RecipeForm photo upload (cp07)', () => {
     // fetch boundary with a delegating spy; the live smoke proves the real
     // multipart wire against the actual backend.
     let capturedForm: FormData | null = null
-    let authHeader: string | null = null
+    let credentialsMode: RequestCredentials | undefined
     const realFetch = globalThis.fetch
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
         if (typeof input === 'string' && input.endsWith('/api/images')) {
           capturedForm = init?.body instanceof FormData ? init.body : null
-          authHeader = (init?.headers as Record<string, string> | undefined)?.Authorization ?? null
+          credentialsMode = init?.credentials
         }
         return realFetch(input, init)
       })
@@ -117,7 +117,14 @@ describe('RecipeForm photo upload (cp07)', () => {
     const part = capturedForm!.get('file')
     expect(part).toBeInstanceOf(File)
     expect((part as File).name).toBe('photo.png')
-    expect(authHeader).toBe(`Bearer ${TEST_USER.token}`)
+    // KAN-20: no Authorization header at all. What carries the session is the
+    // cookie jar, which only rides along because the request opts in to it — so
+    // that opt-in is the thing worth pinning, and dropping it would silently 401
+    // every upload in production while every test here still passed.
+    expect(
+      (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls,
+    ).not.toHaveLength(0)
+    expect(credentialsMode).toBe('same-origin')
     fetchSpy.mockRestore()
     // The affordance flips to replace mode; remove appears.
     expect(screen.getByLabelText('Replace photo')).toBeInTheDocument()

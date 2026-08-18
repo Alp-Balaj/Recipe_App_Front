@@ -29,7 +29,6 @@
 // opens directly. CaptureZone wraps that input, it does not replace it.
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { useAuth } from '@/auth/AuthContext'
 import { weekStartOf } from '@/api/mealPlans'
 import { addManualItem } from '@/api/shopping'
 import CaptureZone from '@/components/scan/CaptureZone'
@@ -92,7 +91,6 @@ function readMode(value: string | null): Mode | null {
 
 export default function FoodScanPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
 
@@ -132,9 +130,9 @@ export default function FoodScanPage() {
     setPending(mode === 'pantry' ? 'Reading what you have…' : 'Reading the receipt…')
     try {
       if (mode === 'pantry') {
-        setPantry(await scanPantry(file, { token: user?.token }))
+        setPantry(await scanPantry(file))
       } else {
-        const result = await scanReceipt(file, { token: user?.token })
+        const result = await scanReceipt(file)
         setReceipt(result)
         setKept(result.items.map(() => true))
       }

@@ -81,10 +81,20 @@ export type DietaryRestriction =
 /** RecipeApp.Domain.Enums.UserRole */
 export type UserRole = 'User' | 'Admin'
 
-/** AuthResponse — returned by BOTH POST /auth/register and POST /auth/login. */
+/**
+ * AuthResponse — returned by BOTH POST /auth/register and POST /auth/login.
+ *
+ * KAN-20 (cookie sessions) — RESHAPED, as its own reviewed commit per the
+ * frozen-modules rule. `token` and `expiresAtUtc` are GONE from this interface
+ * even though the backend still puts them in the body: the session now arrives
+ * as two `httpOnly` cookies, and the app must not read, store or pass around a
+ * bearer any more. Deleting the fields here is what makes that a compile error
+ * rather than a habit somebody re-forms later.
+ *
+ * What is left is identity, which is the only part the SPA ever used for
+ * anything but the Authorization header.
+ */
 export interface AuthResponse {
-  token: string
-  expiresAtUtc: string
   userId: string
   username: string
   /** stream D: present on every response since the governor landed. */

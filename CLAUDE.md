@@ -197,20 +197,44 @@ edits). Lanes import them:
   `RecipeListResponse`, `RecipeIngredient`, `RecipeStep`, `Difficulty`,
   `Visibility`, `ValidationProblemResponse`, `ConflictResponse`.
 - `@/api/client` — `apiFetch<T>(path, { method?, body?, query?, signal? })`.
-  Prefixes `/api`, attaches the bearer, any-2xx = success, 204/empty →
-  `undefined`. Array `query` values → repeated params (`?tags=a&tags=b`). Typed
-  errors: `ApiError`, `ApiValidationError` (`.errors` PascalCase dict),
-  `ApiUnauthorizedError`, `ApiConflictError`. A 401 (except `/auth/login`) clears
-  the session; the guard redirects.
+  Prefixes `/api`, sends the session cookies (`credentials: 'same-origin'`),
+  any-2xx = success, 204/empty → `undefined`. Array `query` values → repeated
+  params (`?tags=a&tags=b`). Typed errors: `ApiError`, `ApiValidationError`
+  (`.errors` PascalCase dict), `ApiUnauthorizedError`, `ApiConflictError`.
+  On a 401 with a live session it refreshes ONCE (single-flight
+  `refreshSession()`, also exported for the three multipart modules) and retries;
+  only if that fails does it clear the session and let the guard redirect.
+  `setSessionActive(bool)` replaced `setAuthToken` — with `httpOnly` cookies
+  there is no token to hold, and the wrapper still needs to tell a guest's 401
+  from an expired session's.
 - `@/api/queryKeys` — `queryKeys.recipes.{all, lists(), list(f?), mine(f?),
-  detail(id)}`, `queryKeys.chat.messages()`, `queryKeys.auth.me()`.
+  detail(id)}`, `queryKeys.chat.messages()`, `queryKeys.auth.{me(),
+  emailVerification(), sessions()}`.
 
-Auth: `@/auth/AuthContext` → `useAuth()` = `{ user: AuthResponse | null, status,
-login, register, logout, updateUsername, adoptSession }` (persisted to
-`localStorage`, boot-validated via `/auth/me`). `adoptSession` (KAN-19) takes a
-session this store did not fetch: password reset answers with a full
-`AuthResponse`, and it arrives at the reset page rather than here because that
-page is the thing holding the one-use link. Route protection is global in `AppShell.tsx`, so **a protected page
+**KAN-20 reshaped all three** (cookie sessions, ADR-0009) — the sanctioned kind
+of edit to a frozen module: its own reviewed commit, not a lane's ad-hoc change.
+`AuthResponse` lost `token`/`expiresAtUtc`, so a bearer is now a compile error
+rather than a habit. The session is two `httpOnly` cookies the browser owns and
+script cannot read.
+
+Auth: `@/auth/AuthContext` → `useAuth()` = `{ user: MeResponse | null, status,
+login, register, logout, updateUsername, adoptSession }`. `user` is IDENTITY,
+not a session, and nothing about it survives a reload: boot re-reads it from
+`/auth/me`. `logout` is `async` — it POSTs `/auth/logout` so the server drops the
+row, and callers must **await it before navigating** (navigating first lands on
+/login while the store still says authenticated, and guest access then bounces
+the user straight back in). The only `localStorage` key left is
+`recipe_app_session` = `"1"`, a non-credential marker that tells boot whether to
+ask the server at all — `httpOnly` cookies being invisible to script, there is
+nothing else to look at. `adoptSession` (KAN-19) takes a session this store did
+not open: password reset answers with identity and sets the cookies on the same
+response, and it arrives at the reset page rather than here because that page is
+the thing holding the one-use link.
+
+Devices: `@/api/sessions` + `components/profile/settings/ActiveDevices.tsx` — the
+Security screen's active-devices list (sign out one, or all the others).
+
+Route protection is global in `AppShell.tsx`, so **a protected page
 renders only when authenticated** — in tests use `@/test/utils`
 `renderRoute(path)` (authenticated by default) or `renderApp(path)` (real
 provider + MSW), and add endpoint mocks with `server.use(...)` from

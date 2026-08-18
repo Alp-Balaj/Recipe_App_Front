@@ -298,7 +298,7 @@ describe('ProfilePage — Activity tab', () => {
 describe('ProfilePage — Settings', () => {
   it('opens Settings (theme + logout) and logs out', async () => {
     let loggedOut = false
-    const auth = makeAuthValue({ logout: () => { loggedOut = true } })
+    const auth = makeAuthValue({ logout: async () => { loggedOut = true } })
     renderRoute('/profile', { auth })
 
     await userEvent.click(await screen.findByRole('button', { name: '⚙ Settings' }))

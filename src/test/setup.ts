@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll } from 'vitest'
 import { cleanup, configure } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { server } from './msw/server'
-import { setAuthToken, setUnauthorizedHandler } from '@/api/client'
+import { setSessionActive, setUnauthorizedHandler } from '@/api/client'
 
 // ── findBy* timeout ──────────────────────────────────────────────────────
 // Raised from Testing Library's 1000ms default (stream F, Task 2). Route-level
@@ -51,9 +51,12 @@ afterAll(() => server.close())
 
 afterEach(() => {
   cleanup()
-  // Reset cross-test module state in the fetch wrapper + persisted session.
+  // Reset cross-test module state in the fetch wrapper + the session marker.
+  // KAN-20: there is no token to reset any more — what the wrapper holds is its
+  // BELIEF about whether a session is live, which decides whether a 401 triggers
+  // a refresh or is passed through as a guest's.
   localStorage.clear()
-  setAuthToken(null)
+  setSessionActive(false)
   setUnauthorizedHandler(null)
 })
 

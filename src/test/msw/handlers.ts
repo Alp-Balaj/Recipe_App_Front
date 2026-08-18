@@ -12,11 +12,16 @@ import type {
 // Wildcard-prefixed paths so these match the real fetched URL regardless of
 // origin or the /api proxy prefix (fetch('/api/auth/login') → ".../auth/login").
 
-/** A stable AuthResponse fixture for a given username. */
+/**
+ * A stable AuthResponse fixture for a given username.
+ *
+ * KAN-20: no token. The real endpoint answers with identity and sets the session
+ * as `Set-Cookie` headers, which jsdom does not model — so what these handlers
+ * reproduce is the BODY, and the session's presence is expressed the same way the
+ * app expresses it, through the store's marker.
+ */
 export function makeAuthResponse(username: string): AuthResponse {
   return {
-    token: `test.jwt.${username}`,
-    expiresAtUtc: '2999-01-01T00:00:00Z',
     userId: '11111111-1111-1111-1111-111111111111',
     username,
     role: 'User',
@@ -88,16 +93,38 @@ export const handlers = [
     return HttpResponse.json(makeAuthResponse(body.usernameOrEmail))
   }),
 
-  http.get('*/auth/me', ({ request }) => {
-    if (!request.headers.get('Authorization')) {
-      return new HttpResponse(null, { status: 401 })
-    }
-    return HttpResponse.json({
+  // KAN-20: the session is an `httpOnly` cookie, which jsdom will not carry and
+  // script could not read anyway — so this can no longer key off a request header
+  // the way it keyed off the bearer. It answers as a signed-in session, and the
+  // tests that need a REJECTED boot say so explicitly with `server.use(...)`.
+  // That is the honest split: "is there a session" is a server fact now, and a
+  // handler guessing at it from the request would be modelling the old design.
+  http.get('*/auth/me', () =>
+    HttpResponse.json({
       userId: '11111111-1111-1111-1111-111111111111',
       username: 'booteduser',
       role: 'User',
-    })
-  }),
+    }),
+  ),
+
+  // The session lifecycle (KAN-20). Defaults, so a test that opens Settings →
+  // Security or logs out never reaches the real network; the session tests
+  // override them.
+  http.post('*/auth/refresh', () =>
+    HttpResponse.json({
+      userId: '11111111-1111-1111-1111-111111111111',
+      username: 'booteduser',
+      role: 'User',
+    }),
+  ),
+
+  http.post('*/auth/logout', () => new HttpResponse(null, { status: 204 })),
+
+  http.get('*/auth/sessions', () => HttpResponse.json([])),
+
+  http.delete('*/auth/sessions/others', () => new HttpResponse(null, { status: 204 })),
+
+  http.delete('*/auth/sessions/:sessionId', () => new HttpResponse(null, { status: 204 })),
 
   // ── Account recovery (KAN-19) defaults ────────────────────────────────────
   // Same rationale as the /recipes and /feed fallbacks below: a test that opens

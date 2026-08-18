@@ -16,10 +16,18 @@
 // re-pastes a link that was never going to work.
 //
 // So both routes get a local fetch path here that keeps the wrapper's contract
-// (/api prefix, bearer, any-2xx = success, typed errors) WITHOUT reshaping
-// client.ts — exactly what images.ts did for the same class of reason. The
-// bearer comes in as a parameter because the wrapper's module-private token has
-// no getter.
+// (/api prefix, any-2xx = success, typed errors) WITHOUT reshaping client.ts —
+// exactly what images.ts did for the same class of reason.
+//
+// KAN-20 (cookie sessions): the bearer parameter is gone. The session rides on
+// `httpOnly` cookies the browser attaches to a same-origin fetch by itself, so
+// there is nothing for a caller to pass and nothing here to attach.
+//
+// What this module DOES have to do itself is the refresh-and-retry the frozen
+// wrapper does for JSON calls: the access cookie expires every few minutes, and
+// an upload that 401s because of that must not surface to the user as a failed
+// upload. It calls the wrapper's exported `refreshSession()` so it joins the one
+// in-flight refresh rather than starting a competing rotation.
 //
 // Wire contract (backend stream L):
 //   POST /recipes/import/url    { url }
@@ -35,7 +43,7 @@
 // surface, exactly as generation does.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { ApiError, ApiUnauthorizedError, ApiValidationError } from './client'
+import { ApiError, ApiUnauthorizedError, ApiValidationError, refreshSession } from './client'
 import type { AiBudget, RecipeResponse, ValidationProblemResponse } from './types'
 
 /** The backend's photo allowlist — ImageUploadRules, shared with POST /images. */
@@ -67,19 +75,20 @@ export interface ImportRecipeResponse {
 
 export function importRecipeFromUrl(
   url: string,
-  opts: { token?: string | null; signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal } = {},
 ): Promise<ImportRecipeResponse> {
   return send('/api/recipes/import/url', {
     method: 'POST',
-    headers: authHeaders(opts.token, { 'Content-Type': 'application/json' }),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),
     signal: opts.signal,
+    credentials: 'same-origin',
   })
 }
 
 export function importRecipeFromPhoto(
   file: File,
-  opts: { token?: string | null; signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal } = {},
 ): Promise<ImportRecipeResponse> {
   const form = new FormData()
   form.append('file', file, file.name)
@@ -88,20 +97,15 @@ export function importRecipeFromPhoto(
   // setting it by hand omits the boundary and produces a 400 nothing can explain.
   return send('/api/recipes/import/photo', {
     method: 'POST',
-    headers: authHeaders(opts.token),
     body: form,
     signal: opts.signal,
+    credentials: 'same-origin',
   })
 }
 
-function authHeaders(token: string | null | undefined, base: Record<string, string> = {}) {
-  const headers: Record<string, string> = { ...base }
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  return headers
-}
-
 async function send(path: string, init: RequestInit): Promise<ImportRecipeResponse> {
-  const res = await fetch(path, init)
+  let res = await fetch(path, init)
+  if (res.status === 401 && (await refreshSession())) res = await fetch(path, init)
 
   if (res.ok) return (await res.json()) as ImportRecipeResponse
 

@@ -84,8 +84,13 @@ export default function ProfileTab({ mode, onSetMode }: Props) {
     return () => clearTimeout(t)
   }, [shareToast])
 
-  const handleLogout = () => {
-    logout()
+  // AWAITED, since KAN-20 made logging out a real request rather than a local
+  // token drop. Navigating first would land on /login while the store still says
+  // authenticated — and with guest access the login page has no reason to hold a
+  // signed-in user there, so the redirect bounces them straight back into the app
+  // they just asked to leave.
+  const handleLogout = async () => {
+    await logout()
     navigate('/login', { replace: true })
   }
 

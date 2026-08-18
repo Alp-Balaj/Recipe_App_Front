@@ -17,7 +17,12 @@ describe('LoginPage', () => {
 
     expect(await screen.findByText('DISCOVER')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/discover')
-    expect(localStorage.getItem('recipe_app_auth')).toContain('alice')
+    // KAN-20: the session is two `httpOnly` cookies, so there is nothing signed
+    // in localStorage to assert any more — only the marker that says boot should
+    // ask the server who we are. That the app got past the guard IS the session
+    // assertion; this pins that the marker was written, because a login that does
+    // not write it looks fine until the page is reloaded.
+    expect(localStorage.getItem('recipe_app_session')).toBe('1')
   })
 
   it('shows invalid-credentials on a 401 without clearing the session/redirecting', async () => {
@@ -71,11 +76,11 @@ describe('RegisterPage', () => {
 
     // stream K: a new account lands on the onboarding wizard rather than
     // straight on /discover. What this test is actually for is unchanged and
-    // still asserted below — register returns a token, so /auth/login is never
-    // called — but the destination moved, so the assertion follows it.
+    // still asserted below — register signs the user in by itself, so /auth/login
+    // is never called — but the destination moved, so the assertion follows it.
     expect(await screen.findByText('What do you like to cook?')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/welcome')
-    // The whole point: register returns a token, so login is never called.
+    // The whole point: register opens the session itself, so login is never called.
     expect(loginSpy).not.toHaveBeenCalled()
   })
 
@@ -127,6 +132,6 @@ describe('ProfileTab logout', () => {
     await user.click(await screen.findByRole('button', { name: /log out/i }))
     expect(await screen.findByText('Welcome back')).toBeInTheDocument()
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
-    expect(localStorage.getItem('recipe_app_auth')).toBeNull()
+    expect(localStorage.getItem('recipe_app_session')).toBeNull()
   })
 })

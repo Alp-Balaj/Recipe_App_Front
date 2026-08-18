@@ -17,7 +17,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { useAuth } from '@/auth/AuthContext'
 import { queryKeys } from '@/api/queryKeys'
 import {
   IMPORT_PHOTO_ACCEPT,
@@ -35,7 +34,6 @@ type Mode = 'url' | 'photo'
 export default function RecipeImportPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { user } = useAuth()
 
   const [mode, setMode] = useState<Mode>('url')
   const [url, setUrl] = useState('')
@@ -65,7 +63,7 @@ export default function RecipeImportPage() {
     setError(null)
     setPending('Fetching the page…')
     try {
-      finish(await importRecipeFromUrl(trimmed, { token: user?.token }))
+      finish(await importRecipeFromUrl(trimmed))
     } catch (err) {
       setError(importErrorMessage(err))
       setPending(null)
@@ -85,7 +83,7 @@ export default function RecipeImportPage() {
     setError(null)
     setPending('Reading the recipe…')
     try {
-      finish(await importRecipeFromPhoto(file, { token: user?.token }))
+      finish(await importRecipeFromPhoto(file))
     } catch (err) {
       setError(importErrorMessage(err))
       setPending(null)
