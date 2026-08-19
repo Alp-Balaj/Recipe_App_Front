@@ -117,10 +117,10 @@ on every navigation and reset `ThemeRoot`'s `mode` state, strobing dark mode
 back to light on every click.
 
 The table below is the whole of `src/router.tsx` as it stands, in file order.
-`src/routeChunks.test.ts` asserts the page count (**33**) on purpose, so an
+`src/routeChunks.test.ts` asserts the page count (**34**) on purpose, so an
 additive route bumps that number deliberately rather than by accident. (Nesting
 an existing route under another does not: KAN-9 left it at 30; KAN-19's three
-recovery screens took it to 33.)
+recovery screens took it to 33; KAN-21's `/reset-second-factor` took it to 34.)
 
 | Route | Page file | Filled by |
 |---|---|---|
@@ -130,6 +130,7 @@ recovery screens took it to 33.)
 | /verify-email | `VerifyEmailPage.tsx` | KAN-19 (the emailed verification link's landing page) |
 | /forgot-password | `ForgotPasswordPage.tsx` | KAN-19 (ask for a reset link) |
 | /reset-password | `ResetPasswordPage.tsx` | KAN-19 (spend a reset link, choose a new password) |
+| /reset-second-factor | `ResetSecondFactorPage.tsx` | KAN-21 (ask for the link, and spend it — one page, keyed off `?token=`; starts a 48-hour wait rather than removing anything) |
 | /feed | `FeedPage.tsx` | social-feed |
 | /users/:id | `UserProfilePage.tsx` | social-feed |
 | /users/:id/followers | `FollowListPage.tsx` | social-feed cp2 (one page, reads its kind off the pathname) |
@@ -217,9 +218,42 @@ of edit to a frozen module: its own reviewed commit, not a lane's ad-hoc change.
 rather than a habit. The session is two `httpOnly` cookies the browser owns and
 script cannot read.
 
+**KAN-21 touched all three again**, additively, as its own reviewed commit:
+
+- `types.ts` — `MeResponse.secondFactorResetEffectiveAtUtc`. It is on IDENTITY
+  rather than on the Security screen's own read because the warning has to
+  reach **every live session**: somebody has started a 48-hour countdown to
+  strip this account's second factor, and the only person who can stop it is
+  whoever is still signed in. `/auth/me` and `/auth/refresh` both answer this
+  shape, so an open tab learns about it within one access-token lifetime.
+- `client.ts` — `ApiError.body` carries the parsed error payload, because two
+  KAN-21 answers put a **number** in it that the screen has to say out loud
+  (attempts left before a sign-in dies; seconds of backoff). `/auth/challenge`
+  also joined `/auth/login` and `/auth/register` in the "a 401 here is an
+  ANSWER, not an expiry" list — mistyping six digits must not sign anyone out.
+- `queryKeys.ts` — `queryKeys.auth.secondFactor()`.
+
+Second factor: `@/api/secondFactor` +
+`components/profile/settings/SecondFactorPanel.tsx` (enrol, recovery codes,
+turn off, cancel a pending reset) + `components/auth/SecondFactorChallengeForm`
+(the code prompt, shared by `/login` and `/reset-password`) +
+`components/auth/SecondFactorResetAlert` (the global pending-reset strip,
+mounted in `AppShell` as a sanctioned amendment, like `NotificationBell`).
+`qrcode.react` is the one runtime dependency it added — a QR is not something
+to hand-roll, and the package has no dependencies of its own.
+
 Auth: `@/auth/AuthContext` → `useAuth()` = `{ user: MeResponse | null, status,
-login, register, logout, updateUsername, adoptSession }`. `user` is IDENTITY,
-not a session, and nothing about it survives a reload: boot re-reads it from
+login, register, logout, updateUsername, adoptSession }`. **`login` returns
+something since KAN-21**: `null` when the account signed in (the un-enrolled
+path, unchanged), or a `SecondFactorChallenge` when it did **not** — an enrolled
+account's password buys the right to be asked for a code and nothing else, and
+no session exists until that code is answered. Treating a challenge as a
+successful sign-in is the one mistake here that would make the second factor
+decorative, which is why it is a return value rather than a flag.
+`POST /auth/password-reset/confirm` answers the same union for the same reason:
+a reset link arrives by email, so it must not sign an enrolled account in.
+
+`user` is IDENTITY, not a session, and nothing about it survives a reload: boot re-reads it from
 `/auth/me`. `logout` is `async` — it POSTs `/auth/logout` so the server drops the
 row, and callers must **await it before navigating** (navigating first lands on
 /login while the store still says authenticated, and guest access then bounces

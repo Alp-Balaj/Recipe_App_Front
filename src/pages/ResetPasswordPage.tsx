@@ -6,7 +6,9 @@ import { z } from 'zod'
 import { LinkError, resetPassword } from '@/api/account'
 import { ApiValidationError } from '@/api/client'
 import { useAuth } from '@/auth/AuthContext'
+import { isChallenge, type SecondFactorChallenge } from '@/api/secondFactor'
 import AuthScreen, { authLink, authLinkButton, SubmitButton } from '@/components/AuthScreen'
+import SecondFactorChallengeForm from '@/components/auth/SecondFactorChallengeForm'
 import TextField from '@/components/ui/TextField'
 
 // KAN-19. Reached from the emailed link, always signed out, so it reads the token off
@@ -43,6 +45,8 @@ export default function ResetPasswordPage() {
 
   const [banner, setBanner] = useState<string | null>(null)
   const [deadLink, setDeadLink] = useState<'expired' | 'invalid' | null>(null)
+  // KAN-21: an enrolled account is not signed in by a reset — see resetPassword.
+  const [challenge, setChallenge] = useState<SecondFactorChallenge | null>(null)
 
   const {
     register,
@@ -53,10 +57,20 @@ export default function ResetPasswordPage() {
   const onSubmit = handleSubmit(async (values) => {
     setBanner(null)
     try {
-      const session = await resetPassword(token, values.password)
+      const outcome = await resetPassword(token, values.password)
+
+      // KAN-21: the password changed either way. What differs is whether that was
+      // enough to get in — for an enrolled account it is not, and the challenge
+      // takes over from here. The link is already spent, so this screen must not
+      // send them back to the form; it renders the code prompt in place.
+      if (isChallenge(outcome)) {
+        setChallenge(outcome)
+        return
+      }
+
       // Signed in on this device with the session the reset returned — every OTHER
       // device was signed out by the same call, which is the point of the flow.
-      adoptSession(session)
+      adoptSession(outcome)
       navigate('/discover', { replace: true })
     } catch (err) {
       if (err instanceof LinkError) {
@@ -82,6 +96,24 @@ export default function ResetPasswordPage() {
       </Link>
     </>
   )
+
+  if (challenge) {
+    return (
+      <AuthScreen
+        title="One more step"
+        subtitle="Your new password is saved. Your account is also protected by an authenticator app."
+        footer={askAgain}
+      >
+        <SecondFactorChallengeForm
+          challenge={challenge}
+          onAnswered={() => navigate('/discover', { replace: true })}
+          // The reset link is spent, so there is nothing on THIS screen to go
+          // back to — the way on is the sign-in page, with the new password.
+          onExpired={() => navigate('/login', { replace: true })}
+        />
+      </AuthScreen>
+    )
+  }
 
   // A link with no token at all is the same dead end as an unusable one, and gets the
   // same screen rather than a form that cannot possibly submit.

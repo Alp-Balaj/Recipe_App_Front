@@ -13,6 +13,8 @@
 //  - on a 401 with a live session, refresh once and retry (see below)
 //  - translate error responses into typed errors:
 //      400 → ApiValidationError (carries the PascalCase-keyed errors dict)
+//      429/5xx/other → ApiError, whose `body` carries the parsed payload
+//            (KAN-21) for the two answers that put a number in it
 //      401 → ApiUnauthorizedError; clears the session ONLY after a refresh
 //            attempt has also failed, and only when a session was believed
 //            live. A guest 401 (guest access, D9) surfaces as a normal error
@@ -62,10 +64,25 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
 
 export class ApiError extends Error {
   readonly status: number
-  constructor(status: number, message: string) {
+  /**
+   * KAN-21 — SANCTIONED ADDITIVE EDIT to this frozen module, landing as its own
+   * reviewed commit per the rule. Nothing already here changed shape: this is a
+   * new optional field, and every existing `catch` is unaffected.
+   *
+   * The parsed error body, when the response carried one. It exists because two
+   * KAN-21 answers put a NUMBER in the body that the screen has to say out
+   * loud — how many code attempts are left before a sign-in dies, and how many
+   * seconds the escalating backoff wants — and neither can be recovered from a
+   * status code. Callers must treat it as untyped: it is whatever the server
+   * sent, which for an unexpected 5xx may be nothing at all.
+   */
+  readonly body?: Record<string, unknown>
+
+  constructor(status: number, message: string, body?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.body = body
   }
 }
 
@@ -81,8 +98,8 @@ export class ApiValidationError extends ApiError {
 
 /** 401 — either an expired session (handled globally) or bad login credentials. */
 export class ApiUnauthorizedError extends ApiError {
-  constructor(message = 'Unauthorized') {
-    super(401, message)
+  constructor(message = 'Unauthorized', body?: Record<string, unknown>) {
+    super(401, message, body)
     this.name = 'ApiUnauthorizedError'
   }
 }
@@ -105,7 +122,38 @@ export class ApiConflictError extends ApiError {
  * the single most likely place to arrive with an access cookie that aged out
  * while the tab was closed — refreshing there is exactly the point.
  */
-const NO_REFRESH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout']
+// KAN-21 added '/auth/challenge' for the same reason '/auth/login' is here, and the
+// consequence of leaving it out is worse than it looks: a 401 there means the CODE was
+// wrong, and a refresh-and-retry would re-POST the same challengeToken with the same wrong
+// code — spending TWO of the challenge's five attempts per typo, and making the
+// "attempts left" count the screen shows jump by two. That happens for real whenever
+// somebody who is already signed in on the device clicks their emailed reset link.
+const NO_REFRESH_PATHS = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/logout',
+  '/auth/challenge',
+]
+
+/**
+ * KAN-21 — SANCTIONED ADDITIVE EDIT, same reviewed commit as the rest.
+ *
+ * The auth store registers a handler for the identity a REFRESH answers with. The refresh
+ * response has always carried one; this module used to throw it away, which was fine while
+ * identity was only a name and a role — a long-open tab had nothing to learn.
+ *
+ * It does now. A second-factor reset somebody started by email is a 48-hour countdown that
+ * the account holder has to SEE, and the only person who can stop it is whoever is still
+ * signed in. Feeding this back is what makes "every live session is warned within one
+ * access-token lifetime" true rather than aspirational: refresh is the one call every live
+ * session makes on its own, without a poll and without a socket.
+ */
+type IdentityHandler = (identity: unknown) => void
+let identityHandler: IdentityHandler | null = null
+export function setIdentityHandler(handler: IdentityHandler | null): void {
+  identityHandler = handler
+}
 
 /**
  * The one in-flight refresh, shared by every caller that wants one.
@@ -132,7 +180,15 @@ export function refreshSession(): Promise<boolean> {
     method: 'POST',
     credentials: 'same-origin',
   })
-    .then((res) => res.ok)
+    .then(async (res) => {
+      if (!res.ok) return false
+      // KAN-21: hand the identity back to the store — see setIdentityHandler. A body
+      // that will not parse is not a reason to fail a refresh that the server accepted,
+      // so it is read defensively and ignored when absent.
+      const identity = await safeJson(res)
+      if (identity) identityHandler?.(identity)
+      return true
+    })
     .catch(() => false)
     .finally(() => {
       inFlightRefresh = null
@@ -243,9 +299,20 @@ async function handleErrorResponse(res: Response, path: string): Promise<never> 
     // at all, which is a guest hitting a gated endpoint (defense-in-depth) and
     // has nothing to clear. /auth/login and /auth/register are exempt for a
     // third reason: a 401 there means the credentials were wrong.
-    const isCredentialCheck = path === '/auth/login' || path === '/auth/register'
+    //
+    // KAN-21 puts /auth/challenge in the same group, and for exactly the same
+    // reason: a 401 there means the CODE was wrong. Signing somebody out of an
+    // unrelated live session because they mistyped six digits on the login
+    // screen would be a bug with no obvious cause.
+    const isCredentialCheck =
+      path === '/auth/login' || path === '/auth/register' || path === '/auth/challenge'
     if (!isCredentialCheck && sessionActive) unauthorizedHandler?.()
-    throw new ApiUnauthorizedError()
+
+    // The body is read only for the credential checks — the ones whose 401 is an
+    // ANSWER rather than an expiry, and the only ones whose body carries anything
+    // (KAN-21's remaining-attempts count).
+    const details = isCredentialCheck ? await safeJson(res) : null
+    throw new ApiUnauthorizedError(undefined, details ?? undefined)
   }
 
   if (res.status === 409) {
@@ -256,5 +323,8 @@ async function handleErrorResponse(res: Response, path: string): Promise<never> 
   const data = await safeJson(res)
   const message =
     (data && (data.title || data.error || data.message)) || res.statusText || 'Request failed'
-  throw new ApiError(res.status, message)
+  // KAN-21: the body rides along (see ApiError.body) so a 429's retry-after can
+  // reach the screen. Everything that only reads `status` and `message` is
+  // untouched.
+  throw new ApiError(res.status, message, data ?? undefined)
 }

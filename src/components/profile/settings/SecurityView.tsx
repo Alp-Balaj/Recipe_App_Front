@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Settings → Security (KAN-19, extended by KAN-20). Unlike its neighbours in
+// Settings → Security (KAN-19, extended by KAN-20 and KAN-21). Unlike its neighbours in
 // this folder, this screen shows SERVER truth rather than device-local
 // preferences: whether the account's email address has been verified and a way
-// to prove it if not, and — since KAN-20 — which devices are signed in and how
-// to sign them out.
+// to prove it if not, since KAN-20 which devices are signed in and how to sign
+// them out, and since KAN-21 whether the account has a second factor.
 //
 // It is a sub-view of the existing settings navigation — which is local state,
 // not routing — so it needs no route of its own.
@@ -15,6 +15,7 @@ import { getEmailVerificationStatus, requestEmailVerification } from '@/api/acco
 import { queryKeys } from '@/api/queryKeys'
 import { cardShell, SectionLabel, SettingsScreen } from './settingsUi'
 import ActiveDevices from './ActiveDevices'
+import SecondFactorPanel from './SecondFactorPanel'
 
 export default function SecurityView({ onBack }: { onBack: () => void }) {
   const queryClient = useQueryClient()
@@ -101,6 +102,11 @@ export default function SecurityView({ onBack }: { onBack: () => void }) {
           </>
         )}
       </div>
+
+      {/* KAN-21. Directly under the email block on purpose: enrolment REQUIRES a
+          verified address, so the requirement and the thing it gates read as one
+          story rather than as two unrelated cards. */}
+      <SecondFactorPanel />
 
       {/* KAN-20. Same screen, same reason it is here: server truth about the
           account rather than a device-local preference. */}

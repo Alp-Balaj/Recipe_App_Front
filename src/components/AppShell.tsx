@@ -9,6 +9,7 @@ import {
 } from 'react-router-dom'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { useAuth } from '@/auth/AuthContext'
+import SecondFactorResetAlert from '@/components/auth/SecondFactorResetAlert'
 import { AuthGateProvider, requiresAuth, useAuthGate } from '@/auth/AuthGateContext'
 import Sidebar from './Sidebar'
 import SidebarRail from './SidebarRail'
@@ -215,6 +216,15 @@ function AppShellContent() {
         </div>
 
         {promptOpen && <LoginModal />}
+        {/* KAN-21 — REVIEWED COMMIT against this frozen module, following the
+            AuthGateProvider (D9) and NotificationBell (open-loops slice 3)
+            precedents for a sanctioned amendment here.
+            Why it has to live in the shell: it warns that somebody has started
+            the 48-hour countdown to strip this account's second factor, and the
+            only person who can stop it is whoever is currently signed in. A
+            warning that only appears in Settings is a warning that arrives after
+            the two days are up. It is `position: fixed`, so it moves nothing. */}
+        <SecondFactorResetAlert />
       </div>
     )
   }
@@ -241,6 +251,15 @@ function AppShellContent() {
         {!isGuest && <NotificationBell size={19} style={mobileBellStyle} />}
         <BottomNav />
         {promptOpen && <LoginModal />}
+        {/* KAN-21 — REVIEWED COMMIT against this frozen module, following the
+            AuthGateProvider (D9) and NotificationBell (open-loops slice 3)
+            precedents for a sanctioned amendment here.
+            Why it has to live in the shell: it warns that somebody has started
+            the 48-hour countdown to strip this account's second factor, and the
+            only person who can stop it is whoever is currently signed in. A
+            warning that only appears in Settings is a warning that arrives after
+            the two days are up. It is `position: fixed`, so it moves nothing. */}
+        <SecondFactorResetAlert />
       </div>
 
       <div className="app-hint">

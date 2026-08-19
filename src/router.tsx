@@ -46,6 +46,7 @@ import {
   RecipeImportPage,
   RegisterPage,
   ResetPasswordPage,
+  ResetSecondFactorPage,
   ShoppingListPage,
   UserProfilePage,
   VerifyEmailPage,
@@ -84,6 +85,15 @@ export const routes: RouteObject[] = [
       { path: '/verify-email', element: page(VerifyEmailPage) },
       { path: '/forgot-password', element: page(ForgotPasswordPage) },
       { path: '/reset-password', element: page(ResetPasswordPage) },
+      // KAN-21 (the second factor) — SANCTIONED ADDITIVE route registration,
+      // same discipline as KAN-19's three above and for the same reason,
+      // stated more sharply: somebody who has lost their authenticator cannot
+      // finish a sign-in at all, so this page has to work with no session
+      // whatsoever. Inside AppShell it would be gated by precisely the thing
+      // it exists to help them get past. ONE path for both halves of the flow
+      // (ask for the link, and spend it), keyed off `?token=` exactly as
+      // /reset-password is.
+      { path: '/reset-second-factor', element: page(ResetSecondFactorPage) },
       {
         element: <AppShell />,
         children: [

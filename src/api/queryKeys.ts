@@ -28,6 +28,11 @@ export const queryKeys = {
     // ticket carries is in `types.ts` and `client.ts`, not here.)
     /** GET /auth/sessions — the caller's signed-in devices. */
     sessions: () => ['auth', 'sessions'] as const,
+
+    // KAN-21 — same sanctioned additive shape as the two keys above it: a NEW
+    // key in an existing namespace, nothing renamed or reshaped.
+    /** GET /auth/second-factor — enrolment state, remaining recovery codes, any pending reset. */
+    secondFactor: () => ['auth', 'secondFactor'] as const,
   },
 
   recipes: {

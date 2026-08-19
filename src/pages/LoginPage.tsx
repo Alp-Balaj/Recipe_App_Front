@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/auth/AuthContext'
-import { ApiUnauthorizedError } from '@/api/client'
+import { ApiError, ApiUnauthorizedError } from '@/api/client'
+import type { SecondFactorChallenge } from '@/api/secondFactor'
 import AuthScreen, { SubmitButton } from '@/components/AuthScreen'
+import SecondFactorChallengeForm from '@/components/auth/SecondFactorChallengeForm'
 import TextField from '@/components/ui/TextField'
 
 // LoginRequest is a single usernameOrEmail field — the backend matches either.
@@ -21,6 +23,11 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [banner, setBanner] = useState<string | null>(null)
+  // KAN-21: the sign-in's second half. Held in component state and nowhere else —
+  // it is not a credential (it opens nothing without a code), and it must not
+  // outlive this screen: a challenge left in storage is a password success
+  // somebody could finish tomorrow.
+  const [challenge, setChallenge] = useState<SecondFactorChallenge | null>(null)
 
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/discover'
 
@@ -36,16 +43,54 @@ export default function LoginPage() {
   const onSubmit = handleSubmit(async (values) => {
     setBanner(null)
     try {
-      await login(values)
+      // KAN-21: for an enrolled account this resolves with a CHALLENGE and no
+      // session — the password bought the right to be asked for a code. Only the
+      // null case means signed in.
+      const raised = await login(values)
+      if (raised) {
+        setChallenge(raised)
+        return
+      }
       navigate(from, { replace: true })
     } catch (err) {
       if (err instanceof ApiUnauthorizedError) {
         setBanner('Invalid username or password.')
+      } else if (err instanceof ApiError && err.status === 429) {
+        // ADR-0008's escalating delay, not a lockout — so the message says what
+        // to do (wait a moment) rather than implying the account is gone.
+        setBanner('Too many attempts. Please wait a moment and try again.')
       } else {
         setBanner('Something went wrong. Please try again.')
       }
     }
   })
+
+  if (challenge) {
+    return (
+      <AuthScreen
+        title="One more step"
+        subtitle="Your account is protected by an authenticator app."
+        banner={banner}
+        footer={
+          <button type="button" onClick={() => setChallenge(null)} style={backButton}>
+            Use a different account
+          </button>
+        }
+      >
+        <SecondFactorChallengeForm
+          challenge={challenge}
+          onAnswered={() => navigate(from, { replace: true })}
+          onExpired={() => {
+            // Five wrong codes, or it aged out. There is nothing left to type
+            // into, so the screen goes back to the password rather than leaving
+            // a dead field on display.
+            setChallenge(null)
+            setBanner('That sign-in timed out. Please enter your password again.')
+          }}
+        />
+      </AuthScreen>
+    )
+  }
 
   return (
     <AuthScreen
@@ -93,4 +138,15 @@ export default function LoginPage() {
       </form>
     </AuthScreen>
   )
+}
+
+const backButton: CSSProperties = {
+  border: 'none',
+  background: 'none',
+  padding: 0,
+  fontFamily: 'inherit',
+  fontSize: 'inherit',
+  fontWeight: 700,
+  color: 'var(--accent)',
+  cursor: 'pointer',
 }

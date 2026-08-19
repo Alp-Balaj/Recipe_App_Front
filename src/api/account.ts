@@ -11,7 +11,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { apiFetch, ApiError, ApiValidationError } from './client'
-import type { AuthResponse } from './types'
+import type { SignInOutcome } from './secondFactor'
+
 
 /** GET /auth/email-verification — the caller's own address and its status. */
 export interface EmailVerificationStatus {
@@ -89,10 +90,19 @@ export function requestPasswordReset(email: string): Promise<void> {
   return apiFetch<void>('/auth/password-reset/request', { method: 'POST', body: { email } })
 }
 
-/** Spends a reset link. Resolves with a fresh session for THIS device. */
-export async function resetPassword(token: string, newPassword: string): Promise<AuthResponse> {
+/**
+ * Spends a reset link.
+ *
+ * KAN-21 gave this two possible answers, and the second one is the point of that
+ * ticket. For an ordinary account it still resolves with a fresh session for THIS
+ * device. For an ENROLLED one it resolves with a CHALLENGE and no session: the
+ * password did change, but a reset link arrives by email, so treating one as
+ * proof of identity would mean the mailbox alone opens the account — exactly the
+ * collapse a second factor exists to prevent.
+ */
+export async function resetPassword(token: string, newPassword: string): Promise<SignInOutcome> {
   try {
-    return await apiFetch<AuthResponse>('/auth/password-reset/confirm', {
+    return await apiFetch<SignInOutcome>('/auth/password-reset/confirm', {
       method: 'POST',
       body: { token, newPassword },
     })

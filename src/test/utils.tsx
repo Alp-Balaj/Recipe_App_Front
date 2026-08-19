@@ -26,11 +26,15 @@ export function makeAuthValue(overrides: Partial<AuthContextValue> = {}): AuthCo
   return {
     user: TEST_USER,
     status: 'authenticated',
-    login: async () => {},
+    // KAN-21: `login` resolves with a CHALLENGE for an enrolled account and null
+    // otherwise. The default stub is the ordinary un-enrolled path; a test about
+    // the challenge overrides it.
+    login: async () => null,
     register: async () => {},
     logout: async () => {},
     updateUsername: () => {},
     adoptSession: () => {},
+    refreshIdentity: async () => {},
     ...overrides,
   }
 }

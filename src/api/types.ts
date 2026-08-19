@@ -136,6 +136,20 @@ export interface MeResponse {
    * onboarding and must not be asked again.
    */
   needsOnboarding?: boolean
+  /**
+   * KAN-21 (second factor) — SANCTIONED ADDITIVE EDIT to this frozen module,
+   * landing as its own reviewed commit per the rule. Same shape and same
+   * rationale as `needsOnboarding` above: an optional field on a response the
+   * app already fetches on every boot, so anything ignoring it is unchanged.
+   *
+   * Set while somebody has started the 48-hour countdown to have this account's
+   * second factor removed by email. It rides on the IDENTITY read rather than
+   * on the Security screen because the warning has to reach every open tab —
+   * the person who can stop it is whoever is still signed in, and they are
+   * unlikely to be sitting in Settings when it starts. /auth/refresh answers
+   * with this same shape, so a long-open tab learns about it too.
+   */
+  secondFactorResetEffectiveAtUtc?: string | null
 }
 
 // ── Recipes ───────────────────────────────────────────────────────────────

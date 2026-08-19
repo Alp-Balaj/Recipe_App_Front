@@ -149,6 +149,21 @@ export const handlers = [
 
   http.post('*/auth/password-reset/confirm', () => HttpResponse.json(makeAuthResponse('resetuser'))),
 
+  // ── The second factor (KAN-21) defaults ───────────────────────────────────
+  // Same rationale as the KAN-19 block above: any test that opens Settings →
+  // Security now mounts the second-factor panel, and it must not reach the real
+  // network. The default is the state most accounts are in — not enrolled, with
+  // nothing counting down. Second-factor tests override with `server.use(...)`.
+  http.get('*/auth/second-factor', () =>
+    HttpResponse.json({
+      enrolled: false,
+      enrolledAt: null,
+      recoveryCodesRemaining: 0,
+      emailVerified: true,
+      resetEffectiveAtUtc: null,
+    }),
+  ),
+
   // Default browse list: empty. Keeps any test that lands on /discover (the
   // BrowsePage, checkpoint 04) from hitting the real network; browse-specific
   // tests override this with `server.use(...)`. Matches the exact `/recipes`

@@ -34,6 +34,10 @@ export const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 export const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'))
 export const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 export const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
+// KAN-21 — the second factor's own recovery screen, beside its KAN-19 siblings
+// and lazy for the same reason: nobody who never loses an authenticator ever
+// downloads it.
+export const ResetSecondFactorPage = lazy(() => import('./pages/ResetSecondFactorPage'))
 export const ChatPage = lazy(() => import('./pages/ChatPage'))
 export const FeedPage = lazy(() => import('./pages/FeedPage'))
 export const BrowsePage = lazy(() => import('./pages/BrowsePage'))

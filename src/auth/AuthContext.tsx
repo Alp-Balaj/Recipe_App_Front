@@ -25,7 +25,8 @@ import {
   type ReactNode,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { apiFetch, setSessionActive, setUnauthorizedHandler } from '@/api/client'
+import { apiFetch, setIdentityHandler, setSessionActive, setUnauthorizedHandler } from '@/api/client'
+import { isChallenge, type SecondFactorChallenge, type SignInOutcome } from '@/api/secondFactor'
 import type { AuthResponse, LoginRequest, MeResponse, RegisterRequest } from '@/api/types'
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
@@ -39,8 +40,19 @@ export interface AuthContextValue {
   user: MeResponse | null
   /** 'loading' only while the boot-time /auth/me is in flight. */
   status: AuthStatus
-  /** POST /auth/login → the server sets the session cookies. Throws ApiUnauthorizedError on bad credentials. */
-  login: (req: LoginRequest) => Promise<void>
+  /**
+   * POST /auth/login. Throws ApiUnauthorizedError on bad credentials, and
+   * ApiError (429) when ADR-0008's escalating backoff is running.
+   *
+   * KAN-21 made this return something. For an account with no second factor the
+   * server sets the session cookies and this resolves with NULL, exactly as
+   * before. For an ENROLLED one it resolves with a CHALLENGE and no session
+   * exists yet — the password bought the right to be asked for a code, nothing
+   * more. The caller must render the code prompt; treating a challenge as a
+   * successful sign-in is the one mistake here that would make the second factor
+   * decorative, which is why this returns a value instead of setting a flag.
+   */
+  login: (req: LoginRequest) => Promise<SecondFactorChallenge | null>
   /** POST /auth/register → signs in with ONE call. Throws ApiConflictError when taken. */
   register: (req: RegisterRequest) => Promise<void>
   /**
@@ -58,6 +70,10 @@ export interface AuthContextValue {
    * answers with the caller's identity — and, since KAN-20, sets the session
    * cookies on the same response — and that arrives at the reset page rather
    * than here, because the page is the thing holding the one-use link.
+   *
+   * KAN-21 gave it a second caller for the same reason: answering a sign-in
+   * challenge opens the session, and the challenge token lives on the screen
+   * holding it, not here.
    */
   adoptSession: (auth: AuthResponse) => void
   /**
@@ -66,6 +82,17 @@ export interface AuthContextValue {
    * No-op when signed out.
    */
   updateUsername: (username: string) => void
+  /**
+   * Re-read identity from /auth/me (KAN-21).
+   *
+   * A sign-in response carries NAME AND ROLE, and identity is more than that now:
+   * /auth/me also says whether somebody has started the 48-hour countdown to remove
+   * this account's second factor, which nothing else in the app can tell the user.
+   * ADR-0009 already named the identity endpoint "the sole source of identity"; this
+   * is what makes that true on the paths that adopt a session rather than boot into
+   * one. Failures are swallowed — the identity already adopted stands.
+   */
+  refreshIdentity: () => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
@@ -113,6 +140,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(identity)
   }, [])
 
+  /**
+   * Read identity from the one endpoint that knows all of it. Called after every path
+   * that adopts a session from a sign-in response, and awaited by boot.
+   *
+   * Deliberately NOT awaited by the sign-in callers: the screen should navigate the
+   * moment the session exists, and this only fills in facts no sign-in response
+   * carries. A failure leaves the caller with the identity it already had.
+   */
+  const syncIdentity = useCallback(async () => {
+    try {
+      adopt(await apiFetch<MeResponse>('/auth/me'))
+    } catch {
+      // Swallowed on purpose. A 401 here has already cleared the store through the
+      // wrapper's handler; anything else is a network blip that must not undo a
+      // sign-in that succeeded.
+    }
+  }, [adopt])
+
   const clearSession = useCallback(() => {
     adopt(null)
     setStatus('unauthenticated')
@@ -123,11 +168,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (req: LoginRequest) => {
       // The body carries identity; the SESSION arrives as Set-Cookie headers on
       // this same response and never passes through JavaScript.
-      const auth = await apiFetch<AuthResponse>('/auth/login', { method: 'POST', body: req })
-      adopt({ userId: auth.userId, username: auth.username, role: auth.role })
+      //
+      // KAN-21: or the body carries a CHALLENGE, in which case no Set-Cookie
+      // came with it. Nothing is adopted — there is no session to adopt — and
+      // the challenge goes back to the caller to be answered.
+      const outcome = await apiFetch<SignInOutcome>('/auth/login', { method: 'POST', body: req })
+      if (isChallenge(outcome)) {
+        return outcome
+      }
+
+      adopt({ userId: outcome.userId, username: outcome.username, role: outcome.role })
       setStatus('authenticated')
+      void syncIdentity()
+      return null
     },
-    [adopt],
+    [adopt, syncIdentity],
   )
 
   const register = useCallback(
@@ -135,16 +190,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const auth = await apiFetch<AuthResponse>('/auth/register', { method: 'POST', body: req })
       adopt({ userId: auth.userId, username: auth.username, role: auth.role })
       setStatus('authenticated')
+      void syncIdentity()
     },
-    [adopt],
+    [adopt, syncIdentity],
   )
 
   const adoptSession = useCallback(
     (auth: AuthResponse) => {
       adopt({ userId: auth.userId, username: auth.username, role: auth.role })
       setStatus('authenticated')
+      void syncIdentity()
     },
-    [adopt],
+    [adopt, syncIdentity],
   )
 
   const logout = useCallback(async () => {
@@ -168,6 +225,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUnauthorizedHandler(clearSession)
     return () => setUnauthorizedHandler(null)
   }, [clearSession])
+
+  // KAN-21: and the identity a REFRESH answers with. This is what lets a tab that has
+  // been open for hours learn something new about its own account — specifically that
+  // somebody has started the countdown to remove its second factor — without polling.
+  // Guarded on a recognisable shape, because the handler takes whatever the server sent.
+  useEffect(() => {
+    setIdentityHandler((identity) => {
+      const me = identity as MeResponse | null
+      if (me && typeof me.userId === 'string') adopt(me)
+    })
+    return () => setIdentityHandler(null)
+  }, [adopt])
 
   // Boot: ask the server who we are, exactly once. The wrapper refreshes and
   // retries underneath this if the access cookie aged out while the tab was
@@ -202,8 +271,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [adopt])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, status, login, register, logout, updateUsername, adoptSession }),
-    [user, status, login, register, logout, updateUsername, adoptSession],
+    () => ({ user, status, login, register, logout, updateUsername, adoptSession, refreshIdentity: syncIdentity }),
+    [user, status, login, register, logout, updateUsername, adoptSession, syncIdentity],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

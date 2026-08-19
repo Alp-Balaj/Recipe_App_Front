@@ -15,8 +15,10 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/auth/AuthContext'
 import { useAuthGate } from '@/auth/AuthGateContext'
-import { ApiUnauthorizedError } from '@/api/client'
+import { ApiError, ApiUnauthorizedError } from '@/api/client'
+import type { SecondFactorChallenge } from '@/api/secondFactor'
 import { SubmitButton } from '@/components/AuthScreen'
+import SecondFactorChallengeForm from '@/components/auth/SecondFactorChallengeForm'
 import Modal from '@/components/ui/Modal'
 import TextField from '@/components/ui/TextField'
 
@@ -32,6 +34,11 @@ export default function LoginModal() {
   const { login } = useAuth()
   const { closePrompt } = useAuthGate()
   const [banner, setBanner] = useState<string | null>(null)
+  // KAN-21: this modal is the app's OTHER sign-in, and it has to ask for a code just as
+  // /login does. Closing on a challenge would leave a guest who typed the right password
+  // still a guest, with no prompt and no error — and the next gated tap would reopen this
+  // modal, forever.
+  const [challenge, setChallenge] = useState<SecondFactorChallenge | null>(null)
 
   const {
     register,
@@ -42,12 +49,20 @@ export default function LoginModal() {
   const onSubmit = handleSubmit(async (values) => {
     setBanner(null)
     try {
-      await login(values)
+      // Null means signed in; anything else is a challenge, and NO session exists yet.
+      const raised = await login(values)
+      if (raised) {
+        setChallenge(raised)
+        return
+      }
       // D4: success just closes the prompt — the guest's pending action is not replayed.
       closePrompt()
     } catch (err) {
       if (err instanceof ApiUnauthorizedError) {
         setBanner('Invalid username or password.')
+      } else if (err instanceof ApiError && err.status === 429) {
+        // ADR-0008's escalating delay, not a lockout.
+        setBanner('Too many attempts. Please wait a moment and try again.')
       } else {
         setBanner('Something went wrong. Please try again.')
       }
@@ -69,7 +84,7 @@ export default function LoginModal() {
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <h2 style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
-            Sign in
+            {challenge ? 'One more step' : 'Sign in'}
           </h2>
           <button
             onClick={closePrompt}
@@ -111,36 +126,51 @@ export default function LoginModal() {
           </div>
         )}
 
-        <form onSubmit={onSubmit} noValidate>
-          <TextField
-            label="Username or email"
-            autoComplete="username"
-            autoFocus
-            error={errors.usernameOrEmail?.message}
-            {...register('usernameOrEmail')}
+        {challenge ? (
+          // The same component /login and /reset-password use, so a guest is asked for a
+          // code in exactly the words everyone else is.
+          <SecondFactorChallengeForm
+            challenge={challenge}
+            onAnswered={closePrompt}
+            onExpired={() => {
+              setChallenge(null)
+              setBanner('That sign-in timed out. Please enter your password again.')
+            }}
           />
-          <TextField
-            label="Password"
-            type="password"
-            autoComplete="current-password"
-            error={errors.password?.message}
-            {...register('password')}
-          />
-          <SubmitButton disabled={isSubmitting}>
-            {isSubmitting ? 'Signing in…' : 'Sign in'}
-          </SubmitButton>
-        </form>
+        ) : (
+          <>
+            <form onSubmit={onSubmit} noValidate>
+              <TextField
+                label="Username or email"
+                autoComplete="username"
+                autoFocus
+                error={errors.usernameOrEmail?.message}
+                {...register('usernameOrEmail')}
+              />
+              <TextField
+                label="Password"
+                type="password"
+                autoComplete="current-password"
+                error={errors.password?.message}
+                {...register('password')}
+              />
+              <SubmitButton disabled={isSubmitting}>
+                {isSubmitting ? 'Signing in…' : 'Sign in'}
+              </SubmitButton>
+            </form>
 
-        <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 14, textAlign: 'center' }}>
-          New here?{' '}
-          <Link
-            to="/register"
-            onClick={closePrompt}
-            style={{ fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}
-          >
-            Create an account
-          </Link>
-        </div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 14, textAlign: 'center' }}>
+              New here?{' '}
+              <Link
+                to="/register"
+                onClick={closePrompt}
+                style={{ fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}
+              >
+                Create an account
+              </Link>
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   )
